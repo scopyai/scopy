@@ -147,19 +147,15 @@ func newGoogleSpec() parsers.EngineSpec {
 		SearchURL: "https://www.google.com/search",
 		BuildParams: func(req parsers.SearchRequest) url.Values {
 			country, lang := parseRegion(req.Region)
+			filters := map[string]string{"on": "2", "moderate": "1", "off": "0"}
 
 			v := url.Values{}
 			v.Set("q", req.Query)
+			v.Set("filter", filters[req.SafeSearch])
 			v.Set("hl", lang+"-"+strings.ToUpper(country))
 			v.Set("lr", "lang_"+lang)
 			v.Set("cr", "country"+strings.ToUpper(country))
 			v.Set("start", strconv.Itoa((req.Page-1)*10))
-
-			if req.SafeSearch == "off" {
-				v.Set("safe", "off")
-			} else {
-				v.Set("safe", "active")
-			}
 
 			if req.TimeLimit != "" {
 				v.Set("tbs", "qdr:"+req.TimeLimit)
@@ -169,7 +165,8 @@ func newGoogleSpec() parsers.EngineSpec {
 		},
 		MakeHeaders: func(req parsers.SearchRequest, session *parsers.Session) fhttp.Header {
 			return makeHeaders(req, session, map[string]string{
-				"referer": "https://www.google.com/",
+				"referer":    "https://www.google.com/",
+				"user-agent": parsers.GoogleAppUserAgent(),
 			}, "referer")
 		},
 		Parser: parsers.GoogleResults,
@@ -276,6 +273,20 @@ func fetchBackend(session *parsers.Session, reqIn parsers.SearchRequest, spec pa
 	params := spec.BuildParams(reqIn)
 	reqURL := spec.SearchURL
 	reqBody := io.Reader(nil)
+
+	if spec.Name == "google" {
+		u, err := url.Parse("https://www.google.com/")
+		if err != nil {
+			return nil, err
+		}
+		session.Client.SetCookies(u, []*fhttp.Cookie{{
+			Name:   "CONSENT",
+			Value:  "YES+",
+			Domain: ".google.com",
+			Path:   "/",
+		}})
+		slog.Info("google consent cookie set")
+	}
 
 	if spec.Post {
 		reqBody = bytes.NewBufferString(params.Encode())
