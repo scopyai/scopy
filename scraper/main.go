@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -157,6 +158,11 @@ func newSession(proxyURL, identityName string) (*Session, error) {
 		Identity: identity,
 	}
 
+	slog.Info("search session created",
+		"profile", identity.Name,
+		"proxy", proxyURL != "",
+	)
+
 	return s, nil
 }
 
@@ -226,6 +232,11 @@ func parseHTMLResults(body []byte, engine string, cfg HTMLParserConfig) ([]TextR
 	}
 
 	nodes := htmlquery.Find(root, cfg.ResultsExpr)
+	slog.Info("search parse started",
+		"engine", engine,
+		"html_bytes", len(body),
+		"candidate_nodes", len(nodes),
+	)
 	results := make([]TextResult, 0, len(nodes))
 	seen := map[string]struct{}{}
 
@@ -264,6 +275,18 @@ func parseHTMLResults(body []byte, engine string, cfg HTMLParserConfig) ([]TextR
 			Engine:   engine,
 			Provider: engine,
 		})
+	}
+
+	slog.Info("search parse finished",
+		"engine", engine,
+		"results", len(results),
+	)
+	if len(results) == 0 {
+		slog.Warn("search parse returned no results",
+			"engine", engine,
+			"candidate_nodes", len(nodes),
+			"html_preview", previewText(string(body), 600),
+		)
 	}
 
 	return results, nil
@@ -403,6 +426,15 @@ func getBackendSpecs(name string) []EngineSpec {
 		out = append(out, spec)
 	}
 
+	names := make([]string, 0, len(out))
+	for _, spec := range out {
+		names = append(names, spec.Name)
+	}
+	slog.Info("search backends selected",
+		"requested", name,
+		"selected", strings.Join(names, ","),
+	)
+
 	return out
 }
 
@@ -431,21 +463,48 @@ func fetchBackend(session *Session, reqIn SearchRequest, spec EngineSpec) ([]Tex
 	}
 	req.Header = spec.MakeHeaders(reqIn, session)
 
+	slog.Info("search request sending",
+		"engine", spec.Name,
+		"method", req.Method,
+		"url", reqURL,
+		"params", params.Encode(),
+		"profile", session.Identity.Name,
+	)
+
 	resp, err := session.Client.Do(req)
 	if err != nil {
+		slog.Error("search request failed",
+			"engine", spec.Name,
+			"error", err,
+		)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		slog.Warn("search request returned non-200",
+			"engine", spec.Name,
+			"status", resp.StatusCode,
+			"body_preview", previewText(string(body), 600),
+		)
 		return nil, fmt.Errorf("%s returned status %d: %s", spec.Name, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		slog.Error("search response read failed",
+			"engine", spec.Name,
+			"error", err,
+		)
 		return nil, err
 	}
+	slog.Info("search response received",
+		"engine", spec.Name,
+		"status", resp.StatusCode,
+		"bytes", len(respBody),
+		"content_type", resp.Header.Get("content-type"),
+	)
 
 	return parseHTMLResults(respBody, spec.Name, spec.Parser)
 }
@@ -461,9 +520,17 @@ func searchText(session *Session, req SearchRequest) ([]TextResult, error) {
 	for _, spec := range specs {
 		items, err := fetchBackend(session, req, spec)
 		if err != nil {
+			slog.Warn("search backend failed",
+				"engine", spec.Name,
+				"error", err,
+			)
 			lastErr = err
 			continue
 		}
+		slog.Info("search backend finished",
+			"engine", spec.Name,
+			"results", len(items),
+		)
 		merged = append(merged, items...)
 	}
 
@@ -519,6 +586,11 @@ func rankResults(items []TextResult, maxResults int) []TextResult {
 	if maxResults > 0 && len(out) > maxResults {
 		out = out[:maxResults]
 	}
+
+	slog.Info("search ranking finished",
+		"input_results", len(items),
+		"output_results", len(out),
+	)
 
 	return out
 }
@@ -654,6 +726,14 @@ func filterQuery(v url.Values) url.Values {
 	return out
 }
 
+func previewText(s string, limit int) string {
+	s = cleanWhitespace(s)
+	if limit > 0 && len(s) > limit {
+		return s[:limit]
+	}
+	return s
+}
+
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -672,6 +752,16 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "query is required", http.StatusBadRequest)
 		return
 	}
+
+	slog.Info("search request received",
+		"query", req.Query,
+		"backend", req.Backend,
+		"region", req.Region,
+		"safesearch", req.SafeSearch,
+		"timelimit", req.TimeLimit,
+		"page", req.Page,
+		"max_results", req.MaxResults,
+	)
 
 	session, err := newSession(req.ProxyURL, req.Profile)
 	if err != nil {
