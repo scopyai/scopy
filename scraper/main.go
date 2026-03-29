@@ -11,99 +11,15 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"scraper/parsers"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/antchfx/htmlquery"
 	fhttp "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
-	"github.com/bogdanfinn/tls-client/profiles"
-	"golang.org/x/net/html"
 )
-
-type BrowserIdentity struct {
-	Name    string
-	Profile profiles.ClientProfile
-	UA      string
-}
-
-var identities = []BrowserIdentity{
-	{
-		Name:    "chrome_144",
-		Profile: profiles.Chrome_144,
-		UA:      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-	},
-	{
-		Name:    "chrome_146",
-		Profile: profiles.Chrome_146,
-		UA:      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-	},
-	{
-		Name:    "firefox_117",
-		Profile: profiles.Firefox_117,
-		UA:      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:117.0) Gecko/20100101 Firefox/117.0",
-	},
-	{
-		Name:    "safari_16_0",
-		Profile: profiles.Safari_16_0,
-		UA:      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
-	},
-	{
-		Name:    "safari_ios_18_0",
-		Profile: profiles.Safari_IOS_18_0,
-		UA:      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
-	},
-}
-
-type SearchRequest struct {
-	Backend    string `json:"backend,omitempty"` // auto | google | duckduckgo | yandex | google,duckduckgo
-	Query      string `json:"query"`
-	Profile    string `json:"profile,omitempty"` // one of the identity names above
-	ProxyURL   string `json:"proxyUrl,omitempty"`
-	Region     string `json:"region,omitempty"`     // ex: us-en, uk-en, ru-ru
-	SafeSearch string `json:"safesearch,omitempty"` // on | moderate | off
-	TimeLimit  string `json:"timelimit,omitempty"`  // d | w | m | y
-	Page       int    `json:"page,omitempty"`       // 1-based
-	MaxResults int    `json:"maxResults,omitempty"`
-}
-
-type TextResult struct {
-	Title    string `json:"title"`
-	Href     string `json:"href"`
-	Body     string `json:"body"`
-	Engine   string `json:"engine"`
-	Provider string `json:"provider"`
-	Count    int    `json:"count,omitempty"`
-}
-
-type SearchResponse struct {
-	Status  int          `json:"status"`
-	Results []TextResult `json:"results"`
-}
-
-type Session struct {
-	Client   tls_client.HttpClient
-	Identity BrowserIdentity
-}
-
-type EngineSpec struct {
-	Name        string
-	SearchURL   string
-	Post        bool
-	BuildParams func(SearchRequest) url.Values
-	MakeHeaders func(SearchRequest, *Session) fhttp.Header
-	Parser      HTMLParserConfig
-}
-
-type HTMLParserConfig struct {
-	ResultsExpr string
-	TitleExpr   string
-	HrefExpr    string
-	BodyExpr    string
-	CleanHref   func(string) string
-}
 
 var (
 	acceptLanguageByTag = map[string]string{
@@ -111,26 +27,26 @@ var (
 		"fr": "fr-FR,fr;q=0.9,en;q=0.8",
 		"ru": "ru-RU,ru;q=0.9,en;q=0.8",
 	}
-	backends = map[string]EngineSpec{
+	backends = map[string]parsers.EngineSpec{
 		"google":     newGoogleSpec(),
 		"duckduckgo": newDuckDuckGoSpec(),
 		"yandex":     newYandexSpec(),
 	}
 )
 
-func pickIdentity(name string) (BrowserIdentity, error) {
+func pickIdentity(name string) (parsers.BrowserIdentity, error) {
 	if name == "" {
-		return identities[rand.Intn(len(identities))], nil
+		return parsers.Identities[rand.Intn(len(parsers.Identities))], nil
 	}
-	for _, identity := range identities {
+	for _, identity := range parsers.Identities {
 		if identity.Name == name {
 			return identity, nil
 		}
 	}
-	return BrowserIdentity{}, errors.New("unsupported profile")
+	return parsers.BrowserIdentity{}, errors.New("unsupported profile")
 }
 
-func newSession(proxyURL, identityName string) (*Session, error) {
+func newSession(proxyURL, identityName string) (*parsers.Session, error) {
 	identity, err := pickIdentity(identityName)
 	if err != nil {
 		return nil, err
@@ -153,7 +69,7 @@ func newSession(proxyURL, identityName string) (*Session, error) {
 		return nil, err
 	}
 
-	s := &Session{
+	s := &parsers.Session{
 		Client:   client,
 		Identity: identity,
 	}
@@ -166,7 +82,7 @@ func newSession(proxyURL, identityName string) (*Session, error) {
 	return s, nil
 }
 
-func normalizeReq(in *SearchRequest) {
+func normalizeReq(in *parsers.SearchRequest) {
 	if in.Backend == "" {
 		in.Backend = "auto"
 	}
@@ -194,7 +110,7 @@ func parseRegion(region string) (country string, lang string) {
 	return "us", "en"
 }
 
-func defaultHeaders(req SearchRequest, session *Session) fhttp.Header {
+func defaultHeaders(req parsers.SearchRequest, session *parsers.Session) fhttp.Header {
 	_, lang := parseRegion(req.Region)
 	acceptLang := "en-US,en;q=0.9"
 	if value, ok := acceptLanguageByTag[lang]; ok {
@@ -217,7 +133,7 @@ func withHeaderOrder(h fhttp.Header, extraOrder ...string) fhttp.Header {
 	return h
 }
 
-func makeHeaders(req SearchRequest, session *Session, extra map[string]string, order ...string) fhttp.Header {
+func makeHeaders(req parsers.SearchRequest, session *parsers.Session, extra map[string]string, order ...string) fhttp.Header {
 	h := defaultHeaders(req, session)
 	for key, value := range extra {
 		h.Set(key, value)
@@ -225,78 +141,11 @@ func makeHeaders(req SearchRequest, session *Session, extra map[string]string, o
 	return withHeaderOrder(h, order...)
 }
 
-func parseHTMLResults(body []byte, engine string, cfg HTMLParserConfig) ([]TextResult, error) {
-	root, err := htmlquery.Parse(bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	nodes := htmlquery.Find(root, cfg.ResultsExpr)
-	slog.Info("search parse started",
-		"engine", engine,
-		"html_bytes", len(body),
-		"candidate_nodes", len(nodes),
-	)
-	results := make([]TextResult, 0, len(nodes))
-	seen := map[string]struct{}{}
-
-	for _, n := range nodes {
-		title := cleanWhitespace(textFromXPath(n, cfg.TitleExpr))
-		href := attrFromXPath(n, cfg.HrefExpr, "href")
-		if cfg.CleanHref != nil {
-			href = cfg.CleanHref(href)
-		}
-		href = strings.TrimSpace(href)
-		if title == "" || href == "" || !isWebURL(href) {
-			continue
-		}
-
-		key := normalizeURLKey(href)
-		if key == "" {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		bodyText := ""
-		if cfg.BodyExpr != "" {
-			bodyText = cleanWhitespace(textFromXPath(n, cfg.BodyExpr))
-		}
-		if bodyText == "" {
-			bodyText = snippetText(n, title)
-		}
-
-		results = append(results, TextResult{
-			Title:    title,
-			Href:     href,
-			Body:     bodyText,
-			Engine:   engine,
-			Provider: engine,
-		})
-	}
-
-	slog.Info("search parse finished",
-		"engine", engine,
-		"results", len(results),
-	)
-	if len(results) == 0 {
-		slog.Warn("search parse returned no results",
-			"engine", engine,
-			"candidate_nodes", len(nodes),
-			"html_preview", previewText(string(body), 600),
-		)
-	}
-
-	return results, nil
-}
-
-func newGoogleSpec() EngineSpec {
-	return EngineSpec{
+func newGoogleSpec() parsers.EngineSpec {
+	return parsers.EngineSpec{
 		Name:      "google",
 		SearchURL: "https://www.google.com/search",
-		BuildParams: func(req SearchRequest) url.Values {
+		BuildParams: func(req parsers.SearchRequest) url.Values {
 			country, lang := parseRegion(req.Region)
 
 			v := url.Values{}
@@ -318,26 +167,21 @@ func newGoogleSpec() EngineSpec {
 
 			return v
 		},
-		MakeHeaders: func(req SearchRequest, session *Session) fhttp.Header {
+		MakeHeaders: func(req parsers.SearchRequest, session *parsers.Session) fhttp.Header {
 			return makeHeaders(req, session, map[string]string{
 				"referer": "https://www.google.com/",
 			}, "referer")
 		},
-		Parser: HTMLParserConfig{
-			ResultsExpr: `//div[.//h3 and .//a[@href]]`,
-			TitleExpr:   `.//h3[1]`,
-			HrefExpr:    `.//a[@href][1]`,
-			CleanHref:   cleanGoogleHref,
-		},
+		Parser: parsers.GoogleResults,
 	}
 }
 
-func newDuckDuckGoSpec() EngineSpec {
-	return EngineSpec{
+func newDuckDuckGoSpec() parsers.EngineSpec {
+	return parsers.EngineSpec{
 		Name:      "duckduckgo",
 		SearchURL: "https://html.duckduckgo.com/html/",
 		Post:      true,
-		BuildParams: func(req SearchRequest) url.Values {
+		BuildParams: func(req parsers.SearchRequest) url.Values {
 			v := url.Values{}
 			v.Set("q", req.Query)
 			v.Set("kl", req.Region)
@@ -359,27 +203,22 @@ func newDuckDuckGoSpec() EngineSpec {
 
 			return v
 		},
-		MakeHeaders: func(req SearchRequest, session *Session) fhttp.Header {
+		MakeHeaders: func(req parsers.SearchRequest, session *parsers.Session) fhttp.Header {
 			return makeHeaders(req, session, map[string]string{
 				"content-type": "application/x-www-form-urlencoded",
 				"origin":       "https://html.duckduckgo.com",
 				"referer":      "https://html.duckduckgo.com/",
 			}, "origin", "referer", "content-type")
 		},
-		Parser: HTMLParserConfig{
-			ResultsExpr: `//div[contains(@class,'result')]`,
-			TitleExpr:   `.//a[contains(@class,'result__a')][1]`,
-			HrefExpr:    `.//a[contains(@class,'result__a')][1]`,
-			BodyExpr:    `.//*[contains(@class,'result__snippet')]`,
-		},
+		Parser: parsers.DuckDuckGoResults,
 	}
 }
 
-func newYandexSpec() EngineSpec {
-	return EngineSpec{
+func newYandexSpec() parsers.EngineSpec {
+	return parsers.EngineSpec{
 		Name:      "yandex",
 		SearchURL: "https://yandex.com/search/site/",
-		BuildParams: func(req SearchRequest) url.Values {
+		BuildParams: func(req parsers.SearchRequest) url.Values {
 			v := url.Values{}
 			v.Set("text", req.Query)
 			v.Set("web", "1")
@@ -391,26 +230,21 @@ func newYandexSpec() EngineSpec {
 
 			return v
 		},
-		MakeHeaders: func(req SearchRequest, session *Session) fhttp.Header {
+		MakeHeaders: func(req parsers.SearchRequest, session *parsers.Session) fhttp.Header {
 			return makeHeaders(req, session, map[string]string{
 				"referer": "https://yandex.com/",
 			}, "referer")
 		},
-		Parser: HTMLParserConfig{
-			ResultsExpr: `//li[contains(@class,'serp-item')]`,
-			TitleExpr:   `.//h2[1] | .//h3[1]`,
-			HrefExpr:    `.//a[@href][1]`,
-			BodyExpr:    `.//*[contains(@class,'text-container')] | .//*[contains(@class,'organic__content-wrapper')]`,
-		},
+		Parser: parsers.YandexResults,
 	}
 }
 
-func getBackendSpecs(name string) []EngineSpec {
+func getBackendSpecs(name string) []parsers.EngineSpec {
 	if name == "" || name == "auto" {
 		name = "google,duckduckgo,yandex"
 	}
 
-	var out []EngineSpec
+	var out []parsers.EngineSpec
 	seen := map[string]struct{}{}
 
 	for _, part := range strings.Split(name, ",") {
@@ -438,7 +272,7 @@ func getBackendSpecs(name string) []EngineSpec {
 	return out
 }
 
-func fetchBackend(session *Session, reqIn SearchRequest, spec EngineSpec) ([]TextResult, error) {
+func fetchBackend(session *parsers.Session, reqIn parsers.SearchRequest, spec parsers.EngineSpec) ([]parsers.TextResult, error) {
 	params := spec.BuildParams(reqIn)
 	reqURL := spec.SearchURL
 	reqBody := io.Reader(nil)
@@ -486,7 +320,7 @@ func fetchBackend(session *Session, reqIn SearchRequest, spec EngineSpec) ([]Tex
 		slog.Warn("search request returned non-200",
 			"engine", spec.Name,
 			"status", resp.StatusCode,
-			"body_preview", previewText(string(body), 600),
+			"body_preview", parsers.PreviewText(string(body), 600),
 		)
 		return nil, fmt.Errorf("%s returned status %d: %s", spec.Name, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
@@ -506,16 +340,16 @@ func fetchBackend(session *Session, reqIn SearchRequest, spec EngineSpec) ([]Tex
 		"content_type", resp.Header.Get("content-type"),
 	)
 
-	return parseHTMLResults(respBody, spec.Name, spec.Parser)
+	return spec.Parser(respBody)
 }
 
-func searchText(session *Session, req SearchRequest) ([]TextResult, error) {
+func searchText(session *parsers.Session, req parsers.SearchRequest) ([]parsers.TextResult, error) {
 	specs := getBackendSpecs(req.Backend)
 	if len(specs) == 0 {
 		return nil, errors.New("no valid backends")
 	}
 
-	merged := make([]TextResult, 0, 32)
+	merged := make([]parsers.TextResult, 0, 32)
 	var lastErr error
 	for _, spec := range specs {
 		items, err := fetchBackend(session, req, spec)
@@ -541,9 +375,9 @@ func searchText(session *Session, req SearchRequest) ([]TextResult, error) {
 	return rankResults(merged, req.MaxResults), nil
 }
 
-func rankResults(items []TextResult, maxResults int) []TextResult {
+func rankResults(items []parsers.TextResult, maxResults int) []parsers.TextResult {
 	type aggregate struct {
-		item  TextResult
+		item  parsers.TextResult
 		count int
 	}
 
@@ -551,7 +385,7 @@ func rankResults(items []TextResult, maxResults int) []TextResult {
 	ordered := make([]*aggregate, 0, len(items))
 
 	for _, item := range items {
-		key := normalizeURLKey(item.Href)
+		key := parsers.NormalizeURLKey(item.Href)
 		if key == "" {
 			continue
 		}
@@ -577,7 +411,7 @@ func rankResults(items []TextResult, maxResults int) []TextResult {
 		return ordered[i].count > ordered[j].count
 	})
 
-	out := make([]TextResult, 0, len(ordered))
+	out := make([]parsers.TextResult, 0, len(ordered))
 	for _, agg := range ordered {
 		agg.item.Count = agg.count
 		out = append(out, agg.item)
@@ -595,152 +429,13 @@ func rankResults(items []TextResult, maxResults int) []TextResult {
 	return out
 }
 
-func firstNode(n *html.Node, expr string) *html.Node {
-	node, err := htmlquery.Query(n, expr)
-	if err != nil {
-		return nil
-	}
-	return node
-}
-
-func textFromXPath(n *html.Node, expr string) string {
-	nodes := htmlquery.Find(n, expr)
-	parts := make([]string, 0, len(nodes))
-
-	for _, node := range nodes {
-		text := cleanWhitespace(htmlquery.InnerText(node))
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-
-	return cleanWhitespace(strings.Join(parts, " "))
-}
-
-func attrFromXPath(n *html.Node, expr, attr string) string {
-	node := firstNode(n, expr)
-	if node == nil {
-		return ""
-	}
-	return strings.TrimSpace(htmlquery.SelectAttr(node, attr))
-}
-
-func cleanWhitespace(s string) string {
-	s = strings.ReplaceAll(s, "\u00a0", " ")
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	return strings.Join(strings.Fields(s), " ")
-}
-
-func snippetText(n *html.Node, title string) string {
-	text := cleanWhitespace(htmlquery.InnerText(n))
-	if text == "" {
-		return ""
-	}
-
-	if title != "" && strings.HasPrefix(text, title) {
-		text = strings.TrimSpace(strings.TrimPrefix(text, title))
-	}
-
-	if len(text) > 420 {
-		text = text[:420]
-	}
-
-	return cleanWhitespace(text)
-}
-
-func cleanGoogleHref(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-
-	if strings.HasPrefix(raw, "/url?") {
-		u, err := url.Parse(raw)
-		if err == nil {
-			if q := u.Query().Get("q"); q != "" {
-				return q
-			}
-		}
-	}
-
-	return raw
-}
-
-func isWebURL(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	return u.Scheme == "http" || u.Scheme == "https"
-}
-
-func normalizeURLKey(raw string) string {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return ""
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return ""
-	}
-
-	u.Fragment = ""
-	u.RawQuery = filterQuery(u.Query()).Encode()
-
-	host := strings.ToLower(u.Hostname())
-	if host == "www.google.com" || host == "google.com" {
-		if q := u.Query().Get("q"); q != "" {
-			return q
-		}
-	}
-
-	path := strings.TrimRight(u.EscapedPath(), "/")
-	if path == "" {
-		path = "/"
-	}
-
-	if u.RawQuery == "" {
-		return strings.ToLower(host + path)
-	}
-
-	return strings.ToLower(host + path + "?" + u.RawQuery)
-}
-
-func filterQuery(v url.Values) url.Values {
-	out := url.Values{}
-
-	for key, vals := range v {
-		switch strings.ToLower(key) {
-		case "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-			"ved", "ei", "sa", "sei", "gs_lcp", "oq", "aqs", "source", "bih", "biw":
-			continue
-		default:
-			for _, val := range vals {
-				out.Add(key, val)
-			}
-		}
-	}
-
-	return out
-}
-
-func previewText(s string, limit int) string {
-	s = cleanWhitespace(s)
-	if limit > 0 && len(s) > limit {
-		return s[:limit]
-	}
-	return s
-}
-
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req SearchRequest
+	var req parsers.SearchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -779,7 +474,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := SearchResponse{
+	resp := parsers.SearchResponse{
 		Status:  http.StatusOK,
 		Results: results,
 	}
