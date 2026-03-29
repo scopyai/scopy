@@ -14,10 +14,14 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.0",
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@mendable/firecrawl-js": "^4.18.0"
+    "@ai-sdk/openai": "^3.0.48",
+    "@mendable/firecrawl-js": "^4.18.0",
+    "ai": "^6.0.141",
+    "zod": "^4.3.6"
   }
 }

@@ -1,4 +1,4 @@
-import { searchText } from "./search-engine";
+import { searchText } from "./agents/search-engine";
 
 async function main() {
   const res = await searchText("javascript", {
