@@ -2,11 +2,12 @@
   "name": "research-service",
   "version": "1.0.0",
   "description": "",
-  "type": "module",
+  "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc src/index.ts --outDir dist",
-    "start": "NODE_ENV=production node dist/index.js"
+    "build": "tsc -p tsconfig.json",
+    "start": "NODE_ENV=production node dist/index.js",
+    "do": "pnpm run build && pnpm start"
   },
   "keywords": [],
   "author": "",
