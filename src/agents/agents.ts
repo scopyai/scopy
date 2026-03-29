@@ -1,9 +1,17 @@
 import { Agent, Output, stepCountIs, ToolLoopAgent } from "ai";
 import { openai } from "@ai-sdk/openai";
 import type { stage, WorkflowContext, runnableStage } from "./types";
-import { sourceEngineResult, sourceQualifiedResult } from "./types";
+import {
+  researchEvidence,
+  sourceEngineResult,
+  sourceQualifiedResult,
+} from "./types";
 import { webPageParseTool, webSearchTool } from "./tools";
 import { z } from "zod";
+
+// TODO: edit prompts
+
+const MAX_STEP_COUNT = 10;
 
 const sourceFinderAgent = new ToolLoopAgent({
   model: openai("gpt-5.4"),
@@ -20,7 +28,10 @@ const sourceFinderAgent = new ToolLoopAgent({
 const sourceQualifierAgent = new ToolLoopAgent({
   model: openai("gpt-5.4"),
   onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent step ${stepNumber}:`, usage.totalTokens);
+    console.log(
+      `Agent sourceQualifierAgent step ${stepNumber}:`,
+      usage.totalTokens,
+    );
   },
   tools: {
     webParse: webPageParseTool,
@@ -35,8 +46,11 @@ const sourceQualifierAgent = new ToolLoopAgent({
 const researcherAgent = new ToolLoopAgent({
   model: openai("gpt-5.4"),
   onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent step ${stepNumber}:`, usage.totalTokens);
+    console.log(`Agent researcherAgent step ${stepNumber}:`, usage.totalTokens);
   },
+  output: Output.object({
+    schema: z.array(researchEvidence),
+  }),
   instructions:
     "You receive a list of qualified sources and the user query. You need to find relevant information from the sources to answer the user query. You should use the web scraping tool to check the sources data if needed.",
 });
@@ -44,7 +58,7 @@ const researcherAgent = new ToolLoopAgent({
 const judgeAgent = new ToolLoopAgent({
   model: openai("gpt-5.4"),
   onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent step ${stepNumber}:`, usage.totalTokens);
+    console.log(`Agent judgeAgent step ${stepNumber}:`, usage.totalTokens);
   },
   instructions:
     "You receive the research evidence and the user query. You need to judge whether the evidence is relevant to the query and whether it answers the query.",
@@ -53,7 +67,7 @@ const judgeAgent = new ToolLoopAgent({
 const summarizerAgent = new ToolLoopAgent({
   model: openai("gpt-5.4"),
   onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent step ${stepNumber}:`, usage.totalTokens);
+    console.log(`Agent summarizerAgent step ${stepNumber}:`, usage.totalTokens);
   },
   instructions:
     "You receive the research evidence and the user query. You need to summarize the evidence to answer the user query.",
@@ -101,7 +115,7 @@ async function runAgentForStage(
 
       context.qualifiedSources = result.output;
 
-      const fetchedSources = result.steps
+      context.fetchedSources = result.steps
         .flatMap((step) => step.staticToolResults)
         .filter((toolResult) => toolResult.toolName === "webSearch")
         .flatMap((toolResult) => toolResult.output)
@@ -110,17 +124,26 @@ async function runAgentForStage(
           url,
           description: body,
         }));
-      context.fetchedSources = fetchedSources;
       return context;
     }
     case "source-qualifier": {
       const result = await sourceQualifierAgent.generate({
-        prompt: `User query: ${context.query}\nSources: ${JSON.stringify(context.fetchedSources)}`,
+        prompt: `User query: ${context.query}\nSources: ${JSON.stringify(context.qualifiedSources)}`,
       });
       context.authoritativeSources = result.output;
 
-      const fetchedSourceDetails = result.steps;
+      context.fetchedSourceDetails = result.steps
+        .flatMap((step) => step.staticToolResults)
+        .filter((toolResult) => toolResult.toolName === "webParse")
+        .flatMap((toolResult) => toolResult.output);
 
+      return context;
+    }
+    case "researcher": {
+      const result = await researcherAgent.generate({
+        prompt: `User query: ${context.query}\Verified sources: ${JSON.stringify(context.authoritativeSources)}`,
+      });
+      context.researchEvidence = result.output;
       return context;
     }
     default:
@@ -144,9 +167,15 @@ async function research(query: string) {
     summary: "",
   };
 
+  let stepCount = 0;
+
   while (context.currentStage !== "done") {
+    if (stepCount > MAX_STEP_COUNT) {
+      return;
+    }
     context.currentStage = getNextStage(context.currentStage);
 
     context = await runAgentForStage(context);
+    stepCount++;
   }
 }
