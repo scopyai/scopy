@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"scraper/parsers"
 	"sort"
 	"strconv"
@@ -494,7 +495,16 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func envOrDefault(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}
+
 func main() {
+	addr := envOrDefault("SCRAPER_ADDR", "127.0.0.1:8080")
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search", searchHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -503,11 +513,11 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:              "127.0.0.1:8080",
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Println("listening on http://127.0.0.1:8080")
+	log.Printf("listening on http://%s", addr)
 	log.Fatal(srv.ListenAndServe())
 }

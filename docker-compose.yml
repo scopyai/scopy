@@ -1,0 +1,25 @@
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    environment:
+      SCRAPER_ADDR: 0.0.0.0:8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 2s
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      scraper:
+        condition: service_healthy
+    environment:
+      SCRAPER_BASE_URL: http://scraper:8080

@@ -29,6 +29,11 @@ export interface SearchResponse {
 }
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:8080";
+const ENV_BASE_URL = (
+  globalThis as typeof globalThis & {
+    process?: { env?: Record<string, string | undefined> };
+  }
+).process?.env?.SCRAPER_BASE_URL;
 
 export async function searchText(
   query: string,
@@ -42,7 +47,10 @@ export async function searchText(
     throw new Error("query is required");
   }
 
-  const baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = (config.baseUrl ?? ENV_BASE_URL ?? DEFAULT_BASE_URL).replace(
+    /\/+$/,
+    "",
+  );
 
   const body: Record<string, unknown> = {
     query,

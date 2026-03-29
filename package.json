@@ -16,5 +16,8 @@
   "devDependencies": {
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "@mendable/firecrawl-js": "^4.18.0"
   }
 }
