@@ -35,11 +35,11 @@ export const webSearchTool = tool({
 
 export const webPageParseTool = tool({
   description:
-    "Given a URL, fetch the page and extract compact structured content. Use markdown for readable page text and json for metadata.",
+    "Given a URL, fetch the page and extract compact structured content. Use markdown for readable page text; metadata is returned from the scrape response.",
   inputSchema: z.object({
     url: z.string().describe("The URL of the page to parse"),
     formats: z
-      .array(z.enum(["markdown", "json"]))
+      .array(z.literal("markdown"))
       .describe("The output formats to extract from the page"),
   }),
   outputSchema: z.object({
