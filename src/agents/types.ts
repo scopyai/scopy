@@ -17,10 +17,15 @@ export const sourceEngineResult = z.object({
 
 export const sourceQualifiedResult = sourceEngineResult.extend({
   body: z.string(),
-  metadata: z.record(z.string(), z.string()),
+  metadata: z.array(
+    z.object({
+      key: z.string(),
+      value: z.string(),
+    }),
+  ),
   authors: z.array(z.string()),
-  publishedDate: z.string().optional(),
-  sourceName: z.string().optional(),
+  publishedDate: z.string().nullable(),
+  sourceName: z.string().nullable(),
 });
 export type sourceQualifiedType = z.infer<typeof sourceQualifiedResult>;
 

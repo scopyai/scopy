@@ -1,117 +1,115 @@
 import { Output, stepCountIs, tool, ToolLoopAgent } from "ai";
 import { openai } from "@ai-sdk/openai";
-import type { stage, WorkflowContext, runnableStage } from "./types";
+import { z } from "zod";
+import type { sourceQualifiedType, stage, WorkflowContext } from "./types";
 import {
   judgeVerificationResult,
   researchEvidence,
-  sourceEngineResult,
   sourceQualifiedResult,
 } from "./types";
 import { webPageParseTool, webSearchTool } from "./tools";
-import { z } from "zod";
 import {
   judgeAgentPrompt,
   researchAgentPrompt,
-  sourceFinderPrompt,
-  sourceFinderToolDescription,
-  sourceQualifierPrompt,
-  sourceQualifierToolDescription,
+  sourceAgentPrompt,
+  sourceToolDescription,
 } from "./prompts";
+import { wrapLanguageModel } from "ai";
+import { devToolsMiddleware } from "@ai-sdk/devtools";
 
-// TODO: edit prompts
+const selectedModel = wrapLanguageModel({
+  model: openai("gpt-5.4"),
+  middleware: devToolsMiddleware(),
+});
 
 const MAX_STEP_COUNT = 10;
 const MAX_JUDGE_FEEDBACK_ATTEMPTS = 3;
+const MAX_SOURCE_AGENT_STEPS = 8;
 
-const sourceFinderAgent = new ToolLoopAgent({
-  model: openai("gpt-5.4"),
-  instructions: sourceFinderPrompt,
-  output: Output.object({
-    schema: z.object({
-      sources: z.array(sourceEngineResult),
-    }),
-  }),
-  tools: {
-    webSearch: webSearchTool,
-  },
-  stopWhen: stepCountIs(10),
-  onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(
-      `Agent sourceFinderAgent step ${stepNumber}:`,
-      usage.totalTokens,
-    );
-  },
-});
+let latestQualifiedSourcesFromTool: sourceQualifiedType[] = [];
 
-const sourceFinderTool = tool({
-  description: sourceFinderToolDescription,
-  inputSchema: z.object({
-    query: z.string().describe("The query to find sources for"),
-    corrections: z
-      .string()
-      .optional()
-      .describe(
-        "Any corrections or adjustments to the query based on previous search results",
-      ),
-    previousSources: z
-      .array(z.string())
-      .optional()
-      .describe(
-        "Input the URLs of sources found in previous steps to avoid duplicates",
-      ),
-  }),
-  outputSchema: z.object({
-    sources: z
-      .array(sourceEngineResult)
-      .describe("A list of sources relevant to the query"),
-  }),
-  execute: async ({ query, corrections, previousSources }) => {
-    let adjustedQuery = query;
-    if (corrections) {
-      adjustedQuery += `\n\nCorrections: ${corrections}`;
+function logAgentStep(
+  agentName: string,
+  {
+    stepNumber,
+    usage,
+    toolCalls,
+    toolResults,
+  }: {
+    stepNumber: number;
+    usage: { totalTokens: number | undefined };
+    toolCalls: Array<{ toolName: string }>;
+    toolResults: Array<{ toolName: string }>;
+  },
+) {
+  console.log(`Agent ${agentName} step ${stepNumber}:`, {
+    totalTokens: usage.totalTokens ?? 0,
+    toolCalls: toolCalls.map((toolCall) => toolCall.toolName),
+    toolResults: toolResults.map((toolResult) => toolResult.toolName),
+  });
+}
+
+function normalizeUrlForComparison(url: string) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    if (parsed.pathname !== "/" && parsed.pathname.endsWith("/")) {
+      parsed.pathname = parsed.pathname.slice(0, -1);
     }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
-    if (previousSources && previousSources.length > 0) {
-      adjustedQuery += `\n\nPrevious sources to avoid: ${previousSources.join(
-        ", ",
-      )}`;
-    }
+function dedupeQualifiedSources(parsedSources: sourceQualifiedType[]) {
+  return Array.from(
+    new Map(
+      parsedSources.map((source) => [
+        normalizeUrlForComparison(source.url),
+        source,
+      ]),
+    ).values(),
+  );
+}
 
-    console.log("Source Finder Agent - Adjusted Query:", adjustedQuery);
-
-    const output = await sourceFinderAgent.generate({
-      prompt: adjustedQuery,
-    });
-
-    return output.output;
-  },
-});
-
-const sourceQualifierAgent = new ToolLoopAgent({
-  model: openai("gpt-5.4"),
-  onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(
-      `Agent sourceQualifierAgent step ${stepNumber}:`,
-      usage.totalTokens,
-    );
-  },
-  tools: {
-    parsePageTool: webPageParseTool,
-    getSourcesTool: sourceFinderTool,
-  },
+const sourceAgent = new ToolLoopAgent({
+  model: selectedModel,
+  instructions: sourceAgentPrompt,
   output: Output.object({
     schema: z.object({
       sources: z.array(sourceQualifiedResult),
     }),
   }),
-  stopWhen: stepCountIs(10),
-  instructions: sourceQualifierPrompt,
+  tools: {
+    webSearch: webSearchTool,
+    parsePageTool: webPageParseTool,
+  },
+  stopWhen: stepCountIs(MAX_SOURCE_AGENT_STEPS),
+  onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
+    logAgentStep("sourceAgent", {
+      stepNumber,
+      usage,
+      toolCalls,
+      toolResults,
+    });
+  },
 });
 
-const sourceQualifierTool = tool({
-  description: sourceQualifierToolDescription,
+const sourceTool = tool({
+  description: sourceToolDescription,
   inputSchema: z.object({
     query: z.string().describe("The query to find and verify sources for"),
+    corrections: z
+      .string()
+      .optional()
+      .describe(
+        "Additional constraints or missing coverage that should shape the search",
+      ),
+    previousSources: z
+      .array(z.string())
+      .optional()
+      .describe("Source URLs that should not be returned again"),
   }),
   outputSchema: z.object({
     sources: z
@@ -120,18 +118,69 @@ const sourceQualifierTool = tool({
         "A list of verified authoritative sources relevant to the query",
       ),
   }),
-  execute: async ({ query }) => {
-    const output = await sourceQualifierAgent.generate({
-      prompt: `Query: ${query}`,
+  execute: async ({ query, corrections, previousSources }) => {
+    console.log("sourceTool called:", {
+      query,
+      corrections: corrections ?? null,
+      previousSources: previousSources ?? [],
     });
-    return output.output;
+
+    const promptParts = [`Query: ${query}`];
+
+    if (corrections) {
+      promptParts.push(`Corrections: ${corrections}`);
+    }
+
+    if (previousSources && previousSources.length > 0) {
+      promptParts.push(
+        `Previous sources to avoid: ${previousSources.join(", ")}`,
+      );
+    }
+
+    let output;
+    try {
+      output = await sourceAgent.generate({
+        prompt: promptParts.join("\n"),
+      });
+    } catch (error) {
+      console.error("sourceAgent failed:", error);
+      throw error;
+    }
+
+    let sources = dedupeQualifiedSources(output.output.sources);
+
+    if (previousSources && previousSources.length > 0) {
+      const previousUrlSet = new Set(
+        previousSources.map(normalizeUrlForComparison),
+      );
+      sources = sources.filter(
+        (source) => !previousUrlSet.has(normalizeUrlForComparison(source.url)),
+      );
+    }
+
+    latestQualifiedSourcesFromTool = dedupeQualifiedSources([
+      ...latestQualifiedSourcesFromTool,
+      ...sources,
+    ]);
+
+    console.log(
+      "sourceTool returned sources:",
+      sources.map((source) => source.url),
+    );
+
+    return { sources };
   },
 });
 
 const researcherAgent = new ToolLoopAgent({
-  model: openai("gpt-5.4"),
-  onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent researcherAgent step ${stepNumber}:`, usage.totalTokens);
+  model: selectedModel,
+  onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
+    logAgentStep("researcherAgent", {
+      stepNumber,
+      usage,
+      toolCalls,
+      toolResults,
+    });
   },
   output: Output.object({
     schema: z.object({
@@ -139,16 +188,21 @@ const researcherAgent = new ToolLoopAgent({
     }),
   }),
   tools: {
-    getSourcesTool: sourceQualifierTool,
+    getSourcesTool: sourceTool,
   },
   stopWhen: stepCountIs(10),
   instructions: researchAgentPrompt,
 });
 
 const judgeAgent = new ToolLoopAgent({
-  model: openai("gpt-5.4"),
-  onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent judgeAgent step ${stepNumber}:`, usage.totalTokens);
+  model: selectedModel,
+  onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
+    logAgentStep("judgeAgent", {
+      stepNumber,
+      usage,
+      toolCalls,
+      toolResults,
+    });
   },
   instructions: judgeAgentPrompt,
   output: Output.object({
@@ -158,9 +212,14 @@ const judgeAgent = new ToolLoopAgent({
 });
 
 const summarizerAgent = new ToolLoopAgent({
-  model: openai("gpt-5.4"),
-  onStepFinish: async ({ stepNumber, usage }) => {
-    console.log(`Agent summarizerAgent step ${stepNumber}:`, usage.totalTokens);
+  model: selectedModel,
+  onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
+    logAgentStep("summarizerAgent", {
+      stepNumber,
+      usage,
+      toolCalls,
+      toolResults,
+    });
   },
   instructions:
     "You receive the research results and the user query. You need to summarize the evidence to answer the user query.",
@@ -194,26 +253,25 @@ async function runAgentForStage(
       const prompt =
         context.judgeFeedbackAttempts > 0 &&
         context.judge.conclusion === "needs_revision"
-          ? `User query: ${context.query}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nJudge feedback: ${context.judge.details}`
+          ? `User query: ${context.query}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nPrevious used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}\nJudge feedback: ${context.judge.details}`
           : `User query: ${context.query}`;
+
+      latestQualifiedSourcesFromTool = [];
+
       const output = await researcherAgent.generate({
-        prompt: prompt,
+        prompt,
       });
+
       context.researchEvidence = output.output.evidence;
+      context.usedSources = dedupeQualifiedSources(
+        latestQualifiedSourcesFromTool,
+      );
+      latestQualifiedSourcesFromTool = [];
 
-      context.usedSources = output.toolResults.flatMap((toolResult) => {
-        try {
-          return z
-            .object({ sources: z.array(sourceQualifiedResult) })
-            .parse(toolResult.output).sources;
-        } catch {
-          return [];
-        }
-      });
-
-      if (context.usedSources.length === 0) {
-        console.log(output);
-
+      if (
+        context.usedSources.length === 0 &&
+        context.researchEvidence.length > 0
+      ) {
         throw new Error(
           "No sources were qualified in the research stage, but evidence was returned. This should not happen.",
         );
@@ -244,7 +302,8 @@ async function runAgentForStage(
           );
           return context;
         }
-        context.currentStage = "init"; // because it will switch to research stage immediately after this
+
+        context.currentStage = "init";
         context.judgeFeedbackAttempts += 1;
         console.log(
           "Judge feedback indicates revision needed. Restarting research stage.",
@@ -284,11 +343,11 @@ export async function research(query: string) {
 
   while (context.currentStage !== "done") {
     if (stepCount > MAX_STEP_COUNT) {
-      return;
+      return context;
     }
+
     context = await runAgentForStage(context);
     context.currentStage = getNextStage(context.currentStage);
-
     stepCount++;
   }
 
