@@ -12,7 +12,7 @@ export const webSearchTool = tool({
   outputSchema: z.array(
     z.object({
       title: z.string().describe("The title of the search result"),
-      url: z.url().describe("The URL of the search result"),
+      url: z.string().describe("The URL of the search result"),
       body: z
         .string()
         .describe("A preview of the content of the search result"),
@@ -20,6 +20,7 @@ export const webSearchTool = tool({
   ),
   execute: async ({ query }) => {
     const results = await searchText(query);
+    console.log(`Web search results for query "${query}":`, results);
 
     return results.map((result) => ({
       title: result.title,
@@ -33,7 +34,7 @@ export const webPageParseTool = tool({
   description:
     "Given a URL, fetch the page and extract data in various formats. Useful for getting detailed information from a source.",
   inputSchema: z.object({
-    url: z.string().url().describe("The URL of the page to parse"),
+    url: z.string().describe("The URL of the page to parse"),
     formats: z
       .array(z.enum(["html", "json"]))
       .describe("The output formats to extract from the page"),
@@ -48,6 +49,7 @@ export const webPageParseTool = tool({
       formats,
     });
 
+    console.log(`Web page parse results for URL "${url}":`, result);
     return result;
   },
 });

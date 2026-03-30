@@ -20,7 +20,9 @@ const sourceFinderAgent = new ToolLoopAgent({
   instructions:
     "You are finding sources for the query. If you receive corrections, you should adjust the query accordingly for the next search step. If you receive previous sources, you should avoid returning those sources in the next search results. You should use the web search tool to find sources.",
   output: Output.object({
-    schema: z.array(sourceEngineResult),
+    schema: z.object({
+      sources: z.array(sourceEngineResult),
+    }),
   }),
   tools: {
     webSearch: webSearchTool,
@@ -46,15 +48,17 @@ const sourceFinderTool = tool({
         "Any corrections or adjustments to the query based on previous search results",
       ),
     previousSources: z
-      .array(z.url())
+      .array(z.string())
       .optional()
       .describe(
         "Input the URLs of sources found in previous steps to avoid duplicates",
       ),
   }),
-  outputSchema: z
-    .array(sourceEngineResult)
-    .describe("A list of sources relevant to the query"),
+  outputSchema: z.object({
+    sources: z
+      .array(sourceEngineResult)
+      .describe("A list of sources relevant to the query"),
+  }),
   execute: async ({ query, corrections, previousSources }) => {
     let adjustedQuery = query;
     if (corrections) {
@@ -66,6 +70,8 @@ const sourceFinderTool = tool({
         ", ",
       )}`;
     }
+
+    console.log("Source Finder Agent - Adjusted Query:", adjustedQuery);
 
     const output = await sourceFinderAgent.generate({
       prompt: adjustedQuery,
@@ -88,7 +94,9 @@ const sourceQualifierAgent = new ToolLoopAgent({
     getSourcesTool: sourceFinderTool,
   },
   output: Output.object({
-    schema: z.array(sourceQualifiedResult),
+    schema: z.object({
+      output: z.array(sourceQualifiedResult),
+    }),
   }),
   stopWhen: stepCountIs(10),
   instructions:
@@ -98,11 +106,17 @@ const sourceQualifierAgent = new ToolLoopAgent({
 const sourceQualifierTool = tool({
   description:
     "Use this tool to get verified sources for a query. This tool will invoke a subagent that specializes in qualifying sources. You will get a list of verified authoritative sources in response.",
-  inputSchema: z.string().describe("The query to find and verify sources for"),
-  outputSchema: z
-    .array(sourceQualifiedResult)
-    .describe("A list of verified authoritative sources relevant to the query"),
-  execute: async (query) => {
+  inputSchema: z.object({
+    query: z.string().describe("The query to find and verify sources for"),
+  }),
+  outputSchema: z.object({
+    output: z
+      .array(sourceQualifiedResult)
+      .describe(
+        "A list of verified authoritative sources relevant to the query",
+      ),
+  }),
+  execute: async ({ query }) => {
     const output = await sourceQualifierAgent.generate({
       prompt: `Query: ${query}`,
     });
@@ -116,14 +130,16 @@ const researcherAgent = new ToolLoopAgent({
     console.log(`Agent researcherAgent step ${stepNumber}:`, usage.totalTokens);
   },
   output: Output.object({
-    schema: z.array(researchEvidence),
+    schema: z.object({
+      evidence: z.array(researchEvidence),
+    }),
   }),
   tools: {
     getSourcesTool: sourceQualifierTool,
   },
   stopWhen: stepCountIs(10),
   instructions:
-    "You receive a user query and your goal is to request sources for this query and then answer the question of the user or verify the user's claim based on verified sources you can get via tools.",
+    "You receive a user query and your goal is to request sources for this query and then answer the question of the user or verify the user's claim based on verified sources you can get via tools. You can also optionally receive a feedback from the judge agent to adjust your research.",
 });
 
 const judgeAgent = new ToolLoopAgent({
@@ -132,7 +148,7 @@ const judgeAgent = new ToolLoopAgent({
     console.log(`Agent judgeAgent step ${stepNumber}:`, usage.totalTokens);
   },
   instructions:
-    "You receive the user query, the research evidence and the sources. You need to judge whether the sources are relevant and authoritative for the query and whether the research evidence is relevant and sufficient to answer the query.",
+    "You receive the user query, the research evidence and the sources. You need to judge whether the sources are relevant and authoritative for the query and whether the research evidence is relevant and sufficient to answer the query. You must always return both fields. Set details to null when conclusion is relevant",
   output: Output.object({
     schema: judgeVerificationResult,
   }),
@@ -148,14 +164,6 @@ const summarizerAgent = new ToolLoopAgent({
     "You receive the research results and the user query. You need to summarize the evidence to answer the user query.",
   stopWhen: stepCountIs(10),
 });
-
-// const agentNameMap = {
-//   "source-finder": sourceFinderAgent,
-//   "source-qualifier": sourceQualifierAgent,
-//   researcher: researcherAgent,
-//   judge: judgeAgent,
-//   summarizer: summarizerAgent,
-// } satisfies Record<runnableStage, Agent<never, any, any>>;
 
 function getNextStage(currentStage: stage): stage {
   switch (currentStage) {
@@ -181,13 +189,24 @@ async function runAgentForStage(
 
   switch (context.currentStage) {
     case "research": {
+      const prompt =
+        context.judgeFeedbackAttempts > 0 &&
+        context.judge.conclusion === "needs_revision"
+          ? `User query: ${context.query}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nJudge feedback: ${context.judge.details}`
+          : `User query: ${context.query}`;
       const output = await researcherAgent.generate({
-        prompt: `User query: ${context.query}`,
+        prompt: prompt,
       });
-      context.researchEvidence = output.output;
+      context.researchEvidence = output.output.evidence;
       context.usedSources = output.toolResults.flatMap((toolResult) =>
         z.array(sourceQualifiedResult).parse(toolResult.output),
       );
+
+      if (context.judge.conclusion === "needs_revision") {
+        context.judge = { conclusion: "needs_revision", details: "" };
+      }
+
+      console.log("Research agent output:", context.researchEvidence);
       return context;
     }
     case "evaluation": {
@@ -198,15 +217,28 @@ async function runAgentForStage(
       });
 
       context.judge = output.output;
-      if (output.output.conclusion === "needs_revision") {
+
+      console.log("Judge agent output:", context.judge);
+      if (
+        output.output.conclusion === "needs_revision" &&
+        !context.judge.details
+      ) {
         if (context.judgeFeedbackAttempts >= MAX_JUDGE_FEEDBACK_ATTEMPTS) {
           context.currentStage = "done";
+          console.log(
+            "Maximum judge feedback attempts reached. Ending workflow.",
+          );
           return context;
         }
         context.currentStage = "init"; // because it will switch to research stage immediately after this
+        context.judgeFeedbackAttempts += 1;
+        console.log(
+          "Judge feedback indicates revision needed. Restarting research stage.",
+        );
         return context;
       }
 
+      console.log("Evaluation complete. Moving to summarization stage.");
       return context;
     }
     case "summarization": {
@@ -216,14 +248,14 @@ async function runAgentForStage(
         )}\nUsed sources: ${JSON.stringify(context.usedSources)}`,
       });
       context.summary = output.output;
+      console.log("Summarizer agent output:", context.summary);
+
       return context;
     }
-    default:
-      return null as any;
   }
 }
 
-async function research(query: string) {
+export async function research(query: string) {
   let context: WorkflowContext = {
     query,
     currentStage: "init",
@@ -240,8 +272,11 @@ async function research(query: string) {
     if (stepCount > MAX_STEP_COUNT) {
       return;
     }
-    context.currentStage = getNextStage(context.currentStage);
     context = await runAgentForStage(context);
+    context.currentStage = getNextStage(context.currentStage);
+
     stepCount++;
   }
+
+  return context;
 }
