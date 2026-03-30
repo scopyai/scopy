@@ -14,6 +14,7 @@ export const sourceEngineResult = z.object({
   title: z.string(),
   description: z.string(),
 });
+export type sourceEngineResultType = z.infer<typeof sourceEngineResult>;
 
 export const sourceQualifiedResult = sourceEngineResult.extend({
   body: z.string(),
@@ -54,6 +55,7 @@ export type WorkflowContext = {
 
   currentStage: stage;
 
+  fetchedSources: sourceEngineResultType[];
   usedSources: sourceQualifiedType[];
   researchEvidence: researchEvidenceType[];
   judge: judgeVerificationResultType;
