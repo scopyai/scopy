@@ -9,6 +9,14 @@ import {
 } from "./types";
 import { webPageParseTool, webSearchTool } from "./tools";
 import { z } from "zod";
+import {
+  judgeAgentPrompt,
+  researchAgentPrompt,
+  sourceFinderPrompt,
+  sourceFinderToolDescription,
+  sourceQualifierPrompt,
+  sourceQualifierToolDescription,
+} from "./prompts";
 
 // TODO: edit prompts
 
@@ -17,8 +25,7 @@ const MAX_JUDGE_FEEDBACK_ATTEMPTS = 3;
 
 const sourceFinderAgent = new ToolLoopAgent({
   model: openai("gpt-5.4"),
-  instructions:
-    "You are finding sources for the query. If you receive corrections, you should adjust the query accordingly for the next search step. If you receive previous sources, you should avoid returning those sources in the next search results. You should use the web search tool to find sources.",
+  instructions: sourceFinderPrompt,
   output: Output.object({
     schema: z.object({
       sources: z.array(sourceEngineResult),
@@ -37,8 +44,7 @@ const sourceFinderAgent = new ToolLoopAgent({
 });
 
 const sourceFinderTool = tool({
-  description:
-    "Use this tool to find sources for a query. This tool will invoke a subagent that specializes in finding sources. You will get a list of filtered relevant sources from a search engine in response.",
+  description: sourceFinderToolDescription,
   inputSchema: z.object({
     query: z.string().describe("The query to find sources for"),
     corrections: z
@@ -95,22 +101,20 @@ const sourceQualifierAgent = new ToolLoopAgent({
   },
   output: Output.object({
     schema: z.object({
-      output: z.array(sourceQualifiedResult),
+      sources: z.array(sourceQualifiedResult),
     }),
   }),
   stopWhen: stepCountIs(10),
-  instructions:
-    "You receive a search query. You need to fetch the information and verify the validity and authoritativeness of the sources and return a list of qualified sources. You should use the web scraping tool to check the sources data if needed.",
+  instructions: sourceQualifierPrompt,
 });
 
 const sourceQualifierTool = tool({
-  description:
-    "Use this tool to get verified sources for a query. This tool will invoke a subagent that specializes in qualifying sources. You will get a list of verified authoritative sources in response.",
+  description: sourceQualifierToolDescription,
   inputSchema: z.object({
     query: z.string().describe("The query to find and verify sources for"),
   }),
   outputSchema: z.object({
-    output: z
+    sources: z
       .array(sourceQualifiedResult)
       .describe(
         "A list of verified authoritative sources relevant to the query",
@@ -138,8 +142,7 @@ const researcherAgent = new ToolLoopAgent({
     getSourcesTool: sourceQualifierTool,
   },
   stopWhen: stepCountIs(10),
-  instructions:
-    "You receive a user query and your goal is to request sources for this query and then answer the question of the user or verify the user's claim based on verified sources you can get via tools. You can also optionally receive a feedback from the judge agent to adjust your research.",
+  instructions: researchAgentPrompt,
 });
 
 const judgeAgent = new ToolLoopAgent({
@@ -147,8 +150,7 @@ const judgeAgent = new ToolLoopAgent({
   onStepFinish: async ({ stepNumber, usage }) => {
     console.log(`Agent judgeAgent step ${stepNumber}:`, usage.totalTokens);
   },
-  instructions:
-    "You receive the user query, the research evidence and the sources. You need to judge whether the sources are relevant and authoritative for the query and whether the research evidence is relevant and sufficient to answer the query. You must always return both fields. Set details to null when conclusion is relevant",
+  instructions: judgeAgentPrompt,
   output: Output.object({
     schema: judgeVerificationResult,
   }),
@@ -198,12 +200,27 @@ async function runAgentForStage(
         prompt: prompt,
       });
       context.researchEvidence = output.output.evidence;
-      context.usedSources = output.toolResults.flatMap((toolResult) =>
-        z.array(sourceQualifiedResult).parse(toolResult.output),
-      );
+
+      context.usedSources = output.toolResults.flatMap((toolResult) => {
+        try {
+          return z
+            .object({ sources: z.array(sourceQualifiedResult) })
+            .parse(toolResult.output).sources;
+        } catch {
+          return [];
+        }
+      });
+
+      if (context.usedSources.length === 0) {
+        console.log(output);
+
+        throw new Error(
+          "No sources were qualified in the research stage, but evidence was returned. This should not happen.",
+        );
+      }
 
       if (context.judge.conclusion === "needs_revision") {
-        context.judge = { conclusion: "needs_revision", details: "" };
+        context.judge = { conclusion: "needs_revision", details: null };
       }
 
       console.log("Research agent output:", context.researchEvidence);
@@ -219,10 +236,7 @@ async function runAgentForStage(
       context.judge = output.output;
 
       console.log("Judge agent output:", context.judge);
-      if (
-        output.output.conclusion === "needs_revision" &&
-        !context.judge.details
-      ) {
+      if (output.output.conclusion === "needs_revision") {
         if (context.judgeFeedbackAttempts >= MAX_JUDGE_FEEDBACK_ATTEMPTS) {
           context.currentStage = "done";
           console.log(
@@ -261,7 +275,7 @@ export async function research(query: string) {
     currentStage: "init",
     usedSources: [],
     researchEvidence: [],
-    judge: { conclusion: "needs_revision", details: "" },
+    judge: { conclusion: "needs_revision", details: null },
     summary: "",
     judgeFeedbackAttempts: 0,
   };
