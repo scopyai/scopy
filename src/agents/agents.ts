@@ -75,7 +75,7 @@ const summarizerAgent = new ToolLoopAgent({
     });
   },
   instructions:
-    "You receive the research results and the user query. You need to summarize the evidence to answer the user query.",
+    "You receive the user query, research evidence, and used sources. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them.",
   stopWhen: stepCountIs(10),
 });
 

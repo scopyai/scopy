@@ -7,7 +7,7 @@ import { WorkflowContext } from "./types";
 export function createRunTools(context: WorkflowContext) {
   const webSearchTool = tool({
     description:
-      "Search the web for information. Useful for gathering raw information. Returns a set of results, each with a title, url and body preview text.",
+      "Discovery step for finding candidate URLs. Use this first to search the web and collect possible sources. The results only contain shallow search-engine snippets and are not verified page contents. Do not treat the snippet text as evidence. If a result looks promising or might be kept as a source, call parsePageTool on that URL to inspect the actual page before using it.",
     inputSchema: z.object({
       query: z.string().describe("The search query"),
     }),
@@ -51,28 +51,30 @@ export function createRunTools(context: WorkflowContext) {
 
   const webPageParseTool = tool({
     description:
-      "Given a URL, fetch the page and extract compact structured content. Use markdown for readable page text; metadata is returned from the scrape response.",
+      'Verification and extraction step for a specific URL. Use this after webSearch to open a candidate page, read the actual page content, and verify that it is authoritative and relevant. This tool returns the page markdown and metadata from the live page, which you should use for evidence and source qualification. If you plan to keep, quote, or rely on a URL, you must call this tool first. This tool is not for discovery; it is for inspecting a URL you already found.',
     inputSchema: z.object({
       url: z.string().describe("The URL of the page to parse"),
-      formats: z
-        .array(z.literal("markdown"))
-        .describe("The output formats to extract from the page"),
     }),
     outputSchema: z.object({
       markdown: z.string().nullable(),
       metadata: z.record(z.string(), z.unknown()),
     }),
-    execute: async ({ url, formats }) => {
+    execute: async ({ url }) => {
       const existingSource = context.usedSources.find(
         (source) => source.url === url,
       );
 
       if (existingSource && existingSource.body) {
-        return existingSource;
+        return {
+          markdown: existingSource.body || null,
+          metadata: Object.fromEntries(
+            existingSource.metadata.map(({ key, value }) => [key, value]),
+          ),
+        };
       }
 
       const result = await firecrawlClient.scrape(url, {
-        formats,
+        formats: ["markdown"],
       });
 
       console.log(`Web page parse results for URL "${url}":`, result);
