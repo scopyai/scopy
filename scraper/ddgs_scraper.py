@@ -17,6 +17,8 @@ from loguru import logger
 
 DEFAULT_ADDR = "127.0.0.1:8080"
 HEARTBEAT_SECONDS = 5
+AUTO_TEXT_BACKENDS = "google,duckduckgo,yandex"
+GLOBAL_FALLBACK_REGION = "wt-wt"
 app = FastAPI()
 heartbeat_task: asyncio.Task[None] | None = None
 
@@ -70,8 +72,30 @@ def positive_int(value: Any, fallback: int) -> int:
 def normalize_backend(value: Any) -> str:
     backend = str(value or "").strip().lower()
     if not backend or backend == "auto":
-        return "google"
+        return AUTO_TEXT_BACKENDS
     return backend
+
+
+def execute_text_search(
+    client: DDGS,
+    *,
+    query: str,
+    region: str,
+    safesearch: str,
+    timelimit: str,
+    max_results: int,
+    page: int,
+    backend: str,
+) -> list[dict[str, Any]]:
+    return client.text(
+        query,
+        region=region,
+        safesearch=safesearch,
+        timelimit=timelimit or None,
+        max_results=max_results,
+        page=page,
+        backend=backend,
+    )
 
 
 def search_text(req: SearchRequest) -> list[dict[str, Any]]:
@@ -79,21 +103,61 @@ def search_text(req: SearchRequest) -> list[dict[str, Any]]:
     if req.proxy_url:
         client_kwargs["proxy"] = req.proxy_url
 
+    client = DDGS(**client_kwargs)
+
     try:
-        results = DDGS(**client_kwargs).text(
-            req.query,
+        results = execute_text_search(
+            client,
+            query=req.query,
             region=req.region,
             safesearch=req.safesearch,
-            timelimit=req.timelimit or None,
+            timelimit=req.timelimit,
             max_results=req.max_results,
             page=req.page,
             backend=req.backend,
         )
     except DDGSException as exc:
         if str(exc).strip() == "No results found.":
-            logger.warning("search no_results query={!r} backend={}", req.query, req.backend)
-            return []
-        raise
+            if req.region != GLOBAL_FALLBACK_REGION:
+                logger.info(
+                    "search retrying with global region query={!r} backend={} from_region={} to_region={}",
+                    req.query,
+                    req.backend,
+                    req.region,
+                    GLOBAL_FALLBACK_REGION,
+                )
+                try:
+                    results = execute_text_search(
+                        client,
+                        query=req.query,
+                        region=GLOBAL_FALLBACK_REGION,
+                        safesearch=req.safesearch,
+                        timelimit=req.timelimit,
+                        max_results=req.max_results,
+                        page=req.page,
+                        backend=req.backend,
+                    )
+                except DDGSException as retry_exc:
+                    if str(retry_exc).strip() == "No results found.":
+                        logger.warning(
+                            "search no_results query={!r} backend={} regions={},{}",
+                            req.query,
+                            req.backend,
+                            req.region,
+                            GLOBAL_FALLBACK_REGION,
+                        )
+                        return []
+                    raise
+            else:
+                logger.warning(
+                    "search no_results query={!r} backend={} region={}",
+                    req.query,
+                    req.backend,
+                    req.region,
+                )
+                return []
+        else:
+            raise
 
     output: list[dict[str, Any]] = []
     for item in results or []:
