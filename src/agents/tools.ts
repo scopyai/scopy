@@ -2,7 +2,12 @@ import { tool } from "ai";
 import { z } from "zod";
 import { searchText } from "./search-engine";
 import { firecrawlClient } from "../firecrawl";
-import { WorkflowContext } from "./types";
+import {
+  enrichedResearchEvidence,
+  researchEvidence,
+  WorkflowContext,
+} from "./types";
+import { enrichResearchEvidence } from "./evidence";
 
 export function createRunTools(context: WorkflowContext) {
   const webSearchTool = tool({
@@ -137,8 +142,33 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
+  const verifyEvidenceTool = tool({
+    description:
+      "Check whether one or more evidence quotes actually exist in the already parsed cached source pages. Use this after drafting evidence and before returning it. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed before finalizing the answer.",
+    inputSchema: z.object({
+      evidence: z
+        .array(researchEvidence)
+        .describe(
+          "Evidence items to verify against cached parsed source pages by source URL.",
+        ),
+    }),
+    outputSchema: z.object({
+      evidence: z.array(enrichedResearchEvidence),
+    }),
+    execute: async ({ evidence }) => {
+      const verifiedEvidence = enrichResearchEvidence(evidence, context.usedSources);
+
+      console.log("verifyEvidenceTool results:", verifiedEvidence);
+
+      return {
+        evidence: verifiedEvidence,
+      };
+    },
+  });
+
   return {
     webSearchTool,
     webPageParseTool,
+    verifyEvidenceTool,
   };
 }

@@ -31,10 +31,33 @@ export const sourceQualifiedResult = sourceEngineResult.extend({
 export type sourceQualifiedType = z.infer<typeof sourceQualifiedResult>;
 
 export const researchEvidence = z.object({
-  sourceUrl: z.string(),
-  evidenceQuote: z.string(),
+  sourceUrl: z
+    .string()
+    .describe("The URL of the source from which this evidence is extracted."),
+  evidenceQuote: z
+    .string()
+    .describe(
+      "An exact quote from the source that supports, contradicts, or qualifies the answer to the query.",
+    ),
+  locatingPhrase: z
+    .string()
+    .describe(
+      "A short exact phrase copied from the same source near the evidence quote to help locate it in the source content.",
+    ),
 });
 export type researchEvidenceType = z.infer<typeof researchEvidence>;
+
+export const evidenceMatchType = z.enum(["exact", "normalized", "not_found"]);
+export type evidenceMatchTypeType = z.infer<typeof evidenceMatchType>;
+
+export const enrichedResearchEvidence = researchEvidence.extend({
+  sourceFound: z.boolean(),
+  quoteFound: z.boolean(),
+  quoteMatchType: evidenceMatchType,
+});
+export type enrichedResearchEvidenceType = z.infer<
+  typeof enrichedResearchEvidence
+>;
 
 export const judgeVerificationResult = z.object({
   conclusion: z.enum(["relevant", "needs_revision"]),
@@ -58,6 +81,7 @@ export type WorkflowContext = {
   fetchedSources: sourceEngineResultType[];
   usedSources: sourceQualifiedType[];
   researchEvidence: researchEvidenceType[];
+  verifiedResearchEvidence: enrichedResearchEvidenceType[];
   judge: judgeVerificationResultType;
   summary: string;
 

@@ -16,6 +16,7 @@ import {
 } from "./prompts";
 import { wrapLanguageModel } from "ai";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
+import { enrichResearchEvidence } from "./evidence";
 
 const selectedModel = wrapLanguageModel({
   model: openai("gpt-5.4"),
@@ -101,12 +102,14 @@ export async function research(query: string) {
     fetchedSources: [],
     usedSources: [],
     researchEvidence: [],
+    verifiedResearchEvidence: [],
     judge: { conclusion: "needs_revision", details: null },
     summary: "",
     judgeFeedbackAttempts: 0,
   };
 
-  const { webSearchTool, webPageParseTool } = createRunTools(context);
+  const { webSearchTool, webPageParseTool, verifyEvidenceTool } =
+    createRunTools(context);
 
   const sourceAgent = new ToolLoopAgent({
     model: selectedModel,
@@ -207,6 +210,7 @@ export async function research(query: string) {
     }),
     tools: {
       getSourcesTool: sourceTool,
+      verifyEvidenceTool,
     },
     stopWhen: stepCountIs(10),
     instructions: researchAgentPrompt,
@@ -230,6 +234,7 @@ export async function research(query: string) {
         });
 
         context.researchEvidence = output.output.evidence;
+        context.verifiedResearchEvidence = [];
 
         if (
           context.usedSources.length === 0 &&
@@ -248,9 +253,19 @@ export async function research(query: string) {
         return;
       }
       case "evaluation": {
+        context.verifiedResearchEvidence = enrichResearchEvidence(
+          context.researchEvidence,
+          context.usedSources,
+        );
+
+        console.log(
+          "Verified research evidence:",
+          context.verifiedResearchEvidence,
+        );
+
         const output = await judgeAgent.generate({
           prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
-            context.researchEvidence,
+            context.verifiedResearchEvidence,
           )}\nUsed sources: ${JSON.stringify(context.usedSources)}`,
         });
 
@@ -280,7 +295,7 @@ export async function research(query: string) {
       case "summarization": {
         const output = await summarizerAgent.generate({
           prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
-            context.researchEvidence,
+            context.verifiedResearchEvidence,
           )}\nUsed sources: ${JSON.stringify(context.usedSources)}`,
         });
         context.summary = output.output;
