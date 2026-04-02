@@ -9,6 +9,39 @@ import {
 } from "./types";
 import { enrichResearchEvidence } from "./evidence";
 
+const matchesSchema = z.array(
+  z.object({
+    sourceUrl: z.string(),
+    sourceTitle: z.string(),
+    matchedText: z.string(),
+    extract: z.string(),
+    extractStart: z.number().int(),
+    extractEnd: z.number().int(),
+    matchStart: z.number().int(),
+    matchEnd: z.number().int(),
+  }),
+);
+
+type matchesType = z.infer<typeof matchesSchema>;
+
+function buildExtract(
+  body: string,
+  matchStart: number,
+  matchEnd: number,
+  contextChars: number,
+) {
+  const extractStart = Math.max(0, matchStart - contextChars);
+  const extractEnd = Math.min(body.length, matchEnd + contextChars);
+  const prefix = extractStart > 0 ? "..." : "";
+  const suffix = extractEnd < body.length ? "..." : "";
+
+  return {
+    extract: `${prefix}${body.slice(extractStart, extractEnd)}${suffix}`,
+    extractStart,
+    extractEnd,
+  };
+}
+
 export function createRunTools(context: WorkflowContext) {
   const webSearchTool = tool({
     description:
@@ -56,7 +89,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const webPageParseTool = tool({
     description:
-      'Verification and extraction step for a specific URL. Use this after webSearch to open a candidate page, read the actual page content, and verify that it is authoritative and relevant. This tool returns the page markdown and metadata from the live page, which you should use for evidence and source qualification. If you plan to keep, quote, or rely on a URL, you must call this tool first. This tool is not for discovery; it is for inspecting a URL you already found.',
+      "Verification and extraction step for a specific URL. Use this after webSearch to open a candidate page, read the actual page content, and verify that it is authoritative and relevant. This tool returns the page markdown and metadata from the live page, which you should use for evidence and source qualification. If you plan to keep, quote, or rely on a URL, you must call this tool first. This tool is not for discovery; it is for inspecting a URL you already found.",
     inputSchema: z.object({
       url: z.string().describe("The URL of the page to parse"),
     }),
@@ -156,7 +189,10 @@ export function createRunTools(context: WorkflowContext) {
       evidence: z.array(enrichedResearchEvidence),
     }),
     execute: async ({ evidence }) => {
-      const verifiedEvidence = enrichResearchEvidence(evidence, context.usedSources);
+      const verifiedEvidence = enrichResearchEvidence(
+        evidence,
+        context.usedSources,
+      );
 
       console.log("verifyEvidenceTool results:", verifiedEvidence);
 
@@ -166,9 +202,101 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
+  const searchUsedSourcesTool = tool({
+    description:
+      "Search across the full text of already parsed cached source pages in usedSources. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts so you can extract grounded quotes from existing sources.",
+    inputSchema: z.object({
+      query: z
+        .string()
+        .min(1)
+        .describe("Literal text to search for in cached source bodies."),
+      contextOutChars: z
+        .number()
+        .int()
+        .min(0)
+        .max(4000)
+        .optional()
+        .describe(
+          "Number of characters of surrounding context to include on both sides of each match. Defaults to 200.",
+        ),
+      maxMatches: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe(
+          "Maximum number of matches to return across all cached sources. Defaults to 8.",
+        ),
+    }),
+    outputSchema: z.object({
+      matches: matchesSchema.describe(
+        "List of matches with surrounding context extracts from cached source bodies.",
+      ),
+    }),
+    execute: async ({ query, contextOutChars, maxMatches }) => {
+      const outChars = contextOutChars ?? 200;
+      const maxReturnedMatches = maxMatches ?? 8;
+      const matches: matchesType = [];
+
+      for (const source of context.usedSources) {
+        if (!source.body) {
+          continue;
+        }
+
+        const body = source.body.toLowerCase();
+        let searchFrom = 0;
+
+        while (matches.length < maxReturnedMatches) {
+          const matchStart = body.indexOf(query.toLowerCase(), searchFrom);
+
+          if (matchStart < 0) {
+            console.log(
+              `No more matches in source URL "${source.url}". Total matches so far: ${matches.length}`,
+            );
+            break;
+          }
+
+          const matchEnd = matchStart + query.length;
+          const extractData = buildExtract(
+            source.body,
+            matchStart,
+            matchEnd,
+            outChars,
+          );
+
+          matches.push({
+            sourceUrl: source.url,
+            sourceTitle: source.title,
+            matchedText: source.body.slice(matchStart, matchEnd),
+            extract: extractData.extract,
+            extractStart: extractData.extractStart,
+            extractEnd: extractData.extractEnd,
+            matchStart,
+            matchEnd,
+          });
+
+          searchFrom = matchStart + Math.max(query.length, 1);
+        }
+
+        if (matches.length >= maxReturnedMatches) {
+          break;
+        }
+      }
+
+      console.log("searchUsedSourcesTool results:", {
+        query,
+        matches,
+      });
+
+      return { matches };
+    },
+  });
+
   return {
     webSearchTool,
     webPageParseTool,
     verifyEvidenceTool,
+    searchUsedSourcesTool,
   };
 }

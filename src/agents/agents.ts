@@ -108,8 +108,12 @@ export async function research(query: string) {
     judgeFeedbackAttempts: 0,
   };
 
-  const { webSearchTool, webPageParseTool, verifyEvidenceTool } =
-    createRunTools(context);
+  const {
+    webSearchTool,
+    webPageParseTool,
+    verifyEvidenceTool,
+    searchUsedSourcesTool,
+  } = createRunTools(context);
 
   const sourceAgent = new ToolLoopAgent({
     model: selectedModel,
@@ -211,6 +215,7 @@ export async function research(query: string) {
     tools: {
       getSourcesTool: sourceTool,
       verifyEvidenceTool,
+      searchUsedSourcesTool,
     },
     stopWhen: stepCountIs(10),
     instructions: researchAgentPrompt,
@@ -226,8 +231,8 @@ export async function research(query: string) {
         const prompt =
           context.judgeFeedbackAttempts > 0 &&
           context.judge.conclusion === "needs_revision"
-            ? `User query: ${context.query}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nPrevious used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}\nJudge feedback: ${context.judge.details}`
-            : `User query: ${context.query}`;
+            ? `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nPrevious used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}\nJudge feedback: ${context.judge.details}`
+            : `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nCached used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}`;
 
         const output = await researcherAgent.generate({
           prompt,
