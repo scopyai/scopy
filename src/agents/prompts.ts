@@ -40,6 +40,11 @@ WORKFLOW:
 10. Before returning your final evidence, you MUST call verifyEvidenceTool on the evidence you plan to return.
 11. If verifyEvidenceTool shows quoteFound: false for any item, do not return that item unchanged. Correct it, replace it, or remove it, then verify again.
 
+USING searchCachedSourcesTool:
+- Use short anchor phrases that are likely to appear verbatim in the source, not long paraphrased sentences you invented.
+- Treat the tool as a way to find a nearby real excerpt, then copy the exact quote from that excerpt.
+- Do not get stuck brute-forcing many search variants for the same fact. After a small number of failed searches, either call getSourcesTool for new sources or drop that evidence item.
+
 IF YOU RECEIVE JUDGE FEEDBACK:
 - First search the cached parsed sources for the missing facts before requesting more sources.
 - If cached sources still do not cover the missing facts, pass the judge's concerns as the "corrections" field when calling getSourcesTool.

@@ -73,9 +73,6 @@ function buildNormalizedText(raw: string): string {
 
 function findTextMatch(raw: string, query: string): TextMatch {
   if (!raw.trim() || !query.trim()) {
-    console.log(
-      `Empty or whitespace-only string. Raw: "${raw}", Query: "${query}"`,
-    );
     return {
       found: false,
       matchType: "not_found",
@@ -84,9 +81,6 @@ function findTextMatch(raw: string, query: string): TextMatch {
 
   const exactStart = raw.indexOf(query);
   if (exactStart >= 0) {
-    console.log(
-      `Exact match found. Query: "${query}", Raw: "${raw}", Start Index: ${exactStart}`,
-    );
     return {
       found: true,
       matchType: "exact",
@@ -105,9 +99,6 @@ function findTextMatch(raw: string, query: string): TextMatch {
 
   const normalizedStart = normalizedSource.indexOf(normalizedQuery);
   if (normalizedStart < 0) {
-    console.log(
-      `Quote not found in source. Query: "${query}", Normalized Query: "${normalizedQuery}"`,
-    );
     return {
       found: false,
       matchType: "not_found",
@@ -132,7 +123,6 @@ export function enrichResearchEvidence(
     const source = sourceByUrl.get(item.sourceUrl);
 
     if (!source) {
-      console.log(`Source not found for evidence: ${item.sourceUrl}`);
       return {
         ...item,
         sourceFound: false,

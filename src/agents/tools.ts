@@ -77,7 +77,10 @@ export function createRunTools(context: WorkflowContext) {
         });
       }
 
-      console.log(`Web search results for query "${query}":`, results);
+      console.log(`Web search results for query "${query}":`, {
+        count: results.length,
+        urls: results.map((result) => result.href),
+      });
 
       return results.map((result) => ({
         title: result.title,
@@ -115,7 +118,14 @@ export function createRunTools(context: WorkflowContext) {
         formats: ["markdown"],
       });
 
-      console.log(`Web page parse results for URL "${url}":`, result);
+      console.log(`Web page parse results for URL "${url}":`, {
+        hasMarkdown:
+          typeof result.markdown === "string" && result.markdown.length > 0,
+        metadataKeys:
+          result.metadata && typeof result.metadata === "object"
+            ? Object.keys(result.metadata)
+            : [],
+      });
 
       const res = {
         markdown:
@@ -194,7 +204,11 @@ export function createRunTools(context: WorkflowContext) {
         context.usedSources,
       );
 
-      console.log("verifyEvidenceTool results:", verifiedEvidence);
+      console.log("verifyEvidenceTool results:", {
+        count: verifiedEvidence.length,
+        verifiedCount: verifiedEvidence.filter((item) => item.quoteFound).length,
+        missingCount: verifiedEvidence.filter((item) => !item.quoteFound).length,
+      });
 
       return {
         evidence: verifiedEvidence,
@@ -202,7 +216,7 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
-  const searchUsedSourcesTool = tool({
+  const searchCachedSourcesTool = tool({
     description:
       "Search across the full text of already parsed cached source pages in usedSources. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts so you can extract grounded quotes from existing sources.",
     inputSchema: z.object({
@@ -251,9 +265,6 @@ export function createRunTools(context: WorkflowContext) {
           const matchStart = body.indexOf(query.toLowerCase(), searchFrom);
 
           if (matchStart < 0) {
-            console.log(
-              `No more matches in source URL "${source.url}". Total matches so far: ${matches.length}`,
-            );
             break;
           }
 
@@ -284,9 +295,10 @@ export function createRunTools(context: WorkflowContext) {
         }
       }
 
-      console.log("searchUsedSourcesTool results:", {
+      console.log("searchCachedSourcesTool results:", {
         query,
-        matches,
+        matchesCount: matches.length,
+        sourceUrls: [...new Set(matches.map((match) => match.sourceUrl))],
       });
 
       return { matches };
@@ -297,6 +309,6 @@ export function createRunTools(context: WorkflowContext) {
     webSearchTool,
     webPageParseTool,
     verifyEvidenceTool,
-    searchUsedSourcesTool,
+    searchCachedSourcesTool,
   };
 }

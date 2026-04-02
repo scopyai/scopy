@@ -24,8 +24,19 @@ const selectedModel = wrapLanguageModel({
 });
 
 const MAX_STEP_COUNT = 10;
-const MAX_JUDGE_FEEDBACK_ATTEMPTS = 3;
+const MAX_JUDGE_FEEDBACK_ATTEMPTS = 2;
 const MAX_SOURCE_AGENT_STEPS = 8;
+
+function compactSources(context: WorkflowContext) {
+  return context.usedSources.map((source) => ({
+    url: source.url,
+    title: source.title,
+    description: source.description,
+    authors: source.authors,
+    publishedDate: source.publishedDate,
+    sourceName: source.sourceName,
+  }));
+}
 
 function logAgentStep(
   agentName: string,
@@ -76,7 +87,7 @@ const summarizerAgent = new ToolLoopAgent({
     });
   },
   instructions:
-    "You receive the user query, research evidence, and used sources. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them.",
+    "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
   stopWhen: stepCountIs(10),
 });
 
@@ -112,7 +123,7 @@ export async function research(query: string) {
     webSearchTool,
     webPageParseTool,
     verifyEvidenceTool,
-    searchUsedSourcesTool,
+    searchCachedSourcesTool,
   } = createRunTools(context);
 
   const sourceAgent = new ToolLoopAgent({
@@ -215,7 +226,7 @@ export async function research(query: string) {
     tools: {
       getSourcesTool: sourceTool,
       verifyEvidenceTool,
-      searchUsedSourcesTool,
+      searchCachedSourcesTool,
     },
     stopWhen: stepCountIs(10),
     instructions: researchAgentPrompt,
@@ -254,7 +265,12 @@ export async function research(query: string) {
           context.judge = { conclusion: "needs_revision", details: null };
         }
 
-        console.log("Research agent output:", context.researchEvidence);
+        console.log("Research agent output:", {
+          evidenceCount: context.researchEvidence.length,
+          sourceUrls: [
+            ...new Set(context.researchEvidence.map((item) => item.sourceUrl)),
+          ],
+        });
         return;
       }
       case "evaluation": {
@@ -263,15 +279,22 @@ export async function research(query: string) {
           context.usedSources,
         );
 
-        console.log(
-          "Verified research evidence:",
-          context.verifiedResearchEvidence,
-        );
+        console.log("Verified research evidence:", {
+          count: context.verifiedResearchEvidence.length,
+          verifiedCount: context.verifiedResearchEvidence.filter(
+            (item) => item.quoteFound,
+          ).length,
+          sourceUrls: [
+            ...new Set(
+              context.verifiedResearchEvidence.map((item) => item.sourceUrl),
+            ),
+          ],
+        });
 
         const output = await judgeAgent.generate({
           prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
             context.verifiedResearchEvidence,
-          )}\nUsed sources: ${JSON.stringify(context.usedSources)}`,
+          )}\nUsed sources: ${JSON.stringify(compactSources(context))}`,
         });
 
         context.judge = output.output;
@@ -279,9 +302,23 @@ export async function research(query: string) {
         console.log("Judge agent output:", context.judge);
         if (output.output.conclusion === "needs_revision") {
           if (context.judgeFeedbackAttempts >= MAX_JUDGE_FEEDBACK_ATTEMPTS) {
+            const summaryOutput = await summarizerAgent.generate({
+              prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
+                context.verifiedResearchEvidence,
+              )}\nUsed sources: ${JSON.stringify(
+                compactSources(context),
+              )}\nJudge conclusion: ${context.judge.conclusion}\nJudge feedback: ${
+                context.judge.details ?? "none"
+              }`,
+            });
+            context.summary = summaryOutput.output;
+            console.log(
+              "Maximum judge feedback attempts reached. Summarizer fallback output:",
+              context.summary,
+            );
             context.currentStage = "done";
             console.log(
-              "Maximum judge feedback attempts reached. Ending workflow.",
+              "Maximum judge feedback attempts reached. Ending workflow with best-effort summary.",
             );
             return;
           }
@@ -301,7 +338,11 @@ export async function research(query: string) {
         const output = await summarizerAgent.generate({
           prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
             context.verifiedResearchEvidence,
-          )}\nUsed sources: ${JSON.stringify(context.usedSources)}`,
+          )}\nUsed sources: ${JSON.stringify(
+            compactSources(context),
+          )}\nJudge conclusion: ${context.judge.conclusion}\nJudge feedback: ${
+            context.judge.details ?? "none"
+          }`,
         });
         context.summary = output.output;
         console.log("Summarizer agent output:", context.summary);
