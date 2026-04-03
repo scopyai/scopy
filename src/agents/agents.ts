@@ -1,7 +1,10 @@
 import { Output, stepCountIs, tool, ToolLoopAgent } from "ai";
-import { openai } from "@ai-sdk/openai";
+import {
+  openai,
+  type OpenAILanguageModelResponsesOptions,
+} from "@ai-sdk/openai";
 import { z } from "zod";
-import type { sourceQualifiedType, stage, WorkflowContext } from "./types";
+import type { stage, WorkflowContext } from "./types";
 import {
   judgeVerificationResult,
   researchEvidence,
@@ -25,7 +28,7 @@ const selectedModel = wrapLanguageModel({
 
 const MAX_STEP_COUNT = 10;
 const MAX_JUDGE_FEEDBACK_ATTEMPTS = 2;
-const MAX_SOURCE_AGENT_STEPS = 8;
+const MAX_SOURCE_AGENT_STEPS = 5;
 
 function compactSources(context: WorkflowContext) {
   return context.usedSources.map((source) => ({
@@ -69,6 +72,11 @@ const judgeAgent = new ToolLoopAgent({
       toolResults,
     });
   },
+  providerOptions: {
+    openai: {
+      serviceTier: "flex",
+    } satisfies OpenAILanguageModelResponsesOptions,
+  },
   instructions: judgeAgentPrompt,
   output: Output.object({
     schema: judgeVerificationResult,
@@ -85,6 +93,11 @@ const summarizerAgent = new ToolLoopAgent({
       toolCalls,
       toolResults,
     });
+  },
+  providerOptions: {
+    openai: {
+      serviceTier: "flex",
+    } satisfies OpenAILanguageModelResponsesOptions,
   },
   instructions:
     "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
@@ -134,6 +147,11 @@ export async function research(query: string) {
         sources: z.array(sourceQualifiedResult),
       }),
     }),
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      } satisfies OpenAILanguageModelResponsesOptions,
+    },
     tools: {
       webSearch: webSearchTool,
       parsePageTool: webPageParseTool,
@@ -217,6 +235,11 @@ export async function research(query: string) {
         toolCalls,
         toolResults,
       });
+    },
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      } satisfies OpenAILanguageModelResponsesOptions,
     },
     output: Output.object({
       schema: z.object({
