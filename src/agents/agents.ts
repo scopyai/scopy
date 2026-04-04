@@ -29,7 +29,7 @@ const selectedModel = wrapLanguageModel({
 const MAX_STEP_COUNT = 10;
 const MAX_JUDGE_FEEDBACK_ATTEMPTS = 2;
 const MAX_SOURCE_AGENT_STEPS = 5;
-const MAX_RESEARCH_AGENT_STEPS = 14;
+const MAX_RESEARCH_AGENT_STEPS = 18;
 
 function compactSources(context: WorkflowContext) {
   return context.usedSources.map((source) => ({

@@ -69,12 +69,18 @@ export const researchAgentPrompt = `You are a research agent. Your goal is to an
 - At the start of each research attempt, call getResearchPlanTool.
 - If the persistent plan is empty, create a short plan with saveResearchPlanTool before doing substantive retrieval. Use 3-6 checklist items.
 - Keep the plan persistent across retries. Update statuses as work progresses instead of inventing a new plan every time.
+- Do not rewrite the entire plan repeatedly unless statuses have meaningfully changed.
+- Prefer at most 3 saveResearchPlanTool calls in a research attempt:
+  - once to create the initial plan if needed,
+  - optionally once to reopen or update major items after judge feedback,
+  - once near the end to mark final statuses.
 - Use statuses exactly as intended:
   - pending: not started
   - in_progress: actively being worked
   - completed: covered with grounded evidence
   - blocked: still missing after reasonable retrieval attempts
 - Before finalizing, update the plan so the main items are completed or blocked.
+- If the judge says only one part of the question is still weak, reopen only the relevant checklist item instead of resetting already completed items.
 </planning_contract>
 
 <citation_rules>
@@ -162,9 +168,9 @@ You receive: a user query, research evidence (quotes + source URLs + quote-verif
 
 <grounding_rules>
 - Evaluate whether the sources are authoritative and directly relevant to the query.
-- Evaluate whether the evidence is sufficient to answer the query completely, not partially.
-- If sources conflict, require the final answer to acknowledge that conflict.
-- If the evidence only supports an inference, ensure the quoted inputs actually justify that inference.
+- Evaluate whether the evidence set is sufficient and complete enough for a downstream summarizer to answer the query.
+- If sources conflict, ensure the evidence set contains enough support for the summarizer to acknowledge that conflict.
+- Do not require the research evidence itself to already contain every reasonable conclusion, comparison sentence, calculation, or synthesized wording that the summarizer can derive directly from grounded evidence.
 </grounding_rules>
 
 <completeness_contract>
@@ -174,7 +180,7 @@ You receive: a user query, research evidence (quotes + source URLs + quote-verif
   - coverage for the secondary distinctions the user asked for,
   - important caveats or ambiguity controls.
 - Mark needs_revision when one side of the comparison relies on indirect or incidental evidence while the other side is directly grounded.
-- Mark needs_revision when the answer would materially overclaim beyond the provided evidence.
+- Mark needs_revision when the evidence set is missing a material facet the summarizer would need in order to answer safely.
 </completeness_contract>
 
 <empty_result_recovery>
@@ -183,9 +189,9 @@ You receive: a user query, research evidence (quotes + source URLs + quote-verif
 </empty_result_recovery>
 
 SYNTHESIS RULES:
-- You may treat simple arithmetic or normalization from grounded evidence as valid support. Examples: unit conversion, comparing counts reported in different weight units, computing a rate from quoted numerator and denominator, or ordering values by magnitude.
-- Do not require an extra source or an exact quote of the computed result when the necessary numeric inputs are already present in authoritative quoted evidence.
-- Ask for revision only when the required synthesis would be materially ambiguous, under-specified, or dependent on unstated assumptions.
+- The summarizer may perform simple arithmetic, normalization, ordering by magnitude, and direct inference from grounded evidence.
+- Do not require the researcher to retrieve an extra source or exact quote for a result that the summarizer can compute or infer directly from the quoted inputs.
+- Ask for revision only when the required synthesis would be materially ambiguous, under-specified, or dependent on unstated assumptions, or when the evidence set lacks a material facet needed for the final answer.
 
 Return:
 - conclusion: "relevant" if the evidence sufficiently answers the query, "needs_revision" if not
