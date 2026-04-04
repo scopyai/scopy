@@ -43,6 +43,14 @@ function buildExtract(
   };
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
 export function createRunTools(context: WorkflowContext) {
   const getResearchPlanTool = tool({
     description:
@@ -71,7 +79,14 @@ export function createRunTools(context: WorkflowContext) {
       plan: z.array(researchPlanItem),
     }),
     execute: async ({ plan }) => {
-      context.researchPlan = plan;
+      const hasGroundedProgress =
+        context.usedSources.length > 0 || context.researchEvidence.length > 0;
+
+      context.researchPlan = hasGroundedProgress
+        ? plan
+        : plan.map((item) =>
+            item.status === "completed" ? { ...item, status: "pending" } : item,
+          );
 
       console.log("saveResearchPlanTool results:", {
         count: context.researchPlan.length,
@@ -79,6 +94,9 @@ export function createRunTools(context: WorkflowContext) {
           step: item.step,
           status: item.status,
         })),
+        downgradedCompletedWithoutEvidence:
+          !hasGroundedProgress &&
+          plan.some((item) => item.status === "completed"),
       });
 
       return { plan: context.researchPlan };
@@ -156,9 +174,28 @@ export function createRunTools(context: WorkflowContext) {
         };
       }
 
-      const result = await firecrawlClient.scrape(url, {
-        formats: ["markdown"],
-      });
+      let result;
+
+      try {
+        result = await firecrawlClient.scrape(url, {
+          formats: ["markdown"],
+        });
+      } catch (error) {
+        const message = getErrorMessage(error);
+
+        console.log(`Web page parse failed for URL "${url}":`, {
+          error: message,
+        });
+
+        return {
+          markdown: null,
+          metadata: {
+            parseFailed: "true",
+            parseError: message,
+            sourceURL: url,
+          },
+        };
+      }
 
       console.log(`Web page parse results for URL "${url}":`, {
         hasMarkdown:
@@ -169,16 +206,20 @@ export function createRunTools(context: WorkflowContext) {
             : [],
       });
 
+      const hasMarkdown =
+        typeof result.markdown === "string" && result.markdown.length > 0;
+
       const res = {
-        markdown:
-          typeof result.markdown === "string" && result.markdown.length > 0
-            ? result.markdown
-            : null,
+        markdown: hasMarkdown ? result.markdown : null,
         metadata:
           result.metadata && typeof result.metadata === "object"
             ? result.metadata
             : {},
       };
+
+      if (!hasMarkdown) {
+        return res;
+      }
 
       const fetchedSource = context.fetchedSources.find(
         (source) => source.url === url,

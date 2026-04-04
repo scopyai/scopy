@@ -17,6 +17,9 @@ importers:
       '@mendable/firecrawl-js':
         specifier: ^4.18.0
         version: 4.18.0
+      '@openrouter/ai-sdk-provider':
+        specifier: ^2.3.3
+        version: 2.3.3(ai@6.0.141(zod@4.3.6))(zod@4.3.6)
       ai:
         specifier: ^6.0.141
         version: 6.0.141(zod@4.3.6)
@@ -230,6 +233,13 @@ packages:
   '@mendable/firecrawl-js@4.18.0':
     resolution: {integrity: sha512-kNe5MzKelqRDyzsJtYXqTxmdg0MAdscPvoD0c3TiYlC/sObLNq9SLtQZKy/XiQv41IaqxK18ibw7hQ+g2udzHw==}
     engines: {node: '>=22.0.0'}
+
+  '@openrouter/ai-sdk-provider@2.3.3':
+    resolution: {integrity: sha512-4fVteGkVedc7fGoA9+qJs4tpYwALezMq14m2Sjub3KmyRlksCbK+WJf67NPdGem8+NZrV2tAN42A1NU3+SiV3w==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      ai: ^6.0.0
+      zod: ^3.25.0 || ^4.0.0
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -530,6 +540,11 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - debug
+
+  '@openrouter/ai-sdk-provider@2.3.3(ai@6.0.141(zod@4.3.6))(zod@4.3.6)':
+    dependencies:
+      ai: 6.0.141(zod@4.3.6)
+      zod: 4.3.6
 
   '@opentelemetry/api@1.9.0': {}
 

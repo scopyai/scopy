@@ -21,9 +21,14 @@ import { wrapLanguageModel } from "ai";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
 import { enrichResearchEvidence } from "./evidence";
 import { createAgentStepLogger, createWorkflowRunStats } from "./stats";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY as string,
+});
 
 const selectedModel = wrapLanguageModel({
-  model: openai("gpt-5.4"),
+  model: openrouter.chat("openai/gpt-oss-120b"),
   middleware: devToolsMiddleware(),
 });
 
@@ -188,9 +193,18 @@ export async function research(query: string) {
       });
 
       const previousUrlSet = new Set(previousSources ?? []);
+      const groundedUrlSet = new Set(context.usedSources.map((source) => source.url));
       const sources = output.output.sources.filter(
-        (source) => !previousUrlSet.has(source.url),
+        (source) =>
+          !previousUrlSet.has(source.url) && groundedUrlSet.has(source.url),
       );
+
+      if (sources.length !== output.output.sources.length) {
+        console.log("sourceTool dropped ungrounded sources:", {
+          returned: output.output.sources.map((source) => source.url),
+          kept: sources.map((source) => source.url),
+        });
+      }
 
       console.log(
         "sourceTool returned sources:",
@@ -246,6 +260,20 @@ export async function research(query: string) {
         context.verifiedResearchEvidence = [];
 
         if (
+          context.researchEvidence.length === 0 &&
+          context.usedSources.length === 0 &&
+          context.researchPlan.some((item) => item.status === "completed")
+        ) {
+          context.researchPlan = context.researchPlan.map((item) =>
+            item.status === "completed" ? { ...item, status: "pending" } : item,
+          );
+
+          console.log(
+            "Research stage produced no evidence and no sources. Resetting completed plan items to pending.",
+          );
+        }
+
+        if (
           context.usedSources.length === 0 &&
           context.researchEvidence.length > 0
         ) {
@@ -260,6 +288,7 @@ export async function research(query: string) {
 
         console.log("Research agent output:", {
           evidenceCount: context.researchEvidence.length,
+          usedSourcesCount: context.usedSources.length,
           sourceUrls: [
             ...new Set(context.researchEvidence.map((item) => item.sourceUrl)),
           ],
