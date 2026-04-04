@@ -29,6 +29,7 @@ const selectedModel = wrapLanguageModel({
 const MAX_STEP_COUNT = 10;
 const MAX_JUDGE_FEEDBACK_ATTEMPTS = 2;
 const MAX_SOURCE_AGENT_STEPS = 5;
+const MAX_RESEARCH_AGENT_STEPS = 14;
 
 function compactSources(context: WorkflowContext) {
   return context.usedSources.map((source) => ({
@@ -100,7 +101,7 @@ const summarizerAgent = new ToolLoopAgent({
     } satisfies OpenAILanguageModelResponsesOptions,
   },
   instructions:
-    "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
+    "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. You may perform simple calculations, unit conversions, ordering by magnitude, and direct inferences when the quoted evidence contains the needed inputs. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
   stopWhen: stepCountIs(10),
 });
 
@@ -129,10 +130,13 @@ export async function research(query: string) {
     verifiedResearchEvidence: [],
     judge: { conclusion: "needs_revision", details: null },
     summary: "",
+    researchPlan: [],
     judgeFeedbackAttempts: 0,
   };
 
   const {
+    getResearchPlanTool,
+    saveResearchPlanTool,
     webSearchTool,
     webPageParseTool,
     verifyEvidenceTool,
@@ -247,11 +251,13 @@ export async function research(query: string) {
       }),
     }),
     tools: {
+      getResearchPlanTool,
+      saveResearchPlanTool,
       getSourcesTool: sourceTool,
       verifyEvidenceTool,
       searchCachedSourcesTool,
     },
-    stopWhen: stepCountIs(10),
+    stopWhen: stepCountIs(MAX_RESEARCH_AGENT_STEPS),
     instructions: researchAgentPrompt,
   });
 
@@ -265,8 +271,8 @@ export async function research(query: string) {
         const prompt =
           context.judgeFeedbackAttempts > 0 &&
           context.judge.conclusion === "needs_revision"
-            ? `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nPrevious used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}\nJudge feedback: ${context.judge.details}`
-            : `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nCached used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}`;
+            ? `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nCurrent research plan: ${JSON.stringify(context.researchPlan)}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nPrevious used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}\nJudge feedback: ${context.judge.details}`
+            : `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nCurrent research plan: ${JSON.stringify(context.researchPlan)}\nCached used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}`;
 
         const output = await researcherAgent.generate({
           prompt,

@@ -73,6 +73,19 @@ export type judgeVerificationResultType = z.infer<
   typeof judgeVerificationResult
 >;
 
+export const researchPlanStatus = z.enum([
+  "pending",
+  "in_progress",
+  "completed",
+]);
+export type researchPlanStatusType = z.infer<typeof researchPlanStatus>;
+
+export const researchPlanItem = z.object({
+  step: z.string(),
+  status: researchPlanStatus,
+});
+export type researchPlanItemType = z.infer<typeof researchPlanItem>;
+
 export type WorkflowContext = {
   query: string;
 
@@ -84,6 +97,7 @@ export type WorkflowContext = {
   verifiedResearchEvidence: enrichedResearchEvidenceType[];
   judge: judgeVerificationResultType;
   summary: string;
+  researchPlan: researchPlanItemType[];
 
   judgeFeedbackAttempts: number;
 };

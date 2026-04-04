@@ -5,6 +5,7 @@ import { firecrawlClient } from "../firecrawl";
 import {
   enrichedResearchEvidence,
   researchEvidence,
+  researchPlanItem,
   WorkflowContext,
 } from "./types";
 import { enrichResearchEvidence } from "./evidence";
@@ -43,6 +44,47 @@ function buildExtract(
 }
 
 export function createRunTools(context: WorkflowContext) {
+  const getResearchPlanTool = tool({
+    description:
+      "Read the research plan. Use this at the start of a research attempt and after retries to see what is still pending.",
+    inputSchema: z.object({}),
+    outputSchema: z.object({
+      plan: z.array(researchPlanItem),
+    }),
+    execute: async () => {
+      console.log("getResearchPlanTool results:", {
+        count: context.researchPlan.length,
+        statuses: context.researchPlan.map((item) => item.status),
+      });
+
+      return { plan: context.researchPlan };
+    },
+  });
+
+  const saveResearchPlanTool = tool({
+    description:
+      "Replace the research plan for the current workflow. Use this to create the initial plan and to mark steps pending, in_progress or completed as work progresses.",
+    inputSchema: z.object({
+      plan: z.array(researchPlanItem).min(1).max(8),
+    }),
+    outputSchema: z.object({
+      plan: z.array(researchPlanItem),
+    }),
+    execute: async ({ plan }) => {
+      context.researchPlan = plan;
+
+      console.log("saveResearchPlanTool results:", {
+        count: context.researchPlan.length,
+        items: context.researchPlan.map((item) => ({
+          step: item.step,
+          status: item.status,
+        })),
+      });
+
+      return { plan: context.researchPlan };
+    },
+  });
+
   const webSearchTool = tool({
     description:
       "Discovery step for finding candidate URLs. Use this first to search the web and collect possible sources. The results only contain shallow search-engine snippets and are not verified page contents. Do not treat the snippet text as evidence. If a result looks promising or might be kept as a source, call parsePageTool on that URL to inspect the actual page before using it.",
@@ -206,8 +248,10 @@ export function createRunTools(context: WorkflowContext) {
 
       console.log("verifyEvidenceTool results:", {
         count: verifiedEvidence.length,
-        verifiedCount: verifiedEvidence.filter((item) => item.quoteFound).length,
-        missingCount: verifiedEvidence.filter((item) => !item.quoteFound).length,
+        verifiedCount: verifiedEvidence.filter((item) => item.quoteFound)
+          .length,
+        missingCount: verifiedEvidence.filter((item) => !item.quoteFound)
+          .length,
       });
 
       return {
@@ -306,6 +350,8 @@ export function createRunTools(context: WorkflowContext) {
   });
 
   return {
+    getResearchPlanTool,
+    saveResearchPlanTool,
     webSearchTool,
     webPageParseTool,
     verifyEvidenceTool,
