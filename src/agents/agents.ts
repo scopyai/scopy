@@ -20,6 +20,7 @@ import {
 import { wrapLanguageModel } from "ai";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
 import { enrichResearchEvidence } from "./evidence";
+import { createAgentStepLogger, createWorkflowRunStats } from "./stats";
 
 const selectedModel = wrapLanguageModel({
   model: openai("gpt-5.4"),
@@ -41,69 +42,6 @@ function compactSources(context: WorkflowContext) {
     sourceName: source.sourceName,
   }));
 }
-
-function logAgentStep(
-  agentName: string,
-  {
-    stepNumber,
-    usage,
-    toolCalls,
-    toolResults,
-  }: {
-    stepNumber: number;
-    usage: { totalTokens: number | undefined };
-    toolCalls: Array<{ toolName: string }>;
-    toolResults: Array<{ toolName: string }>;
-  },
-) {
-  console.log(`Agent ${agentName} step ${stepNumber}:`, {
-    totalTokens: usage.totalTokens ?? 0,
-    toolCalls: toolCalls.map((toolCall) => toolCall.toolName),
-    toolResults: toolResults.map((toolResult) => toolResult.toolName),
-  });
-}
-
-const judgeAgent = new ToolLoopAgent({
-  model: selectedModel,
-  onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
-    logAgentStep("judgeAgent", {
-      stepNumber,
-      usage,
-      toolCalls,
-      toolResults,
-    });
-  },
-  providerOptions: {
-    openai: {
-      serviceTier: "flex",
-    } satisfies OpenAILanguageModelResponsesOptions,
-  },
-  instructions: judgeAgentPrompt,
-  output: Output.object({
-    schema: judgeVerificationResult,
-  }),
-  stopWhen: stepCountIs(10),
-});
-
-const summarizerAgent = new ToolLoopAgent({
-  model: selectedModel,
-  onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
-    logAgentStep("summarizerAgent", {
-      stepNumber,
-      usage,
-      toolCalls,
-      toolResults,
-    });
-  },
-  providerOptions: {
-    openai: {
-      serviceTier: "flex",
-    } satisfies OpenAILanguageModelResponsesOptions,
-  },
-  instructions:
-    "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. You may perform simple calculations, unit conversions, ordering by magnitude, and direct inferences when the quoted evidence contains the needed inputs. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
-  stopWhen: stepCountIs(10),
-});
 
 function getNextStage(currentStage: stage): stage {
   switch (currentStage) {
@@ -131,6 +69,7 @@ export async function research(query: string) {
     judge: { conclusion: "needs_revision", details: null },
     summary: "",
     researchPlan: [],
+    stats: createWorkflowRunStats(),
     judgeFeedbackAttempts: 0,
   };
 
@@ -142,6 +81,17 @@ export async function research(query: string) {
     verifyEvidenceTool,
     searchCachedSourcesTool,
   } = createRunTools(context);
+
+  const logSourceStep = createAgentStepLogger(context.stats, "sourceAgent");
+  const logJudgeStep = createAgentStepLogger(context.stats, "judgeAgent");
+  const logSummarizerStep = createAgentStepLogger(
+    context.stats,
+    "summarizerAgent",
+  );
+  const logResearcherStep = createAgentStepLogger(
+    context.stats,
+    "researcherAgent",
+  );
 
   const sourceAgent = new ToolLoopAgent({
     model: selectedModel,
@@ -161,14 +111,35 @@ export async function research(query: string) {
       parsePageTool: webPageParseTool,
     },
     stopWhen: stepCountIs(MAX_SOURCE_AGENT_STEPS),
-    onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
-      logAgentStep("sourceAgent", {
-        stepNumber,
-        usage,
-        toolCalls,
-        toolResults,
-      });
+    onStepFinish: logSourceStep,
+  });
+
+  const judgeAgent = new ToolLoopAgent({
+    model: selectedModel,
+    onStepFinish: logJudgeStep,
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      } satisfies OpenAILanguageModelResponsesOptions,
     },
+    instructions: judgeAgentPrompt,
+    output: Output.object({
+      schema: judgeVerificationResult,
+    }),
+    stopWhen: stepCountIs(10),
+  });
+
+  const summarizerAgent = new ToolLoopAgent({
+    model: selectedModel,
+    onStepFinish: logSummarizerStep,
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      } satisfies OpenAILanguageModelResponsesOptions,
+    },
+    instructions:
+      "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. You may perform simple calculations, unit conversions, ordering by magnitude, and direct inferences when the quoted evidence contains the needed inputs. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
+    stopWhen: stepCountIs(10),
   });
 
   const sourceTool = tool({
@@ -232,14 +203,7 @@ export async function research(query: string) {
 
   const researcherAgent = new ToolLoopAgent({
     model: selectedModel,
-    onStepFinish: async ({ stepNumber, usage, toolCalls, toolResults }) => {
-      logAgentStep("researcherAgent", {
-        stepNumber,
-        usage,
-        toolCalls,
-        toolResults,
-      });
-    },
+    onStepFinish: logResearcherStep,
     providerOptions: {
       openai: {
         serviceTier: "flex",

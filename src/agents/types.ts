@@ -7,7 +7,41 @@ export type stage =
   | "summarization"
   | "done";
 
+export type agentName =
+  | "researcherAgent"
+  | "sourceAgent"
+  | "judgeAgent"
+  | "summarizerAgent";
+
 export type runnableStage = Exclude<stage, "init" | "done">;
+
+export type tokenUsageStats = {
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+};
+
+export type toolCallStats = {
+  requested: number;
+  completed: number;
+  requestedByName: Record<string, number>;
+  completedByName: Record<string, number>;
+};
+
+export type agentRunStats = {
+  stepCount: number;
+  tokenUsage: tokenUsageStats;
+  toolCalls: toolCallStats;
+};
+
+export type workflowRunStats = {
+  steps: number;
+  tokenUsage: tokenUsageStats;
+  toolCalls: toolCallStats;
+  byAgent: Record<agentName, agentRunStats>;
+};
 
 export const sourceEngineResult = z.object({
   url: z.string(),
@@ -98,6 +132,7 @@ export type WorkflowContext = {
   judge: judgeVerificationResultType;
   summary: string;
   researchPlan: researchPlanItemType[];
+  stats: workflowRunStats;
 
   judgeFeedbackAttempts: number;
 };
