@@ -6,6 +6,7 @@ type StepStatsInput = {
   usage: LanguageModelUsage;
   toolCalls: Array<{ toolName: string }>;
   toolResults: Array<{ toolName: string }>;
+  reasoningText?: string | undefined;
 };
 
 function createEmptyTokenUsage() {
@@ -73,7 +74,7 @@ export function createWorkflowRunStats(): workflowRunStats {
 export function recordAgentStep(
   stats: workflowRunStats,
   agentName: agentName,
-  { stepNumber, usage, toolCalls, toolResults }: StepStatsInput,
+  { stepNumber, usage, toolCalls, toolResults, reasoningText }: StepStatsInput,
 ) {
   const requestedToolNames = toolCalls.map((toolCall) => toolCall.toolName);
   const completedToolNames = toolResults.map((toolResult) => toolResult.toolName);
@@ -100,6 +101,11 @@ export function recordAgentStep(
     toolCalls: requestedToolNames,
     toolResults: completedToolNames,
   });
+
+  if (agentName === "researcherAgent" && reasoningText) {
+    console.log(`Agent ${agentName} step ${stepNumber} reasoning:`);
+    console.log(reasoningText);
+  }
 }
 
 export function createAgentStepLogger(

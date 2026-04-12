@@ -12,7 +12,11 @@ import {
   type researchEvidenceSchemaType,
 } from "./types";
 import { createRunTools } from "./tools";
-import { judgeAgentPrompt, researchAgentPrompt } from "./prompts";
+import {
+  judgeAgentPrompt,
+  researchAgentPrompt,
+  summarizerAgentPrompt,
+} from "./prompts";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
 import { enrichResearchEvidence } from "./evidence";
 import { createAgentStepLogger, createWorkflowRunStats } from "./stats";
@@ -22,8 +26,12 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY as string,
 });
 
-const researcherBaseModel = openrouter.chat("openai/gpt-5.4-mini");
-const lightweightBaseModel = openrouter.chat("openai/gpt-oss-120b:free");
+const RESEARCHER_MODEL_ID = "openai/gpt-5.4-mini";
+const LIGHTWEIGHT_MODEL_ID = "openai/gpt-oss-120b:free";
+const RESEARCHER_REASONING_EFFORT = "medium" as const;
+
+const researcherBaseModel = openrouter.chat(RESEARCHER_MODEL_ID);
+const lightweightBaseModel = openrouter.chat(LIGHTWEIGHT_MODEL_ID);
 
 const researcherModel =
   process.env.NODE_ENV === "production"
@@ -41,7 +49,7 @@ const lightweightModel =
         middleware: devToolsMiddleware(),
       });
 
-const MAX_RESEARCH_AGENT_STEPS = 45;
+const MAX_RESEARCH_AGENT_STEPS = 60;
 
 function buildJudgeSources(
   context: WorkflowContext,
@@ -76,17 +84,50 @@ function getApprovedEvidence(
 ): enrichedResearchEvidenceType[] {
   const approvedSourceUrlSet = new Set(context.approvedSourceUrls);
   return enrichResearchEvidence(
-    context.researchEvidence,
+    dedupeResearchEvidence(context.researchEvidence),
     context.usedSources,
   ).filter((item) => approvedSourceUrlSet.has(item.sourceUrl));
 }
 
-function getApprovedSources(context: WorkflowContext) {
-  const approvedSourceUrlSet = new Set(context.approvedSourceUrls);
-  return context.usedSources.filter((source) => approvedSourceUrlSet.has(source.url));
+function dedupeResearchEvidence(
+  evidence: researchEvidenceSchemaType[],
+): researchEvidenceSchemaType[] {
+  const seen = new Set<string>();
+  const deduped: researchEvidenceSchemaType[] = [];
+
+  for (const item of evidence) {
+    const key = [
+      item.sourceUrl.trim(),
+      item.evidenceQuote.trim(),
+      item.locatingPhrase.trim(),
+    ].join("\n");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  return deduped;
 }
 
 export async function research(query: string) {
+  console.log("Agent model setup:", {
+    provider: "openrouter",
+    researcherAgent: {
+      model: RESEARCHER_MODEL_ID,
+      reasoningEffort: RESEARCHER_REASONING_EFFORT,
+    },
+    judgeAgent: {
+      model: LIGHTWEIGHT_MODEL_ID,
+    },
+    summarizerAgent: {
+      model: LIGHTWEIGHT_MODEL_ID,
+    },
+  });
+
   const context: WorkflowContext = {
     query,
     usedSources: [],
@@ -124,6 +165,9 @@ export async function research(query: string) {
       openai: {
         serviceTier: "flex",
       } satisfies OpenAILanguageModelResponsesOptions,
+      openrouter: {
+        serviceTier: "flex"
+      }
     },
     instructions: judgeAgentPrompt,
     output: Output.object({
@@ -133,10 +177,11 @@ export async function research(query: string) {
   });
 
   let activeSubmissionToken: string | null = null;
+  let acceptedSubmissionToken: string | null = null;
 
   const submitEvidenceTool = tool({
     description:
-      "Submit your draft evidence for final verification and judge approval. This tool verifies the quotes against cached full text, asks the judge subagent for approval, and only returns a submissionToken when the evidence is accepted. You may only finish after this tool returns accepted=true with a submissionToken.",
+      "Submit the final version of your evidence set for judge approval. Use this only when you believe the query is fully answered and the evidence draft is already cleaned up and grounded. This tool asks the judge subagent for approval and only returns a submissionToken when the evidence is accepted. You may only finish after this tool returns accepted=true with a submissionToken.",
     inputSchema: z.object({
       evidence: z.array(researchEvidenceSchema).min(1),
     }),
@@ -146,7 +191,8 @@ export async function research(query: string) {
       submissionToken: z.string().nullable(),
     }),
     execute: async ({ evidence }) => {
-      const judgedSources = buildJudgeSources(context, evidence);
+      const dedupedEvidence = dedupeResearchEvidence(evidence);
+      const judgedSources = buildJudgeSources(context, dedupedEvidence);
       const result = await judgeAgent.generate({
         prompt: `User query: ${context.query}\nCandidate sources: ${JSON.stringify(
           judgedSources,
@@ -156,6 +202,7 @@ export async function research(query: string) {
       context.judge = result.output;
       if (result.output.conclusion !== "accepted") {
         context.approvedSourceUrls = [];
+        acceptedSubmissionToken = null;
         console.log("Submit evidence rejected:", context.judge);
         return {
           accepted: false,
@@ -167,13 +214,15 @@ export async function research(query: string) {
       context.approvedSourceUrls = judgedSources
         .filter((source) => source.quotes.some((quote) => quote.quoteFound))
         .map((source) => source.sourceUrl);
-      context.researchEvidence = evidence.filter((item) =>
+      context.researchEvidence = dedupedEvidence.filter((item) =>
         context.approvedSourceUrls.includes(item.sourceUrl),
       );
 
       console.log("Submit evidence accepted:", {
         approvedSourceUrls: context.approvedSourceUrls,
       });
+
+      acceptedSubmissionToken = activeSubmissionToken;
 
       return {
         accepted: true,
@@ -190,9 +239,12 @@ export async function research(query: string) {
       openai: {
         serviceTier: "flex",
       } satisfies OpenAILanguageModelResponsesOptions,
+      openrouter: {
+        serviceTier: "flex"
+      }
     },
     instructions:
-      "You receive the user query, research evidence, used sources, and optionally judge feedback. Write a direct answer grounded only in the supplied evidence. Answer the full question, not just one part. For comparison questions, state the basis of comparison, the result of the comparison, the main distinctions, and any important caveats or ambiguities if the evidence requires them. You may perform simple calculations, unit conversions, ordering by magnitude, and direct inferences when the quoted evidence contains the needed inputs. If the judge feedback says the evidence is incomplete, still provide the best-supported answer and explicitly state the limitation instead of refusing to answer.",
+      summarizerAgentPrompt,
     stopWhen: stepCountIs(10),
   });
 
@@ -202,12 +254,13 @@ export async function research(query: string) {
     providerOptions: {
       openrouter: {
         reasoning: {
-          effort: "medium",
+          effort: RESEARCHER_REASONING_EFFORT,
         },
-        openai: {
-          serviceTier: "flex",
-        } satisfies OpenAILanguageModelResponsesOptions,
+        serviceTier: "flex"
       },
+      openai: {
+        serviceTier: "flex",
+      } satisfies OpenAILanguageModelResponsesOptions,
     },
     output: Output.object({
       schema: z.object({
@@ -232,12 +285,26 @@ export async function research(query: string) {
     context.approvedSourceUrls = [];
     context.researchEvidence = [];
     activeSubmissionToken = randomUUID();
+    acceptedSubmissionToken = null;
 
     const output = await researcherAgent.generate({
       prompt: `User query: ${context.query}`,
     });
 
-    const returnedSubmissionToken = output.output.submissionToken;
+    let returnedSubmissionToken: string | null = null;
+    try {
+      returnedSubmissionToken = output.output.submissionToken;
+    } catch (error) {
+      if (
+        context.judge.conclusion === "accepted" &&
+        acceptedSubmissionToken !== null
+      ) {
+        returnedSubmissionToken = acceptedSubmissionToken;
+      } else {
+        throw error;
+      }
+    }
+
     if (
       !activeSubmissionToken ||
       returnedSubmissionToken !== activeSubmissionToken
@@ -269,11 +336,11 @@ export async function research(query: string) {
     });
 
     activeSubmissionToken = null;
+    acceptedSubmissionToken = null;
   }
 
   async function runSummarizationStage() {
     const approvedEvidence = getApprovedEvidence(context);
-    const approvedSources = getApprovedSources(context);
     const judgeFeedback =
       context.judge.conclusion === "needs_revision"
         ? `\nJudge feedback: ${context.judge.details}`
@@ -282,7 +349,7 @@ export async function research(query: string) {
     const summary = await summarizerAgent.generate({
       prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
         approvedEvidence,
-      )}\nUsed sources: ${JSON.stringify(approvedSources)}${judgeFeedback}`,
+      )}${judgeFeedback}`,
     });
 
     context.summary = summary.text;

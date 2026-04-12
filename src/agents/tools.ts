@@ -200,7 +200,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const verifyEvidenceTool = tool({
     description:
-      "Check whether one or more evidence quotes actually exist in the cached full-text sources. This is an optional debugging tool before submission. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed.",
+      "Check whether the quotes in your current evidence draft actually exist in the cached full-text sources. Use this on the draft you plan to submit before calling submitEvidenceTool. If quoteFound is false, that evidence item is not safely grounded and should be corrected, replaced, or removed before submission.",
     inputSchema: z.object({
       evidence: z
         .array(researchEvidenceSchema)
@@ -252,7 +252,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const searchCachedSourcesTool = tool({
     description:
-      "Search across the full text of sources already fetched in this run. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts.",
+      "Search across the full text of sources already fetched in this run. Treat this like ripgrep over cached page text, not like a semantic search engine. Use short literal anchors, exact phrases, names, numbers, headings, or focused regex patterns that are likely to appear verbatim in the text. Returns surrounding text extracts.",
     inputSchema: z.object({
       pattern: z
         .string()
