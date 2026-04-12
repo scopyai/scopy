@@ -50,6 +50,9 @@ export const sourceSchema = z.object({
 export const shortSourceSchema = sourceSchema.omit({ text: true });
 export type shortSourceSchemaType = z.infer<typeof shortSourceSchema>;
 
+export const superShortSourceSchema = sourceSchema.omit({ text: true, highlights: true });
+export type superShortSourceSchemaType = z.infer<typeof superShortSourceSchema>;
+
 export type sourceSchemaType = z.infer<typeof sourceSchema>;
 
 export const researchEvidenceSchema = z.object({

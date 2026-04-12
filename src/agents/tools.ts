@@ -6,7 +6,8 @@ import {
   WorkflowContext,
   researchEvidenceSchema,
   enrichedResearchEvidenceSchema,
-  shortSourceSchema
+  shortSourceSchema,
+  superShortSourceSchema
 } from "./types";
 import { enrichResearchEvidence } from "./evidence";
 
@@ -110,7 +111,7 @@ function buildSearchPattern(
 export function createRunTools(context: WorkflowContext) {
   const getResearchPlanTool = tool({
     description:
-      "Read the research plan. Use this at the start of a research attempt and after retries to see what is still pending.",
+      "Read the persistent research plan for this run. Use this at the start and whenever you need to check what is still pending.",
     inputSchema: z.object({}),
     outputSchema: z.object({
       plan: z.array(researchPlanItem),
@@ -127,7 +128,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const saveResearchPlanTool = tool({
     description:
-      "Replace the research plan for the current workflow. Use this to create the initial plan and to mark steps pending, in_progress or completed as work progresses.",
+      "Replace the persistent research plan for this run. Use this to create the initial plan and to mark steps pending, in_progress or completed as work progresses.",
     inputSchema: z.object({
       plan: z.array(researchPlanItem).min(1).max(8),
     }),
@@ -161,7 +162,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const webSearchTool = tool({
     description:
-      "Search the web. This returns result highlights for inspection and also caches the full text of each returned page locally so it can be searched later with searchCachedSourcesTool. Do not treat the returned highlights as final evidence without confirming the exact quote from cached full text.",
+      "Tool for searching the web. This returns source metadata plus highlight snippets for inspection, and it also caches each result's full text locally for later use with searchCachedSourcesTool. Do not treat returned highlights as final evidence without confirming the exact quote from cached full text.",
     inputSchema: z.object({
       query: z.string().describe("The search query"),
     }),
@@ -199,7 +200,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const verifyEvidenceTool = tool({
     description:
-      "Check whether one or more evidence quotes actually exist in the cached full-text source pages. Use this after drafting evidence and before returning it. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed before finalizing the answer.",
+      "Check whether one or more evidence quotes actually exist in the cached full-text sources. Use this after drafting evidence and before sending it to judgeEvidenceTool or finalizing. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed.",
     inputSchema: z.object({
       evidence: z
         .array(researchEvidenceSchema)
@@ -231,17 +232,17 @@ export function createRunTools(context: WorkflowContext) {
   });
 
   const listSourcesTool = tool({
-    description: "List the sources that have been collected so far in this run.",
+    description:
+      "List the sources collected so far in this run. Returns only metadata. You can use this to check what sources have been collected to decide whether to search the web again or use searchCachedSourcesTool to search already collected sources.",
     inputSchema: z.object({}),
     outputSchema: z.object({
-      sources: z.array(shortSourceSchema),
+      sources: z.array(superShortSourceSchema),
     }),
     execute: async () => {
       return {
         sources: context.usedSources.map((source) => ({
           url: source.url,
           title: source.title,
-          highlights: source.highlights,
           authors: source.authors,
           publishedDate: source.publishedDate,
         })),
@@ -251,7 +252,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const searchCachedSourcesTool = tool({
     description:
-      "Search across the cached full text of source pages already fetched in this run. Supports literal text search and regex search. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts so you can extract grounded quotes from existing sources.",
+      "Search across the full text of sources already fetched in this run. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts.",
     inputSchema: z.object({
       pattern: z
         .string()
