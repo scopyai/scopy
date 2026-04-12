@@ -11,6 +11,9 @@ import {
 } from "./types";
 import { enrichResearchEvidence } from "./evidence";
 
+const MAX_MATCHES = 10;
+const CONTEXT_OUT_CHARS = 200;
+
 const matchesSchema = z.array(
   z.object({
     sourceUrl: z.string(),
@@ -101,10 +104,10 @@ function addToSources(
 
 function buildSearchPattern(
   pattern: string,
-  options: { regex: boolean; caseSensitive: boolean },
+  options: { isRegex: boolean; isCaseSensitive: boolean },
 ) {
-  const sourcePattern = options.regex ? pattern : escapeRegExp(pattern);
-  const flags = `g${options.caseSensitive ? "" : "i"}`;
+  const sourcePattern = options.isRegex ? pattern : escapeRegExp(pattern);
+  const flags = `g${options.isCaseSensitive ? "" : "i"}`;
   return new RegExp(sourcePattern, flags);
 }
 
@@ -162,9 +165,13 @@ export function createRunTools(context: WorkflowContext) {
 
   const webSearchTool = tool({
     description:
-      "Tool for searching the web. This returns source metadata plus highlight snippets for inspection, and it also caches each result's full text locally for later use with searchCachedSourcesTool. Do not treat returned highlights as final evidence without confirming the exact quote from cached full text.",
+      "Search the web. Returns source metadata plus highlight snippets for triage, and caches each result's full text locally for later use with searchCachedSourcesTool. Highlights are not final evidence.",
     inputSchema: z.object({
-      query: z.string().describe("The search query"),
+      query: z
+        .string()
+        .describe(
+          "A focused web search query for one missing facet. Prefer short retrieval-style queries, not answer-shaped prompts.",
+        ),
     }),
     outputSchema: z.array(
       shortSourceSchema
@@ -200,7 +207,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const verifyEvidenceTool = tool({
     description:
-      "Check whether the quotes in your current evidence draft actually exist in the cached full-text sources. Use this on the draft you plan to submit before calling submitEvidenceTool. If quoteFound is false, that evidence item is not safely grounded and should be corrected, replaced, or removed before submission.",
+      "Verify that evidence quotes in your current draft exist in the cached full-text sources. Use this on the draft you intend to submit. Fix, replace, or remove any item where quoteFound is false before submission.",
     inputSchema: z.object({
       evidence: z
         .array(researchEvidenceSchema)
@@ -233,7 +240,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const listSourcesTool = tool({
     description:
-      "List the sources collected so far in this run. Returns only metadata. You can use this to check what sources have been collected to decide whether to search the web again or use searchCachedSourcesTool to search already collected sources.",
+      "List the sources already collected in this run. Returns only source metadata, not full text.",
     inputSchema: z.object({}),
     outputSchema: z.object({
       sources: z.array(superShortSourceSchema),
@@ -252,54 +259,38 @@ export function createRunTools(context: WorkflowContext) {
 
   const searchCachedSourcesTool = tool({
     description:
-      "Search across the full text of sources already fetched in this run. Treat this like ripgrep over cached page text, not like a semantic search engine. Use short literal anchors, exact phrases, names, numbers, headings, or focused regex patterns that are likely to appear verbatim in the text. Returns surrounding text extracts.",
+      "Search across the cached full text of sources already fetched in this run. Treat this like ripgrep over page text, not a semantic search engine. Returns literal matches plus surrounding text extracts. Can be used with regular expressions.",
     inputSchema: z.object({
       pattern: z
         .string()
         .min(1)
-        .describe("Literal text or regex pattern to search for in cached source bodies."),
-      regex: z
-        .boolean()
-        .default(true)
-        .describe("Set to true to treat pattern as a regular expression. Defaults to true."),
-      caseSensitive: z
+        .describe(
+          "Text to search for in cached source bodies. Prefer short literal queries that are likely to appear verbatim. Use regex only for focused wording variation.",
+        ),
+      isRegex: z
         .boolean()
         .default(false)
-        .describe("Set to true for case-sensitive search. Defaults to false."),
-      contextOutChars: z
-        .number()
-        .int()
-        .min(0)
-        .max(4000)
-        .default(200)
         .describe(
-          "Number of characters of surrounding context to include on both sides of each match. Defaults to 200.",
+          "Treat pattern as a regular expression. Keep this true only when you intentionally use regex syntax such as .*, |, groups, or character classes.",
         ),
-      maxMatches: z
-        .number()
-        .int()
-        .min(1)
-        .max(100)
-        .default(10)
-        .describe(
-          "Maximum number of matches to return across all cached sources. Defaults to 10.",
-        ),
+      isCaseSensitive: z
+        .boolean()
+        .default(false)
+        .describe("Make search case-sensitive. Use only when letter casing matters."),
     }),
     outputSchema: z.object({
       matches: matchesSchema.describe(
-        "List of matches with surrounding context extracts from cached source bodies.",
+        "List of matches with surrounding context extracts from cached source texts.",
       ),
     }),
     execute: async ({
       pattern,
-      regex,
-      caseSensitive,
-      contextOutChars,
-      maxMatches,
+      isRegex,
+      isCaseSensitive,
     }) => {
       const searchPattern = buildSearchPattern(pattern, {
-        regex,
-        caseSensitive,
+        isRegex,
+        isCaseSensitive,
       });
       const matches: matchesType = [];
 
@@ -311,7 +302,7 @@ export function createRunTools(context: WorkflowContext) {
         searchPattern.lastIndex = 0;
         let match = searchPattern.exec(source.text);
 
-        while (match && matches.length < maxMatches) {
+        while (match && matches.length < MAX_MATCHES) {
           if (match[0].length === 0) {
             searchPattern.lastIndex += 1;
             match = searchPattern.exec(source.text);
@@ -324,7 +315,7 @@ export function createRunTools(context: WorkflowContext) {
             source.text,
             matchStart,
             matchEnd,
-            contextOutChars,
+            CONTEXT_OUT_CHARS,
           );
 
           matches.push({
@@ -340,15 +331,15 @@ export function createRunTools(context: WorkflowContext) {
           match = searchPattern.exec(source.text);
         }
 
-        if (matches.length >= maxMatches) {
+        if (matches.length >= MAX_MATCHES) {
           break;
         }
       }
 
       console.log("searchCachedSourcesTool results:", {
         pattern,
-        regex: regex ?? false,
-        caseSensitive: caseSensitive ?? false,
+        isRegex: isRegex ?? false,
+        isCaseSensitive: isCaseSensitive ?? false,
         matchesCount: matches.length,
         sourceUrls: [...new Set(matches.map((match) => match.sourceUrl))],
       });

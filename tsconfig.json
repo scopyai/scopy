@@ -1,4 +1,5 @@
 {
+  "exclude": ["node_modules", "dist", "references"],
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",

@@ -181,7 +181,7 @@ export async function research(query: string) {
 
   const submitEvidenceTool = tool({
     description:
-      "Submit the final version of your evidence set for judge approval. Use this only when you believe the query is fully answered and the evidence draft is already cleaned up and grounded. This tool asks the judge subagent for approval and only returns a submissionToken when the evidence is accepted. You may only finish after this tool returns accepted=true with a submissionToken.",
+      "Submit your final candidate evidence set for judge approval. Use this only when you believe the query is sufficiently answered and the evidence has already been checked and cleaned up. Rejections mean revise and continue; acceptance returns the submissionToken required to finish.",
     inputSchema: z.object({
       evidence: z.array(researchEvidenceSchema).min(1),
     }),

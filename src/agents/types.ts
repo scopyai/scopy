@@ -58,16 +58,16 @@ export type sourceSchemaType = z.infer<typeof sourceSchema>;
 export const researchEvidenceSchema = z.object({
   sourceUrl: z
     .string()
-    .describe("The URL of the source from which this evidence is extracted."),
+    .describe("URL of the cached source that contains this evidence."),
   evidenceQuote: z
     .string()
     .describe(
-      "An exact quote from the source that supports, contradicts, or qualifies the answer to the query.",
+      "Exact quote from the source that supports, contradicts, or qualifies part of the answer.",
     ),
   locatingPhrase: z
     .string()
     .describe(
-      "A short exact phrase copied from the same source near the evidence quote to help locate it in the source content.",
+      "Short exact nearby phrase from the same source that helps locate the evidence quote in the cached source text.",
     ),
 });
 export type researchEvidenceSchemaType = z.infer<typeof researchEvidenceSchema>;
