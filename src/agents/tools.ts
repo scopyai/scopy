@@ -1,19 +1,18 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { searchText } from "./search-engine";
-import { firecrawlClient } from "../firecrawl";
 import {
-  enrichedResearchEvidence,
-  researchEvidence,
   researchPlanItem,
   WorkflowContext,
+  researchEvidenceSchema,
+  enrichedResearchEvidenceSchema,
+  shortSourceSchema
 } from "./types";
 import { enrichResearchEvidence } from "./evidence";
 
 const matchesSchema = z.array(
   z.object({
     sourceUrl: z.string(),
-    sourceTitle: z.string(),
     matchedText: z.string(),
     extract: z.string(),
     extractStart: z.number().int(),
@@ -43,12 +42,69 @@ function buildExtract(
   };
 }
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function addToSources(
+  context: WorkflowContext,
+  input: {
+    url: string;
+    title: string;
+    highlights: string[];
+    text: string;
+    author: string | null;
+    publishedDate: string | null;
+  },
+) {
+  const existingIndex = context.usedSources.findIndex(
+    (source) => source.url === input.url,
+  );
+
+  const nextSource = {
+    url: input.url,
+    title: input.title,
+    highlights: input.highlights,
+    text: input.text,
+    authors: input.author ? [input.author] : [],
+    publishedDate: input.publishedDate,
+  };
+
+  if (existingIndex < 0) {
+    context.usedSources.push(nextSource);
+    return;
   }
 
-  return String(error);
+  const existing = context.usedSources[existingIndex];
+  if (!existing) {
+    context.usedSources.push(nextSource);
+    return;
+  }
+
+  context.usedSources[existingIndex] = {
+    ...existing,
+    title: nextSource.title || existing.title,
+    highlights:
+      nextSource.highlights.length >= existing.highlights.length
+        ? nextSource.highlights
+        : existing.highlights,
+    text:
+      nextSource.text.length >= existing.text.length
+        ? nextSource.text
+        : existing.text,
+    authors:
+      nextSource.authors.length > 0 ? nextSource.authors : existing.authors,
+    publishedDate: nextSource.publishedDate ?? existing.publishedDate,
+  };
+}
+
+function buildSearchPattern(
+  pattern: string,
+  options: { regex: boolean; caseSensitive: boolean },
+) {
+  const sourcePattern = options.regex ? pattern : escapeRegExp(pattern);
+  const flags = `g${options.caseSensitive ? "" : "i"}`;
+  return new RegExp(sourcePattern, flags);
 }
 
 export function createRunTools(context: WorkflowContext) {
@@ -105,181 +161,54 @@ export function createRunTools(context: WorkflowContext) {
 
   const webSearchTool = tool({
     description:
-      "Discovery step for finding candidate URLs. Use this first to search the web and collect possible sources. The results only contain shallow search-engine snippets and are not verified page contents. Do not treat the snippet text as evidence. If a result looks promising or might be kept as a source, call parsePageTool on that URL to inspect the actual page before using it.",
+      "Search the web. This returns result highlights for inspection and also caches the full text of each returned page locally so it can be searched later with searchCachedSourcesTool. Do not treat the returned highlights as final evidence without confirming the exact quote from cached full text.",
     inputSchema: z.object({
       query: z.string().describe("The search query"),
     }),
     outputSchema: z.array(
-      z.object({
-        title: z.string().describe("The title of the search result"),
-        url: z.string().describe("The URL of the search result"),
-        body: z
-          .string()
-          .describe("A preview of the content of the search result"),
-      }),
+      shortSourceSchema
     ),
     execute: async ({ query }) => {
-      const existingUrls = context.fetchedSources.map((source) => source.url);
+      const results = await searchText(query);
 
-      const results = await searchText(query, {
-        backend: "auto",
-        maxResults: 8,
-      });
-
-      const filteredResults = results.filter(
-        (result) => !existingUrls.includes(result.href),
-      );
-      for (const result of filteredResults) {
-        context.fetchedSources.push({
-          url: result.href,
+      for (const result of results) {
+        addToSources(context, {
+          url: result.url,
           title: result.title,
-          description: result.body,
+          highlights: result.highlights,
+          text: result.text,
+          author: result.author,
+          publishedDate: result.publishedDate,
         });
       }
 
       console.log(`Web search results for query "${query}":`, {
         count: results.length,
-        urls: results.map((result) => result.href),
+        urls: results.map((result) => result.url),
       });
 
       return results.map((result) => ({
         title: result.title,
-        url: result.href,
-        body: result.body,
+        url: result.url,
+        publishedDate: result.publishedDate,
+        authors: result.author ? [result.author] : [],
+        highlights: result.highlights,
       }));
-    },
-  });
-
-  const webPageParseTool = tool({
-    description:
-      "Verification and extraction step for a specific URL. Use this after webSearch to open a candidate page, read the actual page content, and verify that it is authoritative and relevant. This tool returns the page markdown and metadata from the live page, which you should use for evidence and source qualification. If you plan to keep, quote, or rely on a URL, you must call this tool first. This tool is not for discovery; it is for inspecting a URL you already found.",
-    inputSchema: z.object({
-      url: z.string().describe("The URL of the page to parse"),
-    }),
-    outputSchema: z.object({
-      markdown: z.string().nullable(),
-      metadata: z.record(z.string(), z.unknown()),
-    }),
-    execute: async ({ url }) => {
-      const existingSource = context.usedSources.find(
-        (source) => source.url === url,
-      );
-
-      if (existingSource && existingSource.body) {
-        return {
-          markdown: existingSource.body || null,
-          metadata: Object.fromEntries(
-            existingSource.metadata.map(({ key, value }) => [key, value]),
-          ),
-        };
-      }
-
-      let result;
-
-      try {
-        result = await firecrawlClient.scrape(url, {
-          formats: ["markdown"],
-        });
-      } catch (error) {
-        const message = getErrorMessage(error);
-
-        console.log(`Web page parse failed for URL "${url}":`, {
-          error: message,
-        });
-
-        return {
-          markdown: null,
-          metadata: {
-            parseFailed: "true",
-            parseError: message,
-            sourceURL: url,
-          },
-        };
-      }
-
-      console.log(`Web page parse results for URL "${url}":`, {
-        hasMarkdown:
-          typeof result.markdown === "string" && result.markdown.length > 0,
-        metadataKeys:
-          result.metadata && typeof result.metadata === "object"
-            ? Object.keys(result.metadata)
-            : [],
-      });
-
-      const hasMarkdown =
-        typeof result.markdown === "string" && result.markdown.length > 0;
-
-      const res = {
-        markdown: hasMarkdown ? result.markdown : null,
-        metadata:
-          result.metadata && typeof result.metadata === "object"
-            ? result.metadata
-            : {},
-      };
-
-      if (!hasMarkdown) {
-        return res;
-      }
-
-      const fetchedSource = context.fetchedSources.find(
-        (source) => source.url === url,
-      );
-
-      const metadataTitle =
-        "og:title" in res.metadata &&
-        typeof res.metadata["og:title"] === "string"
-          ? res.metadata["og:title"]
-          : url;
-
-      const metadataDescription =
-        typeof result.metadata?.description === "string"
-          ? result.metadata.description
-          : "";
-
-      context.usedSources.push({
-        url,
-        title: fetchedSource ? fetchedSource.title : metadataTitle,
-        description: fetchedSource
-          ? fetchedSource.description
-          : metadataDescription,
-        body: res.markdown ?? "",
-        metadata: Object.entries(res.metadata).map(([key, value]) => ({
-          key,
-          value: typeof value === "string" ? value : JSON.stringify(value),
-        })),
-        authors: result.metadata?.authors
-          ? Array.isArray(result.metadata.authors)
-            ? result.metadata.authors.map((author) =>
-                typeof author === "string" ? author : JSON.stringify(author),
-              )
-            : [String(result.metadata.authors)]
-          : [],
-        publishedDate:
-          typeof result.metadata?.publishedDate === "string"
-            ? result.metadata.publishedDate
-            : null,
-        sourceName:
-          typeof result.metadata?.sourceName === "string"
-            ? result.metadata.sourceName
-            : null,
-      });
-
-      return res;
     },
   });
 
   const verifyEvidenceTool = tool({
     description:
-      "Check whether one or more evidence quotes actually exist in the already parsed cached source pages. Use this after drafting evidence and before returning it. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed before finalizing the answer.",
+      "Check whether one or more evidence quotes actually exist in the cached full-text source pages. Use this after drafting evidence and before returning it. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed before finalizing the answer.",
     inputSchema: z.object({
       evidence: z
-        .array(researchEvidence)
+        .array(researchEvidenceSchema)
         .describe(
-          "Evidence items to verify against cached parsed source pages by source URL.",
+          "Evidence items to verify against cached source pages by source URL.",
         ),
     }),
     outputSchema: z.object({
-      evidence: z.array(enrichedResearchEvidence),
+      evidence: z.array(enrichedResearchEvidenceSchema),
     }),
     execute: async ({ evidence }) => {
       const verifiedEvidence = enrichResearchEvidence(
@@ -301,20 +230,47 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
+  const listSourcesTool = tool({
+    description: "List the sources that have been collected so far in this run.",
+    inputSchema: z.object({}),
+    outputSchema: z.object({
+      sources: z.array(shortSourceSchema),
+    }),
+    execute: async () => {
+      return {
+        sources: context.usedSources.map((source) => ({
+          url: source.url,
+          title: source.title,
+          highlights: source.highlights,
+          authors: source.authors,
+          publishedDate: source.publishedDate,
+        })),
+      };
+    },
+  });
+
   const searchCachedSourcesTool = tool({
     description:
-      "Search across the full text of already parsed cached source pages in usedSources. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts so you can extract grounded quotes from existing sources.",
+      "Search across the cached full text of source pages already fetched in this run. Supports literal text search and regex search. Use this before searching the web again when you suspect the current run already has the needed quote, fact, or nearby wording. Returns surrounding text extracts so you can extract grounded quotes from existing sources.",
     inputSchema: z.object({
-      query: z
+      pattern: z
         .string()
         .min(1)
-        .describe("Literal text to search for in cached source bodies."),
+        .describe("Literal text or regex pattern to search for in cached source bodies."),
+      regex: z
+        .boolean()
+        .default(true)
+        .describe("Set to true to treat pattern as a regular expression. Defaults to true."),
+      caseSensitive: z
+        .boolean()
+        .default(false)
+        .describe("Set to true for case-sensitive search. Defaults to false."),
       contextOutChars: z
         .number()
         .int()
         .min(0)
         .max(4000)
-        .optional()
+        .default(200)
         .describe(
           "Number of characters of surrounding context to include on both sides of each match. Defaults to 200.",
         ),
@@ -323,9 +279,9 @@ export function createRunTools(context: WorkflowContext) {
         .int()
         .min(1)
         .max(100)
-        .optional()
+        .default(10)
         .describe(
-          "Maximum number of matches to return across all cached sources. Defaults to 8.",
+          "Maximum number of matches to return across all cached sources. Defaults to 10.",
         ),
     }),
     outputSchema: z.object({
@@ -333,38 +289,46 @@ export function createRunTools(context: WorkflowContext) {
         "List of matches with surrounding context extracts from cached source bodies.",
       ),
     }),
-    execute: async ({ query, contextOutChars, maxMatches }) => {
-      const outChars = contextOutChars ?? 200;
-      const maxReturnedMatches = maxMatches ?? 8;
+    execute: async ({
+      pattern,
+      regex,
+      caseSensitive,
+      contextOutChars,
+      maxMatches,
+    }) => {
+      const searchPattern = buildSearchPattern(pattern, {
+        regex,
+        caseSensitive,
+      });
       const matches: matchesType = [];
 
       for (const source of context.usedSources) {
-        if (!source.body) {
+        if (!source.text) {
           continue;
         }
 
-        const body = source.body.toLowerCase();
-        let searchFrom = 0;
+        searchPattern.lastIndex = 0;
+        let match = searchPattern.exec(source.text);
 
-        while (matches.length < maxReturnedMatches) {
-          const matchStart = body.indexOf(query.toLowerCase(), searchFrom);
-
-          if (matchStart < 0) {
-            break;
+        while (match && matches.length < maxMatches) {
+          if (match[0].length === 0) {
+            searchPattern.lastIndex += 1;
+            match = searchPattern.exec(source.text);
+            continue;
           }
 
-          const matchEnd = matchStart + query.length;
+          const matchStart = match.index;
+          const matchEnd = matchStart + match[0].length;
           const extractData = buildExtract(
-            source.body,
+            source.text,
             matchStart,
             matchEnd,
-            outChars,
+            contextOutChars,
           );
 
           matches.push({
             sourceUrl: source.url,
-            sourceTitle: source.title,
-            matchedText: source.body.slice(matchStart, matchEnd),
+            matchedText: match[0],
             extract: extractData.extract,
             extractStart: extractData.extractStart,
             extractEnd: extractData.extractEnd,
@@ -372,16 +336,18 @@ export function createRunTools(context: WorkflowContext) {
             matchEnd,
           });
 
-          searchFrom = matchStart + Math.max(query.length, 1);
+          match = searchPattern.exec(source.text);
         }
 
-        if (matches.length >= maxReturnedMatches) {
+        if (matches.length >= maxMatches) {
           break;
         }
       }
 
       console.log("searchCachedSourcesTool results:", {
-        query,
+        pattern,
+        regex: regex ?? false,
+        caseSensitive: caseSensitive ?? false,
         matchesCount: matches.length,
         sourceUrls: [...new Set(matches.map((match) => match.sourceUrl))],
       });
@@ -394,8 +360,8 @@ export function createRunTools(context: WorkflowContext) {
     getResearchPlanTool,
     saveResearchPlanTool,
     webSearchTool,
-    webPageParseTool,
     verifyEvidenceTool,
     searchCachedSourcesTool,
+    listSourcesTool,
   };
 }

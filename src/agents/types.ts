@@ -1,19 +1,11 @@
 import { z } from "zod";
 
-export type stage =
-  | "init"
-  | "research"
-  | "evaluation"
-  | "summarization"
-  | "done";
-
 export type agentName =
   | "researcherAgent"
-  | "sourceAgent"
   | "judgeAgent"
   | "summarizerAgent";
 
-export type runnableStage = Exclude<stage, "init" | "done">;
+// stats
 
 export type tokenUsageStats = {
   inputTokens: number;
@@ -43,28 +35,24 @@ export type workflowRunStats = {
   byAgent: Record<agentName, agentRunStats>;
 };
 
-export const sourceEngineResult = z.object({
+
+// sources
+
+export const sourceSchema = z.object({
   url: z.string(),
   title: z.string(),
-  description: z.string(),
-});
-export type sourceEngineResultType = z.infer<typeof sourceEngineResult>;
-
-export const sourceQualifiedResult = sourceEngineResult.extend({
-  body: z.string(),
-  metadata: z.array(
-    z.object({
-      key: z.string(),
-      value: z.string(),
-    }),
-  ),
+  highlights: z.array(z.string()),
+  text: z.string(),
   authors: z.array(z.string()),
   publishedDate: z.string().nullable(),
-  sourceName: z.string().nullable(),
 });
-export type sourceQualifiedType = z.infer<typeof sourceQualifiedResult>;
 
-export const researchEvidence = z.object({
+export const shortSourceSchema = sourceSchema.omit({ text: true });
+export type shortSourceSchemaType = z.infer<typeof shortSourceSchema>;
+
+export type sourceSchemaType = z.infer<typeof sourceSchema>;
+
+export const researchEvidenceSchema = z.object({
   sourceUrl: z
     .string()
     .describe("The URL of the source from which this evidence is extracted."),
@@ -79,27 +67,27 @@ export const researchEvidence = z.object({
       "A short exact phrase copied from the same source near the evidence quote to help locate it in the source content.",
     ),
 });
-export type researchEvidenceType = z.infer<typeof researchEvidence>;
+export type researchEvidenceSchemaType = z.infer<typeof researchEvidenceSchema>;
 
-export const evidenceMatchType = z.enum(["exact", "normalized", "not_found"]);
-export type evidenceMatchTypeType = z.infer<typeof evidenceMatchType>;
+export const evidenceMatchOptions = z.enum(["exact", "normalized", "not_found"]);
+export type evidenceMatchOptionsType = z.infer<typeof evidenceMatchOptions>;
 
-export const enrichedResearchEvidence = researchEvidence.extend({
+export const enrichedResearchEvidenceSchema = researchEvidenceSchema.extend({
   sourceFound: z.boolean(),
   quoteFound: z.boolean(),
-  quoteMatchType: evidenceMatchType,
+  quoteMatchType: evidenceMatchOptions,
 });
 export type enrichedResearchEvidenceType = z.infer<
-  typeof enrichedResearchEvidence
+  typeof enrichedResearchEvidenceSchema
 >;
 
 export const judgeVerificationResult = z.object({
-  conclusion: z.enum(["relevant", "needs_revision"]),
+  conclusion: z.enum(["accepted", "needs_revision"]),
   details: z
     .string()
     .nullable()
     .describe(
-      "Details on what is missing or wrong with the sources/evidence and how to improve them. Use null when conclusion is relevant.",
+      "Details on what is missing or wrong with the sources/evidence and how to improve them. Use null when conclusion is accepted.",
     ),
 });
 
@@ -123,16 +111,11 @@ export type researchPlanItemType = z.infer<typeof researchPlanItem>;
 export type WorkflowContext = {
   query: string;
 
-  currentStage: stage;
-
-  fetchedSources: sourceEngineResultType[];
-  usedSources: sourceQualifiedType[];
-  researchEvidence: researchEvidenceType[];
-  verifiedResearchEvidence: enrichedResearchEvidenceType[];
+  usedSources: sourceSchemaType[]; // store for all sources collected throught the run
+  approvedSourceUrls: string[]; // urls that were approved by the judge and can be used for the final answer
+  researchEvidence: researchEvidenceSchemaType[]; // evidence collected by researcher
   judge: judgeVerificationResultType;
   summary: string;
   researchPlan: researchPlanItemType[];
   stats: workflowRunStats;
-
-  judgeFeedbackAttempts: number;
 };

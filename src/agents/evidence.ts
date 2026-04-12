@@ -1,7 +1,7 @@
 import type {
   enrichedResearchEvidenceType,
-  researchEvidenceType,
-  sourceQualifiedType,
+  researchEvidenceSchemaType,
+  sourceSchemaType,
 } from "./types";
 
 type TextMatch = {
@@ -112,8 +112,8 @@ function findTextMatch(raw: string, query: string): TextMatch {
 }
 
 export function enrichResearchEvidence(
-  evidence: researchEvidenceType[],
-  usedSources: sourceQualifiedType[],
+  evidence: researchEvidenceSchemaType[],
+  usedSources: sourceSchemaType[],
 ): enrichedResearchEvidenceType[] {
   const sourceByUrl = new Map(
     usedSources.map((source) => [source.url, source]),
@@ -131,7 +131,7 @@ export function enrichResearchEvidence(
       };
     }
 
-    const quoteMatch = findTextMatch(source.body, item.evidenceQuote);
+    const quoteMatch = findTextMatch(source.text, item.evidenceQuote);
 
     return {
       ...item,

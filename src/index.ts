@@ -14,7 +14,7 @@ async function main() {
       {
         summary: res.summary,
         judge: res.judge,
-        evidenceCount: res.verifiedResearchEvidence.length,
+        evidenceCount: res.researchEvidence.length,
         usedSourcesCount: res.usedSources.length,
         usedSourceUrls: res.usedSources.map((source) => source.url),
         stats: res.stats,

@@ -64,7 +64,6 @@ export function createWorkflowRunStats(): workflowRunStats {
     toolCalls: createEmptyToolCallStats(),
     byAgent: {
       researcherAgent: createEmptyAgentStats(),
-      sourceAgent: createEmptyAgentStats(),
       judgeAgent: createEmptyAgentStats(),
       summarizerAgent: createEmptyAgentStats(),
     },

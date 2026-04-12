@@ -1,23 +1,17 @@
-import { Output, stepCountIs, tool, ToolLoopAgent } from "ai";
-import {
-  openai,
-  type OpenAILanguageModelResponsesOptions,
-} from "@ai-sdk/openai";
+import { Output, stepCountIs, tool, ToolLoopAgent, wrapLanguageModel } from "ai";
+import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { z } from "zod";
-import type { stage, WorkflowContext } from "./types";
+import type {
+  enrichedResearchEvidenceType,
+  WorkflowContext,
+} from "./types";
 import {
   judgeVerificationResult,
-  researchEvidence,
-  sourceQualifiedResult,
+  researchEvidenceSchema,
+  type researchEvidenceSchemaType,
 } from "./types";
 import { createRunTools } from "./tools";
-import {
-  judgeAgentPrompt,
-  researchAgentPrompt,
-  sourceAgentPrompt,
-  sourceToolDescription,
-} from "./prompts";
-import { wrapLanguageModel } from "ai";
+import { judgeAgentPrompt, researchAgentPrompt } from "./prompts";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
 import { enrichResearchEvidence } from "./evidence";
 import { createAgentStepLogger, createWorkflowRunStats } from "./stats";
@@ -27,67 +21,82 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY as string,
 });
 
-const selectedModel = wrapLanguageModel({
-  model: openrouter.chat("openai/gpt-oss-120b"),
-  middleware: devToolsMiddleware(),
-});
+const baseModel = openrouter.chat("openai/gpt-oss-120b");
 
-const MAX_STEP_COUNT = 10;
-const MAX_JUDGE_FEEDBACK_ATTEMPTS = 2;
-const MAX_SOURCE_AGENT_STEPS = 5;
-const MAX_RESEARCH_AGENT_STEPS = 18;
+const selectedModel =
+  process.env.NODE_ENV === "production"
+    ? baseModel
+    : wrapLanguageModel({
+        model: baseModel,
+        middleware: devToolsMiddleware(),
+      });
 
-function compactSources(context: WorkflowContext) {
-  return context.usedSources.map((source) => ({
-    url: source.url,
-    title: source.title,
-    description: source.description,
-    authors: source.authors,
-    publishedDate: source.publishedDate,
-    sourceName: source.sourceName,
-  }));
+const MAX_RESEARCH_AGENT_STEPS = 30;
+
+function buildJudgeSources(
+  context: WorkflowContext,
+  evidence: researchEvidenceSchemaType[],
+) {
+  const verifiedEvidence = enrichResearchEvidence(evidence, context.usedSources);
+  const evidenceBySourceUrl = new Map<string, typeof verifiedEvidence>();
+
+  for (const item of verifiedEvidence) {
+    const existing = evidenceBySourceUrl.get(item.sourceUrl) ?? [];
+    existing.push(item);
+    evidenceBySourceUrl.set(item.sourceUrl, existing);
+  }
+
+  return [...evidenceBySourceUrl.entries()].map(([sourceUrl, quotes]) => {
+    const source = context.usedSources.find((item) => item.url === sourceUrl);
+
+    return {
+      sourceUrl,
+      title: source?.title ?? sourceUrl,
+      highlights: source?.highlights ?? [],
+      authors: source?.authors ?? [],
+      publishedDate: source?.publishedDate ?? null,
+      sourceFound: Boolean(source),
+      quotes,
+    };
+  });
 }
 
-function getNextStage(currentStage: stage): stage {
-  switch (currentStage) {
-    case "init":
-      return "research";
-    case "research":
-      return "evaluation";
-    case "evaluation":
-      return "summarization";
-    case "summarization":
-      return "done";
-    default:
-      return "done";
-  }
+function getApprovedEvidence(
+  context: WorkflowContext,
+): enrichedResearchEvidenceType[] {
+  const approvedSourceUrlSet = new Set(context.approvedSourceUrls);
+  return enrichResearchEvidence(
+    context.researchEvidence,
+    context.usedSources,
+  ).filter((item) => approvedSourceUrlSet.has(item.sourceUrl));
+}
+
+function getApprovedSources(context: WorkflowContext) {
+  const approvedSourceUrlSet = new Set(context.approvedSourceUrls);
+  return context.usedSources.filter((source) => approvedSourceUrlSet.has(source.url));
 }
 
 export async function research(query: string) {
-  let context: WorkflowContext = {
+  const context: WorkflowContext = {
     query,
-    currentStage: "init",
-    fetchedSources: [],
     usedSources: [],
+    approvedSourceUrls: [],
     researchEvidence: [],
-    verifiedResearchEvidence: [],
     judge: { conclusion: "needs_revision", details: null },
     summary: "",
     researchPlan: [],
     stats: createWorkflowRunStats(),
-    judgeFeedbackAttempts: 0,
   };
 
   const {
     getResearchPlanTool,
     saveResearchPlanTool,
+    listSourcesTool,
     webSearchTool,
-    webPageParseTool,
     verifyEvidenceTool,
     searchCachedSourcesTool,
   } = createRunTools(context);
 
-  const logSourceStep = createAgentStepLogger(context.stats, "sourceAgent");
   const logJudgeStep = createAgentStepLogger(context.stats, "judgeAgent");
   const logSummarizerStep = createAgentStepLogger(
     context.stats,
@@ -97,27 +106,6 @@ export async function research(query: string) {
     context.stats,
     "researcherAgent",
   );
-
-  const sourceAgent = new ToolLoopAgent({
-    model: selectedModel,
-    instructions: sourceAgentPrompt,
-    output: Output.object({
-      schema: z.object({
-        sources: z.array(sourceQualifiedResult),
-      }),
-    }),
-    providerOptions: {
-      openai: {
-        serviceTier: "flex",
-      } satisfies OpenAILanguageModelResponsesOptions,
-    },
-    tools: {
-      webSearch: webSearchTool,
-      parsePageTool: webPageParseTool,
-    },
-    stopWhen: stepCountIs(MAX_SOURCE_AGENT_STEPS),
-    onStepFinish: logSourceStep,
-  });
 
   const judgeAgent = new ToolLoopAgent({
     model: selectedModel,
@@ -134,6 +122,34 @@ export async function research(query: string) {
     stopWhen: stepCountIs(10),
   });
 
+  const judgeEvidenceTool = tool({
+    description:
+      "Ask the judge subagent to evaluate your current draft evidence before you finalize. Call this after verifyEvidenceTool. If it returns needs_revision, continue researching in the same loop and fix the identified gaps.",
+    inputSchema: z.object({
+      evidence: z.array(researchEvidenceSchema).min(1),
+    }),
+    outputSchema: judgeVerificationResult,
+    execute: async ({ evidence }) => {
+      const judgedSources = buildJudgeSources(context, evidence);
+      const result = await judgeAgent.generate({
+        prompt: `User query: ${context.query}\nCandidate sources: ${JSON.stringify(
+          judgedSources,
+        )}`,
+      });
+
+      context.judge = result.output;
+      context.approvedSourceUrls =
+        result.output.conclusion === "accepted"
+          ? judgedSources
+              .filter((source) => source.quotes.some((quote) => quote.quoteFound))
+              .map((source) => source.sourceUrl)
+          : [];
+
+      console.log("Judge evidence tool output:", context.judge);
+      return result.output;
+    },
+  });
+
   const summarizerAgent = new ToolLoopAgent({
     model: selectedModel,
     onStepFinish: logSummarizerStep,
@@ -147,74 +163,6 @@ export async function research(query: string) {
     stopWhen: stepCountIs(10),
   });
 
-  const sourceTool = tool({
-    description: sourceToolDescription,
-    inputSchema: z.object({
-      query: z.string().describe("The query to find and verify sources for"),
-      corrections: z
-        .string()
-        .optional()
-        .describe(
-          "Additional constraints or missing coverage that should shape the search",
-        ),
-      previousSources: z
-        .array(z.string())
-        .optional()
-        .describe("Source URLs that should not be returned again"),
-    }),
-    outputSchema: z.object({
-      sources: z
-        .array(sourceQualifiedResult)
-        .describe(
-          "A list of verified authoritative sources relevant to the query",
-        ),
-    }),
-    execute: async ({ query, corrections, previousSources }) => {
-      console.log("sourceTool called:", {
-        query,
-        corrections: corrections ?? null,
-        previousSources: previousSources ?? [],
-      });
-
-      const promptParts = [`Query: ${query}`];
-
-      if (corrections) {
-        promptParts.push(`Corrections: ${corrections}`);
-      }
-
-      if (previousSources && previousSources.length > 0) {
-        promptParts.push(
-          `Previous sources to avoid: ${previousSources.join(", ")}`,
-        );
-      }
-
-      const output = await sourceAgent.generate({
-        prompt: promptParts.join("\n"),
-      });
-
-      const previousUrlSet = new Set(previousSources ?? []);
-      const groundedUrlSet = new Set(context.usedSources.map((source) => source.url));
-      const sources = output.output.sources.filter(
-        (source) =>
-          !previousUrlSet.has(source.url) && groundedUrlSet.has(source.url),
-      );
-
-      if (sources.length !== output.output.sources.length) {
-        console.log("sourceTool dropped ungrounded sources:", {
-          returned: output.output.sources.map((source) => source.url),
-          kept: sources.map((source) => source.url),
-        });
-      }
-
-      console.log(
-        "sourceTool returned sources:",
-        sources.map((source) => source.url),
-      );
-
-      return { sources };
-    },
-  });
-
   const researcherAgent = new ToolLoopAgent({
     model: selectedModel,
     onStepFinish: logResearcherStep,
@@ -225,164 +173,78 @@ export async function research(query: string) {
     },
     output: Output.object({
       schema: z.object({
-        evidence: z.array(researchEvidence),
+        evidence: z.array(researchEvidenceSchema),
       }),
     }),
     tools: {
       getResearchPlanTool,
       saveResearchPlanTool,
-      getSourcesTool: sourceTool,
+      webSearchTool,
+      listSourcesTool,
       verifyEvidenceTool,
+      judgeEvidenceTool,
       searchCachedSourcesTool,
     },
     stopWhen: stepCountIs(MAX_RESEARCH_AGENT_STEPS),
     instructions: researchAgentPrompt,
   });
 
-  async function runAgentForStage() {
-    if (context.currentStage === "done" || context.currentStage === "init") {
-      return;
+  async function runResearchStage() {
+    const output = await researcherAgent.generate({
+      prompt: `User query: ${context.query}`,
+    });
+
+    context.researchEvidence = output.output.evidence.filter((item) =>
+      context.approvedSourceUrls.includes(item.sourceUrl),
+    );
+
+    if (context.researchEvidence.length > 0 && context.usedSources.length === 0) {
+      throw new Error(
+        "No sources were cached in the research stage, but evidence was returned. This should not happen.",
+      );
     }
 
-    switch (context.currentStage) {
-      case "research": {
-        const prompt =
-          context.judgeFeedbackAttempts > 0 &&
-          context.judge.conclusion === "needs_revision"
-            ? `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nCurrent research plan: ${JSON.stringify(context.researchPlan)}\nPrevious research evidence: ${JSON.stringify(context.researchEvidence)}\nPrevious used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}\nJudge feedback: ${context.judge.details}`
-            : `User query: ${context.query}\nCached used sources count: ${context.usedSources.length}\nCurrent research plan: ${JSON.stringify(context.researchPlan)}\nCached used source URLs: ${JSON.stringify(context.usedSources.map((source) => source.url))}`;
-
-        const output = await researcherAgent.generate({
-          prompt,
-        });
-
-        context.researchEvidence = output.output.evidence;
-        context.verifiedResearchEvidence = [];
-
-        if (
-          context.researchEvidence.length === 0 &&
-          context.usedSources.length === 0 &&
-          context.researchPlan.some((item) => item.status === "completed")
-        ) {
-          context.researchPlan = context.researchPlan.map((item) =>
-            item.status === "completed" ? { ...item, status: "pending" } : item,
-          );
-
-          console.log(
-            "Research stage produced no evidence and no sources. Resetting completed plan items to pending.",
-          );
-        }
-
-        if (
-          context.usedSources.length === 0 &&
-          context.researchEvidence.length > 0
-        ) {
-          throw new Error(
-            "No sources were qualified in the research stage, but evidence was returned. This should not happen.",
-          );
-        }
-
-        if (context.judge.conclusion === "needs_revision") {
-          context.judge = { conclusion: "needs_revision", details: null };
-        }
-
-        console.log("Research agent output:", {
-          evidenceCount: context.researchEvidence.length,
-          usedSourcesCount: context.usedSources.length,
-          sourceUrls: [
-            ...new Set(context.researchEvidence.map((item) => item.sourceUrl)),
-          ],
-        });
-        return;
-      }
-      case "evaluation": {
-        context.verifiedResearchEvidence = enrichResearchEvidence(
-          context.researchEvidence,
-          context.usedSources,
-        );
-
-        console.log("Verified research evidence:", {
-          count: context.verifiedResearchEvidence.length,
-          verifiedCount: context.verifiedResearchEvidence.filter(
-            (item) => item.quoteFound,
-          ).length,
-          sourceUrls: [
-            ...new Set(
-              context.verifiedResearchEvidence.map((item) => item.sourceUrl),
-            ),
-          ],
-        });
-
-        const output = await judgeAgent.generate({
-          prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
-            context.verifiedResearchEvidence,
-          )}\nUsed sources: ${JSON.stringify(compactSources(context))}`,
-        });
-
-        context.judge = output.output;
-
-        console.log("Judge agent output:", context.judge);
-        if (output.output.conclusion === "needs_revision") {
-          if (context.judgeFeedbackAttempts >= MAX_JUDGE_FEEDBACK_ATTEMPTS) {
-            const summaryOutput = await summarizerAgent.generate({
-              prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
-                context.verifiedResearchEvidence,
-              )}\nUsed sources: ${JSON.stringify(
-                compactSources(context),
-              )}\nJudge conclusion: ${context.judge.conclusion}\nJudge feedback: ${
-                context.judge.details ?? "none"
-              }`,
-            });
-            context.summary = summaryOutput.output;
-            console.log(
-              "Maximum judge feedback attempts reached. Summarizer fallback output:",
-              context.summary,
-            );
-            context.currentStage = "done";
-            console.log(
-              "Maximum judge feedback attempts reached. Ending workflow with best-effort summary.",
-            );
-            return;
-          }
-
-          context.currentStage = "init";
-          context.judgeFeedbackAttempts += 1;
-          console.log(
-            "Judge feedback indicates revision needed. Restarting research stage.",
-          );
-          return;
-        }
-
-        console.log("Evaluation complete. Moving to summarization stage.");
-        return;
-      }
-      case "summarization": {
-        const output = await summarizerAgent.generate({
-          prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
-            context.verifiedResearchEvidence,
-          )}\nUsed sources: ${JSON.stringify(
-            compactSources(context),
-          )}\nJudge conclusion: ${context.judge.conclusion}\nJudge feedback: ${
-            context.judge.details ?? "none"
-          }`,
-        });
-        context.summary = output.output;
-        console.log("Summarizer agent output:", context.summary);
-      }
+    if (
+      context.judge.conclusion === "needs_revision" &&
+      context.judge.details === null
+    ) {
+      throw new Error(
+        "Researcher returned without getting approval from the judge.",
+      );
     }
+
+    const approvedEvidence = getApprovedEvidence(context);
+
+    console.log("Research agent output:", {
+      evidenceCount: context.researchEvidence.length,
+      usedSourcesCount: context.usedSources.length,
+      citedSourceUrls: [
+        ...new Set(context.researchEvidence.map((item) => item.sourceUrl)),
+      ],
+      verifiedCount: approvedEvidence.filter((item) => item.quoteFound).length,
+    });
   }
 
-  let stepCount = 0;
+  async function runSummarizationStage() {
+    const approvedEvidence = getApprovedEvidence(context);
+    const approvedSources = getApprovedSources(context);
+    const judgeFeedback =
+      context.judge.conclusion === "needs_revision"
+        ? `\nJudge feedback: ${context.judge.details}`
+        : "";
 
-  while (context.currentStage !== "done") {
-    if (stepCount > MAX_STEP_COUNT) {
-      return context;
-    }
+    const summary = await summarizerAgent.generate({
+      prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(
+        approvedEvidence,
+      )}\nUsed sources: ${JSON.stringify(approvedSources)}${judgeFeedback}`,
+    });
 
-    await runAgentForStage();
-    context.currentStage = getNextStage(context.currentStage);
-    stepCount++;
+    context.summary = summary.text;
+    console.log("Summarizer output generated.");
   }
+
+  await runResearchStage();
+  await runSummarizationStage();
 
   return context;
 }
