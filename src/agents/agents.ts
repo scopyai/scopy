@@ -1,4 +1,5 @@
 import { Output, stepCountIs, tool, ToolLoopAgent, wrapLanguageModel } from "ai";
+import { randomUUID } from "node:crypto";
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { z } from "zod";
 import type {
@@ -21,17 +22,26 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY as string,
 });
 
-const baseModel = openrouter.chat("openai/gpt-oss-120b");
+const researcherBaseModel = openrouter.chat("openai/gpt-5.4-mini");
+const lightweightBaseModel = openrouter.chat("openai/gpt-oss-120b:free");
 
-const selectedModel =
+const researcherModel =
   process.env.NODE_ENV === "production"
-    ? baseModel
+    ? researcherBaseModel
     : wrapLanguageModel({
-        model: baseModel,
+        model: researcherBaseModel,
         middleware: devToolsMiddleware(),
       });
 
-const MAX_RESEARCH_AGENT_STEPS = 30;
+const lightweightModel =
+  process.env.NODE_ENV === "production"
+    ? lightweightBaseModel
+    : wrapLanguageModel({
+        model: lightweightBaseModel,
+        middleware: devToolsMiddleware(),
+      });
+
+const MAX_RESEARCH_AGENT_STEPS = 45;
 
 function buildJudgeSources(
   context: WorkflowContext,
@@ -108,7 +118,7 @@ export async function research(query: string) {
   );
 
   const judgeAgent = new ToolLoopAgent({
-    model: selectedModel,
+    model: lightweightModel,
     onStepFinish: logJudgeStep,
     providerOptions: {
       openai: {
@@ -122,13 +132,19 @@ export async function research(query: string) {
     stopWhen: stepCountIs(10),
   });
 
-  const judgeEvidenceTool = tool({
+  let activeSubmissionToken: string | null = null;
+
+  const submitEvidenceTool = tool({
     description:
-      "Ask the judge subagent to evaluate your current draft evidence before you finalize. Call this after verifyEvidenceTool. If it returns needs_revision, continue researching in the same loop and fix the identified gaps.",
+      "Submit your draft evidence for final verification and judge approval. This tool verifies the quotes against cached full text, asks the judge subagent for approval, and only returns a submissionToken when the evidence is accepted. You may only finish after this tool returns accepted=true with a submissionToken.",
     inputSchema: z.object({
       evidence: z.array(researchEvidenceSchema).min(1),
     }),
-    outputSchema: judgeVerificationResult,
+    outputSchema: z.object({
+      accepted: z.boolean(),
+      details: z.string().nullable(),
+      submissionToken: z.string().nullable(),
+    }),
     execute: async ({ evidence }) => {
       const judgedSources = buildJudgeSources(context, evidence);
       const result = await judgeAgent.generate({
@@ -138,20 +154,37 @@ export async function research(query: string) {
       });
 
       context.judge = result.output;
-      context.approvedSourceUrls =
-        result.output.conclusion === "accepted"
-          ? judgedSources
-              .filter((source) => source.quotes.some((quote) => quote.quoteFound))
-              .map((source) => source.sourceUrl)
-          : [];
+      if (result.output.conclusion !== "accepted") {
+        context.approvedSourceUrls = [];
+        console.log("Submit evidence rejected:", context.judge);
+        return {
+          accepted: false,
+          details: result.output.details,
+          submissionToken: null,
+        };
+      }
 
-      console.log("Judge evidence tool output:", context.judge);
-      return result.output;
+      context.approvedSourceUrls = judgedSources
+        .filter((source) => source.quotes.some((quote) => quote.quoteFound))
+        .map((source) => source.sourceUrl);
+      context.researchEvidence = evidence.filter((item) =>
+        context.approvedSourceUrls.includes(item.sourceUrl),
+      );
+
+      console.log("Submit evidence accepted:", {
+        approvedSourceUrls: context.approvedSourceUrls,
+      });
+
+      return {
+        accepted: true,
+        details: null,
+        submissionToken: activeSubmissionToken,
+      };
     },
   });
 
   const summarizerAgent = new ToolLoopAgent({
-    model: selectedModel,
+    model: lightweightModel,
     onStepFinish: logSummarizerStep,
     providerOptions: {
       openai: {
@@ -164,16 +197,21 @@ export async function research(query: string) {
   });
 
   const researcherAgent = new ToolLoopAgent({
-    model: selectedModel,
+    model: researcherModel,
     onStepFinish: logResearcherStep,
     providerOptions: {
-      openai: {
-        serviceTier: "flex",
-      } satisfies OpenAILanguageModelResponsesOptions,
+      openrouter: {
+        reasoning: {
+          effort: "medium",
+        },
+        openai: {
+          serviceTier: "flex",
+        } satisfies OpenAILanguageModelResponsesOptions,
+      },
     },
     output: Output.object({
       schema: z.object({
-        evidence: z.array(researchEvidenceSchema),
+        submissionToken: z.string(),
       }),
     }),
     tools: {
@@ -182,7 +220,7 @@ export async function research(query: string) {
       webSearchTool,
       listSourcesTool,
       verifyEvidenceTool,
-      judgeEvidenceTool,
+      submitEvidenceTool,
       searchCachedSourcesTool,
     },
     stopWhen: stepCountIs(MAX_RESEARCH_AGENT_STEPS),
@@ -190,13 +228,24 @@ export async function research(query: string) {
   });
 
   async function runResearchStage() {
+    context.judge = { conclusion: "needs_revision", details: null };
+    context.approvedSourceUrls = [];
+    context.researchEvidence = [];
+    activeSubmissionToken = randomUUID();
+
     const output = await researcherAgent.generate({
       prompt: `User query: ${context.query}`,
     });
 
-    context.researchEvidence = output.output.evidence.filter((item) =>
-      context.approvedSourceUrls.includes(item.sourceUrl),
-    );
+    const returnedSubmissionToken = output.output.submissionToken;
+    if (
+      !activeSubmissionToken ||
+      returnedSubmissionToken !== activeSubmissionToken
+    ) {
+      throw new Error(
+        "Researcher returned without successfully calling submitEvidenceTool.",
+      );
+    }
 
     if (context.researchEvidence.length > 0 && context.usedSources.length === 0) {
       throw new Error(
@@ -204,13 +253,8 @@ export async function research(query: string) {
       );
     }
 
-    if (
-      context.judge.conclusion === "needs_revision" &&
-      context.judge.details === null
-    ) {
-      throw new Error(
-        "Researcher returned without getting approval from the judge.",
-      );
+    if (context.judge.conclusion !== "accepted") {
+      throw new Error("Researcher returned without accepted judge approval.");
     }
 
     const approvedEvidence = getApprovedEvidence(context);
@@ -223,6 +267,8 @@ export async function research(query: string) {
       ],
       verifiedCount: approvedEvidence.filter((item) => item.quoteFound).length,
     });
+
+    activeSubmissionToken = null;
   }
 
   async function runSummarizationStage() {

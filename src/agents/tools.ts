@@ -200,7 +200,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const verifyEvidenceTool = tool({
     description:
-      "Check whether one or more evidence quotes actually exist in the cached full-text sources. Use this after drafting evidence and before sending it to judgeEvidenceTool or finalizing. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed.",
+      "Check whether one or more evidence quotes actually exist in the cached full-text sources. This is an optional debugging tool before submission. If quoteFound is false, the quote is not safely grounded and should be corrected, replaced, or removed.",
     inputSchema: z.object({
       evidence: z
         .array(researchEvidenceSchema)
