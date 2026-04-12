@@ -3,6 +3,7 @@ import { z } from "zod";
 import { searchText } from "./search-engine";
 import {
   researchPlanItem,
+  researchPlanStatus,
   WorkflowContext,
   researchEvidenceSchema,
   enrichedResearchEvidenceSchema,
@@ -114,7 +115,7 @@ function buildSearchPattern(
 export function createRunTools(context: WorkflowContext) {
   const getResearchPlanTool = tool({
     description:
-      "Read the persistent research plan for this run. Use this at the start and whenever you need to check what is still pending.",
+      "Read the persistent research plan for this run. Each step has a stable id. Use this at the start and whenever you need to check what is still pending.",
     inputSchema: z.object({}),
     outputSchema: z.object({
       plan: z.array(researchPlanItem),
@@ -129,37 +130,48 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
-  const saveResearchPlanTool = tool({
+  const updateResearchPlanStepTool = tool({
     description:
-      "Replace the persistent research plan for this run. Use this to create the initial plan and to mark steps pending, in_progress or completed as work progresses.",
+      "Update one research plan step by its stable id. Use this after the initial plan exists to mark a step pending, in_progress, or completed.",
     inputSchema: z.object({
-      plan: z.array(researchPlanItem).min(1).max(8),
+      id: z.number().describe("Stable id of the plan step to update."),
+      status: researchPlanStatus.describe("New status for this step."),
     }),
     outputSchema: z.object({
       plan: z.array(researchPlanItem),
     }),
-    execute: async ({ plan }) => {
-      const hasGroundedProgress =
-        context.usedSources.length > 0 || context.researchEvidence.length > 0;
+    execute: async ({ id, status }) => {
+      const existingIndex = context.researchPlan.findIndex((item) => item.id === id);
 
-      context.researchPlan = hasGroundedProgress
-        ? plan
-        : plan.map((item) =>
-            item.status === "completed" ? { ...item, status: "pending" } : item,
-          );
+      if (existingIndex < 0) {
+        throw new Error(`Research plan step not found: ${id}`);
+      }
 
-      console.log("saveResearchPlanTool results:", {
-        count: context.researchPlan.length,
+      const existing = context.researchPlan[existingIndex];
+      if (!existing) {
+        throw new Error(`Research plan step not found: ${id}`);
+      }
+
+      const updatedItem = {
+        ...existing,
+        status,
+      };
+
+      context.researchPlan[existingIndex] = updatedItem;
+
+      console.log("updateResearchPlanStepTool results:", {
+        id,
+        status,
         items: context.researchPlan.map((item) => ({
+          id: item.id,
           step: item.step,
           status: item.status,
         })),
-        downgradedCompletedWithoutEvidence:
-          !hasGroundedProgress &&
-          plan.some((item) => item.status === "completed"),
       });
 
-      return { plan: context.researchPlan };
+      return {
+        plan: context.researchPlan,
+      };
     },
   });
 
@@ -350,7 +362,7 @@ export function createRunTools(context: WorkflowContext) {
 
   return {
     getResearchPlanTool,
-    saveResearchPlanTool,
+    updateResearchPlanStepTool,
     webSearchTool,
     verifyEvidenceTool,
     searchCachedSourcesTool,

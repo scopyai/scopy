@@ -1,8 +1,9 @@
-import { Output, stepCountIs, tool, ToolLoopAgent, wrapLanguageModel } from "ai";
+import { generateText, Output, stepCountIs, tool, ToolLoopAgent, wrapLanguageModel } from "ai";
 import { randomUUID } from "node:crypto";
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { z } from "zod";
 import type {
+  researchPlanItemType,
   enrichedResearchEvidenceType,
   WorkflowContext,
 } from "./types";
@@ -50,6 +51,37 @@ const lightweightModel =
       });
 
 const MAX_RESEARCH_AGENT_STEPS = 60;
+const INITIAL_RESEARCH_PLAN_MAX_STEPS = 6;
+
+async function generateInitialResearchPlan(
+  query: string,
+) {
+  const result = await generateText({
+    model: lightweightModel,
+    providerOptions: {
+      openrouter: {
+        serviceTier: "flex",
+      },
+      openai: {
+        serviceTier: "flex",
+      } satisfies OpenAILanguageModelResponsesOptions,
+    },
+    output: Output.object({
+      schema: z.object({
+        steps: z.array(z.string().min(1)).min(1).max(INITIAL_RESEARCH_PLAN_MAX_STEPS),
+      }),
+    }),
+    prompt: `Break this research query into 3-6 short actionable research steps. Focus on the main factual facets needed to answer the query. Avoid filler steps like "write the answer" or "do more research".
+
+User query: ${query}`,
+  });
+
+  return result.output.steps.map((step, index) => ({
+    id: index + 1,
+    step,
+    status: "pending" as const,
+  }));
+}
 
 function buildJudgeSources(
   context: WorkflowContext,
@@ -135,13 +167,13 @@ export async function research(query: string) {
     researchEvidence: [],
     judge: { conclusion: "needs_revision", details: null },
     summary: "",
-    researchPlan: [],
+    researchPlan: await generateInitialResearchPlan(query),
     stats: createWorkflowRunStats(),
   };
 
   const {
     getResearchPlanTool,
-    saveResearchPlanTool,
+    updateResearchPlanStepTool,
     listSourcesTool,
     webSearchTool,
     verifyEvidenceTool,
@@ -269,7 +301,7 @@ export async function research(query: string) {
     }),
     tools: {
       getResearchPlanTool,
-      saveResearchPlanTool,
+      updateResearchPlanStepTool,
       webSearchTool,
       listSourcesTool,
       verifyEvidenceTool,

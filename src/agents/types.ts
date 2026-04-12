@@ -106,6 +106,7 @@ export const researchPlanStatus = z.enum([
 export type researchPlanStatusType = z.infer<typeof researchPlanStatus>;
 
 export const researchPlanItem = z.object({
+  id: z.number(),
   step: z.string(),
   status: researchPlanStatus,
 });

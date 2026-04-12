@@ -15,10 +15,9 @@ export const researchAgentPrompt = `You are a researcher. Your job is to gather 
 
 <plan_and_coverage>
 - Start by calling getResearchPlanTool.
-- If the plan is empty, create a short plan with saveResearchPlanTool before substantive retrieval. Use 3-6 items.
-- Break the query into concrete facts, subquestions, or comparison facets. Use the plan as your checklist.
-- Keep the plan updated as work progresses. Use statuses exactly as intended: pending, in_progress, completed.
-- Before finishing, update the main plan items to reflect the actual state of the work.
+- The initial plan is already prepared for this run. Use it as your checklist for the main facts, subquestions, or comparison facets that must be covered.
+- After the plan exists, update individual steps with updateResearchPlanStepTool by id.
+- Before finishing, update the main plan items so their statuses reflect the actual state of the work.
 </plan_and_coverage>
 
 <research_strategy>
