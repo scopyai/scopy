@@ -27,11 +27,15 @@ const openrouter = createOpenRouter({
 });
 
 const RESEARCHER_MODEL_ID = "openai/gpt-5.4-mini";
-const LIGHTWEIGHT_MODEL_ID = "openai/gpt-oss-120b";
+const JUDGE_MODEL_ID = "openai/gpt-5.4-mini";
+const SUMMARIZER_MODEL_ID = "openai/gpt-5.4-mini";
 const RESEARCHER_REASONING_EFFORT = "low" as const;
+const JUDGE_REASONING_EFFORT = "low" as const;
+const SUMMARIZER_REASONING_EFFORT = "low" as const;
 
 const researcherBaseModel = openrouter.chat(RESEARCHER_MODEL_ID);
-const lightweightBaseModel = openrouter.chat(LIGHTWEIGHT_MODEL_ID);
+const judgeBaseModel = openrouter.chat(JUDGE_MODEL_ID);
+const summarizerBaseModel = openrouter.chat(SUMMARIZER_MODEL_ID);
 
 const researcherModel =
   process.env.NODE_ENV === "production"
@@ -41,11 +45,19 @@ const researcherModel =
         middleware: devToolsMiddleware(),
       });
 
-const lightweightModel =
+const judgeModel =
   process.env.NODE_ENV === "production"
-    ? lightweightBaseModel
+    ? judgeBaseModel
     : wrapLanguageModel({
-        model: lightweightBaseModel,
+        model: judgeBaseModel,
+        middleware: devToolsMiddleware(),
+      });
+
+const summarizerModel =
+  process.env.NODE_ENV === "production"
+    ? summarizerBaseModel
+    : wrapLanguageModel({
+        model: summarizerBaseModel,
         middleware: devToolsMiddleware(),
       });
 
@@ -121,10 +133,10 @@ export async function research(query: string) {
       reasoningEffort: RESEARCHER_REASONING_EFFORT,
     },
     judgeAgent: {
-      model: LIGHTWEIGHT_MODEL_ID,
+      model: JUDGE_MODEL_ID,
     },
     summarizerAgent: {
-      model: LIGHTWEIGHT_MODEL_ID,
+      model: SUMMARIZER_MODEL_ID,
     },
   });
 
@@ -160,14 +172,17 @@ export async function research(query: string) {
   );
 
   const judgeAgent = new ToolLoopAgent({
-    model: lightweightModel,
+    model: judgeModel,
     onStepFinish: logJudgeStep,
     providerOptions: {
       openai: {
         serviceTier: "flex",
       } satisfies OpenAILanguageModelResponsesOptions,
       openrouter: {
-        serviceTier: "flex"
+        serviceTier: "flex",
+        reasoning: {
+          effort: JUDGE_REASONING_EFFORT,
+        }
       }
     },
     instructions: judgeAgentPrompt,
@@ -240,14 +255,17 @@ export async function research(query: string) {
   });
 
   const summarizerAgent = new ToolLoopAgent({
-    model: lightweightModel,
+    model: summarizerModel,
     onStepFinish: logSummarizerStep,
     providerOptions: {
       openai: {
         serviceTier: "flex",
       } satisfies OpenAILanguageModelResponsesOptions,
       openrouter: {
-        serviceTier: "flex"
+        serviceTier: "flex",
+        reasoning: {
+          effort: SUMMARIZER_REASONING_EFFORT,
+        }
       }
     },
     instructions:
