@@ -90,7 +90,17 @@ export const judgeVerificationResult = z.object({
     .string()
     .nullable()
     .describe(
-      "Details on what is missing or wrong with the sources/evidence and how to improve them. Use null when conclusion is accepted.",
+      "Short summary of the judge decision. Use null when conclusion is accepted.",
+    ),
+  keepSourceUrls: z
+    .array(z.string())
+    .describe(
+      "Source URLs from the submitted evidence that are already good enough to keep for the next revision pass.",
+    ),
+  fixes: z
+    .array(z.string())
+    .describe(
+      "Short specific fixes or missing pieces the researcher should address next. Use an empty list when conclusion is accepted.",
     ),
 });
 

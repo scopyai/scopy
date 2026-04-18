@@ -1,9 +1,8 @@
-import { generateText, Output, stepCountIs, tool, ToolLoopAgent, wrapLanguageModel } from "ai";
+import { Output, stepCountIs, tool, ToolLoopAgent, wrapLanguageModel } from "ai";
 import { randomUUID } from "node:crypto";
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { z } from "zod";
 import type {
-  researchPlanItemType,
   enrichedResearchEvidenceType,
   WorkflowContext,
 } from "./types";
@@ -28,8 +27,8 @@ const openrouter = createOpenRouter({
 });
 
 const RESEARCHER_MODEL_ID = "openai/gpt-5.4-mini";
-const LIGHTWEIGHT_MODEL_ID = "openai/gpt-oss-120b:free";
-const RESEARCHER_REASONING_EFFORT = "medium" as const;
+const LIGHTWEIGHT_MODEL_ID = "openai/gpt-oss-120b";
+const RESEARCHER_REASONING_EFFORT = "low" as const;
 
 const researcherBaseModel = openrouter.chat(RESEARCHER_MODEL_ID);
 const lightweightBaseModel = openrouter.chat(LIGHTWEIGHT_MODEL_ID);
@@ -51,37 +50,6 @@ const lightweightModel =
       });
 
 const MAX_RESEARCH_AGENT_STEPS = 60;
-const INITIAL_RESEARCH_PLAN_MAX_STEPS = 6;
-
-async function generateInitialResearchPlan(
-  query: string,
-) {
-  const result = await generateText({
-    model: lightweightModel,
-    providerOptions: {
-      openrouter: {
-        serviceTier: "flex",
-      },
-      openai: {
-        serviceTier: "flex",
-      } satisfies OpenAILanguageModelResponsesOptions,
-    },
-    output: Output.object({
-      schema: z.object({
-        steps: z.array(z.string().min(1)).min(1).max(INITIAL_RESEARCH_PLAN_MAX_STEPS),
-      }),
-    }),
-    prompt: `Break this research query into 3-6 short actionable research steps. Focus on the main factual facets needed to answer the query. Avoid filler steps like "write the answer" or "do more research".
-
-User query: ${query}`,
-  });
-
-  return result.output.steps.map((step, index) => ({
-    id: index + 1,
-    step,
-    status: "pending" as const,
-  }));
-}
 
 function buildJudgeSources(
   context: WorkflowContext,
@@ -165,19 +133,20 @@ export async function research(query: string) {
     usedSources: [],
     approvedSourceUrls: [],
     researchEvidence: [],
-    judge: { conclusion: "needs_revision", details: null },
+    judge: { conclusion: "needs_revision", details: null, keepSourceUrls: [], fixes: [] },
     summary: "",
-    researchPlan: await generateInitialResearchPlan(query),
+    researchPlan: [],
     stats: createWorkflowRunStats(),
   };
 
   const {
     getResearchPlanTool,
+    createResearchPlanTool,
     updateResearchPlanStepTool,
     listSourcesTool,
     webSearchTool,
     verifyEvidenceTool,
-    searchCachedSourcesTool,
+    grepCachedSourcesTool,
   } = createRunTools(context);
 
   const logJudgeStep = createAgentStepLogger(context.stats, "judgeAgent");
@@ -220,6 +189,8 @@ export async function research(query: string) {
     outputSchema: z.object({
       accepted: z.boolean(),
       details: z.string().nullable(),
+      keepSourceUrls: z.array(z.string()),
+      fixes: z.array(z.string()),
       submissionToken: z.string().nullable(),
     }),
     execute: async ({ evidence }) => {
@@ -239,6 +210,8 @@ export async function research(query: string) {
         return {
           accepted: false,
           details: result.output.details,
+          keepSourceUrls: result.output.keepSourceUrls,
+          fixes: result.output.fixes,
           submissionToken: null,
         };
       }
@@ -259,6 +232,8 @@ export async function research(query: string) {
       return {
         accepted: true,
         details: null,
+        keepSourceUrls: context.approvedSourceUrls,
+        fixes: [],
         submissionToken: activeSubmissionToken,
       };
     },
@@ -301,19 +276,20 @@ export async function research(query: string) {
     }),
     tools: {
       getResearchPlanTool,
+      createResearchPlanTool,
       updateResearchPlanStepTool,
       webSearchTool,
       listSourcesTool,
       verifyEvidenceTool,
       submitEvidenceTool,
-      searchCachedSourcesTool,
+      grepCachedSourcesTool,
     },
     stopWhen: stepCountIs(MAX_RESEARCH_AGENT_STEPS),
     instructions: researchAgentPrompt,
   });
 
   async function runResearchStage() {
-    context.judge = { conclusion: "needs_revision", details: null };
+    context.judge = { conclusion: "needs_revision", details: null, keepSourceUrls: [], fixes: [] };
     context.approvedSourceUrls = [];
     context.researchEvidence = [];
     activeSubmissionToken = randomUUID();

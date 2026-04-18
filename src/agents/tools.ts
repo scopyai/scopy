@@ -130,6 +130,40 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
+  const createResearchPlanTool = tool({
+    description:
+      "Create the initial research plan for this run. Provide only short step texts. This tool assigns stable numeric ids and sets every step to pending.",
+    inputSchema: z.object({
+      steps: z.array(z.string().min(1)).min(1).max(8),
+    }),
+    outputSchema: z.object({
+      plan: z.array(researchPlanItem),
+    }),
+    execute: async ({ steps }) => {
+      const hadExistingPlan = context.researchPlan.length > 0;
+
+      if (!hadExistingPlan) {
+        context.researchPlan = steps.map((step, index) => ({
+          id: index + 1,
+          step,
+          status: "pending" as const,
+        }));
+      }
+
+      console.log("createResearchPlanTool results:", {
+        count: context.researchPlan.length,
+        items: context.researchPlan.map((item) => ({
+          id: item.id,
+          step: item.step,
+          status: item.status,
+        })),
+        hadExistingPlan,
+      });
+
+      return { plan: context.researchPlan };
+    },
+  });
+
   const updateResearchPlanStepTool = tool({
     description:
       "Update one research plan step by its stable id. Use this after the initial plan exists to mark a step pending, in_progress, or completed.",
@@ -177,7 +211,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const webSearchTool = tool({
     description:
-      "Search the web. Returns source metadata plus highlight snippets for triage, and caches each result's full text locally for later use with searchCachedSourcesTool. Highlights are not final evidence.",
+      "Search the web. Returns source metadata plus highlight snippets for triage, and caches each result's full text locally for later use with grepCachedSourcesTool. Highlights are not final evidence.",
     inputSchema: z.object({
       query: z
         .string()
@@ -269,15 +303,15 @@ export function createRunTools(context: WorkflowContext) {
     },
   });
 
-  const searchCachedSourcesTool = tool({
+  const grepCachedSourcesTool = tool({
     description:
-      "Search across the cached full text of sources already fetched in this run. Treat this like ripgrep over page text, not a semantic search engine. Returns literal matches plus surrounding text extracts. Can be used with regular expressions.",
+      "Find literal text matches in cached source bodies. This is grep over cached page text, not semantic retrieval. Returns matching text plus surrounding extracts. Supports regular expressions when needed.",
     inputSchema: z.object({
       pattern: z
         .string()
         .min(1)
         .describe(
-          "Text to search for in cached source bodies. Prefer short literal queries that are likely to appear verbatim. Use regex only for focused wording variation.",
+          'Text to locate in cached source bodies. Best inputs are short literal anchors likely to appear verbatim, such as names, numbers, headings, or distinctive clauses. Good: "largest declines were observed", "plain packaging", "Chile.*tax". Bad: "which countries reduced smoking the most", "what policies worked best".',
         ),
       isRegex: z
         .boolean()
@@ -348,7 +382,7 @@ export function createRunTools(context: WorkflowContext) {
         }
       }
 
-      console.log("searchCachedSourcesTool results:", {
+      console.log("grepCachedSourcesTool results:", {
         pattern,
         isRegex: isRegex ?? false,
         isCaseSensitive: isCaseSensitive ?? false,
@@ -362,10 +396,11 @@ export function createRunTools(context: WorkflowContext) {
 
   return {
     getResearchPlanTool,
+    createResearchPlanTool,
     updateResearchPlanStepTool,
     webSearchTool,
     verifyEvidenceTool,
-    searchCachedSourcesTool,
+    grepCachedSourcesTool,
     listSourcesTool,
   };
 }
