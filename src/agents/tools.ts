@@ -12,7 +12,7 @@ import {
 } from "./types";
 import { enrichResearchEvidence } from "./evidence";
 
-const MAX_MATCHES = 10;
+const MAX_MATCHES = 8;
 const CONTEXT_OUT_CHARS = 200;
 
 const matchesSchema = z.array(
@@ -286,7 +286,7 @@ export function createRunTools(context: WorkflowContext) {
 
   const listSourcesTool = tool({
     description:
-      "List the sources already collected in this run. Returns only source metadata, not full text.",
+      "List the sources already collected in this run. Returns only source metadata, not full text. Use this to inspect what is already available before grepping cached text or doing another web search.",
     inputSchema: z.object({}),
     outputSchema: z.object({
       sources: z.array(superShortSourceSchema),

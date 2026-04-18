@@ -27,7 +27,7 @@ export async function searchText(query: string) {
   const response = await exa.search(
     query,
     {
-      numResults: 10,
+      numResults: 8,
       type: "auto",
       contents: {
         text: true,

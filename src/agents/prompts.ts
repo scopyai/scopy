@@ -37,12 +37,14 @@ Rules for this loop:
 </research_strategy>
 
 <tool_usage>
+- Use listSourcesTool when you need a quick inventory of what sources are already cached before choosing between grepCachedSourcesTool and another web search.
 - grepCachedSourcesTool is literal text search over cached page text. Treat it like ripgrep, not a semantic search engine.
 - Use grepCachedSourcesTool only when you already have likely wording to locate.
 - Use short literal anchors, names, numbers, headings, or distinctive clauses that are likely to appear verbatim in the text.
 - Prefer short literal fragments over long paraphrased sentences you composed yourself.
 - Derive grep patterns from returned highlights, titles, or previously found text whenever possible.
 - If 2-3 cache-search attempts for the same facet fail, change strategy instead of making tiny variants of the same search.
+- Before doing another web search for the same facet, use listSourcesTool to check whether that source type is already present in cache.
 - Use webSearchTool with short, focused queries for one missing facet at a time. Avoid big answer-shaped prompts.
 </tool_usage>
 
