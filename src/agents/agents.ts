@@ -18,7 +18,6 @@ import {
   summarizerAgentPrompt,
 } from "./prompts";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
-import { enrichResearchEvidence } from "./evidence";
 import { createAgentStepLogger, createWorkflowRunStats } from "./stats";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 
@@ -67,16 +66,16 @@ function buildJudgeSources(
   context: WorkflowContext,
   evidence: researchEvidenceSchemaType[],
 ) {
-  const verifiedEvidence = enrichResearchEvidence(evidence, context.usedSources);
-  const evidenceBySourceUrl = new Map<string, typeof verifiedEvidence>();
+  const enrichedEvidence = enrichResearchEvidence(context, evidence);
+  const evidenceBySourceUrl = new Map<string, enrichedResearchEvidenceType[]>();
 
-  for (const item of verifiedEvidence) {
+  for (const item of enrichedEvidence) {
     const existing = evidenceBySourceUrl.get(item.sourceUrl) ?? [];
     existing.push(item);
     evidenceBySourceUrl.set(item.sourceUrl, existing);
   }
 
-  return [...evidenceBySourceUrl.entries()].map(([sourceUrl, quotes]) => {
+  return [...evidenceBySourceUrl.entries()].map(([sourceUrl, chunks]) => {
     const source = context.usedSources.find((item) => item.url === sourceUrl);
 
     return {
@@ -85,8 +84,7 @@ function buildJudgeSources(
       highlights: source?.highlights ?? [],
       authors: source?.authors ?? [],
       publishedDate: source?.publishedDate ?? null,
-      sourceFound: Boolean(source),
-      quotes,
+      chunks,
     };
   });
 }
@@ -96,8 +94,8 @@ function getApprovedEvidence(
 ): enrichedResearchEvidenceType[] {
   const approvedSourceUrlSet = new Set(context.approvedSourceUrls);
   return enrichResearchEvidence(
+    context,
     dedupeResearchEvidence(context.researchEvidence),
-    context.usedSources,
   ).filter((item) => approvedSourceUrlSet.has(item.sourceUrl));
 }
 
@@ -108,11 +106,7 @@ function dedupeResearchEvidence(
   const deduped: researchEvidenceSchemaType[] = [];
 
   for (const item of evidence) {
-    const key = [
-      item.sourceUrl.trim(),
-      item.evidenceQuote.trim(),
-      item.locatingPhrase.trim(),
-    ].join("\n");
+    const key = [item.chunkId.trim(), item.relevanceNote.trim()].join("\n");
 
     if (seen.has(key)) {
       continue;
@@ -123,6 +117,25 @@ function dedupeResearchEvidence(
   }
 
   return deduped;
+}
+
+function enrichResearchEvidence(
+  context: WorkflowContext,
+  evidence: researchEvidenceSchemaType[],
+): enrichedResearchEvidenceType[] {
+  return evidence.map((item) => {
+    const chunk = context.retrievedChunksById[item.chunkId];
+    if (!chunk) {
+      throw new Error(`Unknown evidence chunkId submitted: ${item.chunkId}`);
+    }
+
+    return {
+      ...item,
+      sourceUrl: chunk.sourceUrl,
+      sourceTitle: chunk.sourceTitle,
+      chunkText: chunk.chunkText,
+    };
+  });
 }
 
 export async function research(query: string) {
@@ -143,6 +156,7 @@ export async function research(query: string) {
   const context: WorkflowContext = {
     query,
     usedSources: [],
+    retrievedChunksById: {},
     approvedSourceUrls: [],
     researchEvidence: [],
     judge: { conclusion: "needs_revision", details: null, keepSourceUrls: [], fixes: [] },
@@ -150,6 +164,7 @@ export async function research(query: string) {
     researchPlan: [],
     stats: createWorkflowRunStats(),
   };
+  const retrievalRunId = randomUUID();
 
   const {
     getResearchPlanTool,
@@ -157,9 +172,8 @@ export async function research(query: string) {
     updateResearchPlanStepTool,
     listSourcesTool,
     webSearchTool,
-    verifyEvidenceTool,
-    grepCachedSourcesTool,
-  } = createRunTools(context);
+    searchCachedSourceChunksTool,
+  } = createRunTools(context, retrievalRunId);
 
   const logJudgeStep = createAgentStepLogger(context.stats, "judgeAgent");
   const logSummarizerStep = createAgentStepLogger(
@@ -231,12 +245,8 @@ export async function research(query: string) {
         };
       }
 
-      context.approvedSourceUrls = judgedSources
-        .filter((source) => source.quotes.some((quote) => quote.quoteFound))
-        .map((source) => source.sourceUrl);
-      context.researchEvidence = dedupedEvidence.filter((item) =>
-        context.approvedSourceUrls.includes(item.sourceUrl),
-      );
+      context.approvedSourceUrls = result.output.keepSourceUrls;
+      context.researchEvidence = dedupedEvidence;
 
       console.log("Submit evidence accepted:", {
         approvedSourceUrls: context.approvedSourceUrls,
@@ -298,9 +308,8 @@ export async function research(query: string) {
       updateResearchPlanStepTool,
       webSearchTool,
       listSourcesTool,
-      verifyEvidenceTool,
       submitEvidenceTool,
-      grepCachedSourcesTool,
+      searchCachedSourceChunksTool,
     },
     stopWhen: stepCountIs(MAX_RESEARCH_AGENT_STEPS),
     instructions: researchAgentPrompt,
@@ -356,9 +365,8 @@ export async function research(query: string) {
       evidenceCount: context.researchEvidence.length,
       usedSourcesCount: context.usedSources.length,
       citedSourceUrls: [
-        ...new Set(context.researchEvidence.map((item) => item.sourceUrl)),
+        ...new Set(approvedEvidence.map((item) => item.sourceUrl)),
       ],
-      verifiedCount: approvedEvidence.filter((item) => item.quoteFound).length,
     });
 
     activeSubmissionToken = null;

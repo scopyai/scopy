@@ -56,33 +56,33 @@ export type superShortSourceSchemaType = z.infer<typeof superShortSourceSchema>;
 export type sourceSchemaType = z.infer<typeof sourceSchema>;
 
 export const researchEvidenceSchema = z.object({
-  sourceUrl: z
+  chunkId: z
     .string()
-    .describe("URL of the cached source that contains this evidence."),
-  evidenceQuote: z
-    .string()
-    .describe(
-      "Exact quote from the source that supports, contradicts, or qualifies part of the answer.",
-    ),
-  locatingPhrase: z
+    .describe("Stable identifier of the retrieved chunk used as evidence."),
+  relevanceNote: z
     .string()
     .describe(
-      "Short exact nearby phrase from the same source that helps locate the evidence quote in the cached source text.",
+      "Short note describing what this chunk contributes to the answer.",
     ),
 });
 export type researchEvidenceSchemaType = z.infer<typeof researchEvidenceSchema>;
 
-export const evidenceMatchOptions = z.enum(["exact", "normalized", "not_found"]);
-export type evidenceMatchOptionsType = z.infer<typeof evidenceMatchOptions>;
+export type retrievedChunkType = {
+  chunkId: string;
+  sourceUrl: string;
+  sourceTitle: string;
+  chunkText: string;
+  chunkIndex: number;
+  startChar: number;
+  endChar: number;
+  score: number;
+};
 
-export const enrichedResearchEvidenceSchema = researchEvidenceSchema.extend({
-  sourceFound: z.boolean(),
-  quoteFound: z.boolean(),
-  quoteMatchType: evidenceMatchOptions,
-});
-export type enrichedResearchEvidenceType = z.infer<
-  typeof enrichedResearchEvidenceSchema
->;
+export type enrichedResearchEvidenceType = researchEvidenceSchemaType & {
+  sourceUrl: string;
+  sourceTitle: string;
+  chunkText: string;
+};
 
 export const judgeVerificationResult = z.object({
   conclusion: z.enum(["accepted", "needs_revision"]),
@@ -126,6 +126,7 @@ export type WorkflowContext = {
   query: string;
 
   usedSources: sourceSchemaType[]; // store for all sources collected throught the run
+  retrievedChunksById: Record<string, retrievedChunkType>;
   approvedSourceUrls: string[]; // urls that were approved by the judge and can be used for the final answer
   researchEvidence: researchEvidenceSchemaType[]; // evidence collected by researcher
   judge: judgeVerificationResultType;
