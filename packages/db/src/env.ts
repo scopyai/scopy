@@ -1,7 +1,12 @@
-import dotenv from 'dotenv'
+import { config } from 'dotenv'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 
-dotenv.config()
+const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const rootEnvPath = path.resolve(currentDir, '../../../.env')
+
+config({ path: rootEnvPath, quiet: true })
 
 export const env = z.object({
   DATABASE_URL: z.string().min(1),
