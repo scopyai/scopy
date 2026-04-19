@@ -12,6 +12,7 @@ import {
   type sourceSchemaType,
 } from "./types";
 import { QdrantRetrievalStore } from "./retrieval";
+import { truncateLoggedText } from "../logging";
 
 const MAX_MATCHES = 8;
 
@@ -276,7 +277,9 @@ export function createRunTools(
           title: result.title,
           publishedDate: result.publishedDate,
           author: result.author,
-          highlights: result.highlights,
+          highlights: result.highlights.map((highlight) =>
+            truncateLoggedText(highlight),
+          ),
         })),
       });
 

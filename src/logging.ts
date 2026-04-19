@@ -3,6 +3,18 @@ import { dirname, resolve } from "node:path";
 import { formatWithOptions } from "node:util";
 
 let initialized = false;
+const DEFAULT_LOG_TRUNCATION_LENGTH = 400;
+
+export function truncateLoggedText(
+  value: string,
+  maxLength = DEFAULT_LOG_TRUNCATION_LENGTH,
+) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
+}
 
 function formatLogArgs(args: unknown[], colors: boolean) {
   return formatWithOptions(

@@ -102,10 +102,15 @@ export const judgeVerificationResult = z.object({
     .describe(
       "Short summary of the judge decision. Use null when conclusion is accepted.",
     ),
-  keepSourceUrls: z
+  keepChunkIds: z
     .array(z.string())
     .describe(
-      "Source URLs from the submitted evidence that are already good enough to keep for the next revision pass.",
+      "Chunk IDs from the submitted evidence that are already good enough to keep for the next revision pass.",
+    ),
+  dropChunkIds: z
+    .array(z.string())
+    .describe(
+      "Chunk IDs from the submitted evidence that should be removed for the next revision pass.",
     ),
   fixes: z
     .array(z.string())
@@ -137,7 +142,7 @@ export type WorkflowContext = {
 
   usedSources: sourceSchemaType[]; // store for all sources collected throught the run
   retrievedChunksById: Record<string, retrievedChunkType>;
-  approvedSourceUrls: string[]; // urls that were approved by the judge and can be used for the final answer
+  approvedChunkIds: string[]; // chunk ids that were approved by the judge and can be used for the final answer
   researchEvidence: researchEvidenceSchemaType[]; // evidence collected by researcher
   judge: judgeVerificationResultType;
   summary: string;

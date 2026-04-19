@@ -92,11 +92,11 @@ function buildJudgeSources(
 function getApprovedEvidence(
   context: WorkflowContext,
 ): enrichedResearchEvidenceType[] {
-  const approvedSourceUrlSet = new Set(context.approvedSourceUrls);
+  const approvedChunkIdSet = new Set(context.approvedChunkIds);
   return enrichResearchEvidence(
     context,
     dedupeResearchEvidence(context.researchEvidence),
-  ).filter((item) => approvedSourceUrlSet.has(item.sourceUrl));
+  ).filter((item) => approvedChunkIdSet.has(item.chunkId));
 }
 
 function dedupeResearchEvidence(
@@ -157,9 +157,15 @@ export async function research(query: string) {
     query,
     usedSources: [],
     retrievedChunksById: {},
-    approvedSourceUrls: [],
+    approvedChunkIds: [],
     researchEvidence: [],
-    judge: { conclusion: "needs_revision", details: null, keepSourceUrls: [], fixes: [] },
+    judge: {
+      conclusion: "needs_revision",
+      details: null,
+      keepChunkIds: [],
+      dropChunkIds: [],
+      fixes: [],
+    },
     summary: "",
     researchPlan: [],
     stats: createWorkflowRunStats(),
@@ -218,7 +224,8 @@ export async function research(query: string) {
     outputSchema: z.object({
       accepted: z.boolean(),
       details: z.string().nullable(),
-      keepSourceUrls: z.array(z.string()),
+      keepChunkIds: z.array(z.string()),
+      dropChunkIds: z.array(z.string()),
       fixes: z.array(z.string()),
       submissionToken: z.string().nullable(),
     }),
@@ -239,23 +246,24 @@ export async function research(query: string) {
 
       context.judge = result.output;
       if (result.output.conclusion !== "accepted") {
-        context.approvedSourceUrls = [];
+        context.approvedChunkIds = [];
         acceptedSubmissionToken = null;
         console.log("Submit evidence rejected:", context.judge);
         return {
           accepted: false,
           details: result.output.details,
-          keepSourceUrls: result.output.keepSourceUrls,
+          keepChunkIds: result.output.keepChunkIds,
+          dropChunkIds: result.output.dropChunkIds,
           fixes: result.output.fixes,
           submissionToken: null,
         };
       }
 
-      context.approvedSourceUrls = result.output.keepSourceUrls;
+      context.approvedChunkIds = result.output.keepChunkIds;
       context.researchEvidence = dedupedEvidence;
 
       console.log("Submit evidence accepted:", {
-        approvedSourceUrls: context.approvedSourceUrls,
+        approvedChunkIds: context.approvedChunkIds,
       });
 
       acceptedSubmissionToken = activeSubmissionToken;
@@ -263,7 +271,8 @@ export async function research(query: string) {
       return {
         accepted: true,
         details: null,
-        keepSourceUrls: context.approvedSourceUrls,
+        keepChunkIds: context.approvedChunkIds,
+        dropChunkIds: [],
         fixes: [],
         submissionToken: activeSubmissionToken,
       };
@@ -327,8 +336,14 @@ export async function research(query: string) {
       retrievalRunId,
     });
 
-    context.judge = { conclusion: "needs_revision", details: null, keepSourceUrls: [], fixes: [] };
-    context.approvedSourceUrls = [];
+    context.judge = {
+      conclusion: "needs_revision",
+      details: null,
+      keepChunkIds: [],
+      dropChunkIds: [],
+      fixes: [],
+    };
+    context.approvedChunkIds = [];
     context.researchEvidence = [];
     activeSubmissionToken = randomUUID();
     acceptedSubmissionToken = null;

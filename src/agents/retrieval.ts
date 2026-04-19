@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import type { SearchResult } from "./search-engine";
+import { truncateLoggedText } from "../logging";
 
 type RetrievalSource = Pick<
   SearchResult,
@@ -346,7 +347,7 @@ export class QdrantRetrievalStore {
           startChar: match.startChar,
           endChar: match.endChar,
           score: match.score,
-          chunkText: match.chunkText,
+          chunkText: truncateLoggedText(match.chunkText),
         })),
       });
 
