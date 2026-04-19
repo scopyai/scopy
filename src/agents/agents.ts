@@ -99,6 +99,20 @@ function getApprovedEvidence(
   ).filter((item) => approvedChunkIdSet.has(item.chunkId));
 }
 
+function resolveChunkIds(
+  context: WorkflowContext,
+  chunkIds: string[],
+) {
+  return chunkIds.map((chunkId) => {
+    const chunk = context.retrievedChunksById[chunkId];
+    return {
+      chunkId,
+      sourceUrl: chunk?.sourceUrl ?? null,
+      sourceTitle: chunk?.sourceTitle ?? null,
+    };
+  });
+}
+
 function dedupeResearchEvidence(
   evidence: researchEvidenceSchemaType[],
 ): researchEvidenceSchemaType[] {
@@ -248,7 +262,11 @@ export async function research(query: string) {
       if (result.output.conclusion !== "accepted") {
         context.approvedChunkIds = [];
         acceptedSubmissionToken = null;
-        console.log("Submit evidence rejected:", context.judge);
+        console.log("Submit evidence rejected:", {
+          ...context.judge,
+          keepChunks: resolveChunkIds(context, result.output.keepChunkIds),
+          dropChunks: resolveChunkIds(context, result.output.dropChunkIds),
+        });
         return {
           accepted: false,
           details: result.output.details,
@@ -264,6 +282,7 @@ export async function research(query: string) {
 
       console.log("Submit evidence accepted:", {
         approvedChunkIds: context.approvedChunkIds,
+        approvedChunks: resolveChunkIds(context, context.approvedChunkIds),
       });
 
       acceptedSubmissionToken = activeSubmissionToken;
