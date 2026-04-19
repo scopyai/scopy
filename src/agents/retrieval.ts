@@ -256,6 +256,16 @@ export class QdrantRetrievalStore {
         sourceUrls: options.sourceUrls ?? [],
         matchesCount: matches.length,
         matchedSourceUrls: [...new Set(matches.map((match) => match.sourceUrl))],
+        matches: matches.map((match) => ({
+          chunkId: match.chunkId,
+          sourceUrl: match.sourceUrl,
+          sourceTitle: match.sourceTitle,
+          chunkIndex: match.chunkIndex,
+          startChar: match.startChar,
+          endChar: match.endChar,
+          score: match.score,
+          chunkText: match.chunkText,
+        })),
       });
 
       return matches;

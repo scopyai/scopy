@@ -213,7 +213,13 @@ export function createRunTools(
 
       console.log(`Web search results for query "${query}":`, {
         count: results.length,
-        urls: results.map((result) => result.url),
+        results: results.map((result) => ({
+          url: result.url,
+          title: result.title,
+          publishedDate: result.publishedDate,
+          author: result.author,
+          highlights: result.highlights,
+        })),
       });
 
       return results.map((result) => ({
@@ -234,6 +240,17 @@ export function createRunTools(
       sources: z.array(superShortSourceSchema),
     }),
     execute: async () => {
+      console.log("listSourcesTool results:", {
+        count: context.usedSources.length,
+        sources: context.usedSources.map((source) => ({
+          url: source.url,
+          title: source.title,
+          authors: source.authors,
+          publishedDate: source.publishedDate,
+          highlights: source.highlights,
+        })),
+      });
+
       return {
         sources: context.usedSources.map((source) => ({
           url: source.url,

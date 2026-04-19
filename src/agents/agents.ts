@@ -225,6 +225,12 @@ export async function research(query: string) {
     execute: async ({ evidence }) => {
       const dedupedEvidence = dedupeResearchEvidence(evidence);
       const judgedSources = buildJudgeSources(context, dedupedEvidence);
+
+      console.log("submitEvidenceTool requested:", {
+        evidence: dedupedEvidence,
+        sources: judgedSources,
+      });
+
       const result = await judgeAgent.generate({
         prompt: `User query: ${context.query}\nCandidate sources: ${JSON.stringify(
           judgedSources,
@@ -316,6 +322,11 @@ export async function research(query: string) {
   });
 
   async function runResearchStage() {
+    console.log("Research stage started:", {
+      query: context.query,
+      retrievalRunId,
+    });
+
     context.judge = { conclusion: "needs_revision", details: null, keepSourceUrls: [], fixes: [] };
     context.approvedSourceUrls = [];
     context.researchEvidence = [];
@@ -379,6 +390,12 @@ export async function research(query: string) {
       context.judge.conclusion === "needs_revision"
         ? `\nJudge feedback: ${context.judge.details}`
         : "";
+
+    console.log("Summarization stage started:", {
+      query: context.query,
+      approvedEvidence,
+      judge: context.judge,
+    });
 
     const summary = await summarizerAgent.generate({
       prompt: `User query: ${context.query}\nResearch evidence: ${JSON.stringify(

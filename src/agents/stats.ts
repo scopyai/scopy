@@ -102,7 +102,7 @@ export function recordAgentStep(
     toolResults: completedToolNames,
   });
 
-  if (agentName === "researcherAgent" && reasoningText) {
+  if (reasoningText) {
     console.log(`Agent ${agentName} step ${stepNumber} reasoning:`);
     console.log(reasoningText);
   }
