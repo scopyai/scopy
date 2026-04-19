@@ -8,15 +8,17 @@
     "start": "NODE_ENV=production node dist/index.js"
   },
   "dependencies": {
-    "@elysiajs/node": "^1.4.5",
-    "elysia": "^1.4.28",
     "@ai-sdk/devtools": "^0.0.15",
     "@ai-sdk/openai": "^3.0.48",
+    "@elysiajs/node": "^1.4.5",
     "@openrouter/ai-sdk-provider": "^2.3.3",
     "@qdrant/js-client-rest": "^1.17.0",
     "ai": "^6.0.141",
+    "better-auth": "^1.6.5",
     "dotenv": "^17.3.1",
+    "elysia": "^1.4.28",
     "exa-js": "^2.11.0",
+    "pg": "^8.20.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
