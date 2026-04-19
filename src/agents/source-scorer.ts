@@ -3,7 +3,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { SearchResult } from "./search-engine";
 
-const SOURCE_SCORE_THRESHOLD = 0.2;
+const SOURCE_SCORE_THRESHOLD = 0.5;
 const DEFAULT_SOURCE_SCORER_MODEL_ID = "openai/gpt-oss-120b:free";
 
 const openrouterApiKey = process.env.OPENROUTER_API_KEY;

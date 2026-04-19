@@ -3,71 +3,18 @@ import { dirname, resolve } from "node:path";
 import { formatWithOptions } from "node:util";
 
 let initialized = false;
-const MAX_LOG_STRING_LENGTH = 200;
 
-function truncateString(value: string) {
-  if (value.length <= MAX_LOG_STRING_LENGTH) {
-    return value;
-  }
-
-  return `${value.slice(0, MAX_LOG_STRING_LENGTH)}... [truncated ${value.length - MAX_LOG_STRING_LENGTH} chars]`;
-}
-
-function truncateValue(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (typeof value === "string") {
-    return truncateString(value);
-  }
-
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return value;
-  }
-
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: truncateString(value.message),
-      stack: value.stack ? truncateString(value.stack) : undefined,
-    };
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => truncateValue(item, seen));
-  }
-
-  if (typeof value === "object") {
-    if (seen.has(value)) {
-      return "[Circular]";
-    }
-
-    seen.add(value);
-
-    const entries = Object.entries(value as Record<string, unknown>).map(
-      ([key, item]) => [key, truncateValue(item, seen)],
-    );
-
-    return Object.fromEntries(entries);
-  }
-
-  return String(value);
-}
-
-function formatLogArgs(args: unknown[]) {
+function formatLogArgs(args: unknown[], colors: boolean) {
   return formatWithOptions(
     {
-      colors: false,
+      colors,
       depth: null,
       maxArrayLength: null,
       maxStringLength: null,
       compact: false,
       breakLength: 120,
     },
-    ...args.map((arg) => truncateValue(arg)),
+    ...args,
   );
 }
 
@@ -88,9 +35,12 @@ export function initRunLogging(logFilePath = "logs.txt") {
   const wrapConsoleMethod =
     (target: "stdout" | "stderr") =>
     (...args: unknown[]) => {
-      const formatted = `${formatLogArgs(args)}\n`;
-      stream.write(formatted);
-      originalWrite[target](formatted);
+      const streamIsTTY = target === "stdout" ? process.stdout.isTTY : process.stderr.isTTY;
+      const shouldColorize = process.env.FORCE_COLOR === "0" ? false : Boolean(process.env.FORCE_COLOR) || streamIsTTY;
+      const terminalOutput = `${formatLogArgs(args, shouldColorize)}\n`;
+      const logOutput = `${formatLogArgs(args, false)}\n`;
+      stream.write(logOutput);
+      originalWrite[target](terminalOutput);
     };
 
   console.log = wrapConsoleMethod("stdout");
