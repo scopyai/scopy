@@ -192,7 +192,7 @@ export function createRunTools(
       shortSourceSchema
     ),
     execute: async ({ query }) => {
-      const results = await searchText(query);
+      const results = await searchText(query, context.stats);
 
       for (const result of results) {
         addToSources(context, {

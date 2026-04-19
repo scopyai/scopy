@@ -9,6 +9,14 @@ type StepStatsInput = {
   reasoningText?: string | undefined;
 };
 
+type SourceScoringStatsInput = {
+  inputSources: number;
+  keptSources: number;
+  rejectedSources: number;
+  failed?: boolean;
+  usage?: LanguageModelUsage;
+};
+
 function createEmptyTokenUsage() {
   return {
     inputTokens: 0,
@@ -33,6 +41,17 @@ function createEmptyAgentStats() {
     stepCount: 0,
     tokenUsage: createEmptyTokenUsage(),
     toolCalls: createEmptyToolCallStats(),
+  };
+}
+
+function createEmptySourceScoringStats() {
+  return {
+    calls: 0,
+    failedCalls: 0,
+    inputSources: 0,
+    keptSources: 0,
+    rejectedSources: 0,
+    tokenUsage: createEmptyTokenUsage(),
   };
 }
 
@@ -63,6 +82,7 @@ export function createWorkflowRunStats(): workflowRunStats {
     steps: 0,
     tokenUsage: createEmptyTokenUsage(),
     toolCalls: createEmptyToolCallStats(),
+    sourceScoring: createEmptySourceScoringStats(),
     byAgent: {
       researcherAgent: createEmptyAgentStats(),
       judgeAgent: createEmptyAgentStats(),
@@ -105,6 +125,30 @@ export function recordAgentStep(
   if (reasoningText) {
     console.log(`Agent ${agentName} step ${stepNumber} reasoning:`);
     console.log(reasoningText);
+  }
+}
+
+export function recordSourceScoring(
+  stats: workflowRunStats,
+  {
+    inputSources,
+    keptSources,
+    rejectedSources,
+    failed = false,
+    usage,
+  }: SourceScoringStatsInput,
+) {
+  stats.sourceScoring.calls += 1;
+  stats.sourceScoring.inputSources += inputSources;
+  stats.sourceScoring.keptSources += keptSources;
+  stats.sourceScoring.rejectedSources += rejectedSources;
+
+  if (failed) {
+    stats.sourceScoring.failedCalls += 1;
+  }
+
+  if (usage) {
+    addUsageTotals(stats.sourceScoring.tokenUsage, usage);
   }
 }
 

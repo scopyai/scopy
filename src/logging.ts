@@ -80,26 +80,24 @@ export function initRunLogging(logFilePath = "logs.txt") {
   mkdirSync(dirname(absoluteLogPath), { recursive: true });
 
   const stream = createWriteStream(absoluteLogPath, { flags: "w" });
-  const originalConsole = {
-    log: console.log.bind(console),
-    info: console.info.bind(console),
-    warn: console.warn.bind(console),
-    error: console.error.bind(console),
-    debug: console.debug.bind(console),
+  const originalWrite = {
+    stdout: process.stdout.write.bind(process.stdout),
+    stderr: process.stderr.write.bind(process.stderr),
   };
 
   const wrapConsoleMethod =
-    (methodName: keyof typeof originalConsole) =>
+    (target: "stdout" | "stderr") =>
     (...args: unknown[]) => {
-      stream.write(`${formatLogArgs(args)}\n`);
-      originalConsole[methodName](...args);
+      const formatted = `${formatLogArgs(args)}\n`;
+      stream.write(formatted);
+      originalWrite[target](formatted);
     };
 
-  console.log = wrapConsoleMethod("log");
-  console.info = wrapConsoleMethod("info");
-  console.warn = wrapConsoleMethod("warn");
-  console.error = wrapConsoleMethod("error");
-  console.debug = wrapConsoleMethod("debug");
+  console.log = wrapConsoleMethod("stdout");
+  console.info = wrapConsoleMethod("stdout");
+  console.warn = wrapConsoleMethod("stderr");
+  console.error = wrapConsoleMethod("stderr");
+  console.debug = wrapConsoleMethod("stdout");
 
   process.on("exit", () => {
     stream.end();

@@ -28,10 +28,20 @@ export type agentRunStats = {
   toolCalls: toolCallStats;
 };
 
+export type sourceScoringRunStats = {
+  calls: number;
+  failedCalls: number;
+  inputSources: number;
+  keptSources: number;
+  rejectedSources: number;
+  tokenUsage: tokenUsageStats;
+};
+
 export type workflowRunStats = {
   steps: number;
   tokenUsage: tokenUsageStats;
   toolCalls: toolCallStats;
+  sourceScoring: sourceScoringRunStats;
   byAgent: Record<agentName, agentRunStats>;
 };
 
