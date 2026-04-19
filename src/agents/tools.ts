@@ -1,12 +1,15 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { searchText } from "./search-engine";
+import { appendDedupDebugEntry } from "./source-dedup/debug";
+import { compareSourcesForNearDuplicate } from "./source-dedup";
 import {
   researchPlanItem,
   researchPlanStatus,
   WorkflowContext,
   shortSourceSchema,
-  superShortSourceSchema
+  superShortSourceSchema,
+  type sourceSchemaType,
 } from "./types";
 import { QdrantRetrievalStore } from "./retrieval";
 
@@ -36,11 +39,7 @@ function addToSources(
     publishedDate: string | null;
   },
 ) {
-  const existingIndex = context.usedSources.findIndex(
-    (source) => source.url === input.url,
-  );
-
-  const nextSource = {
+  const nextSource: sourceSchemaType = {
     url: input.url,
     title: input.title,
     highlights: input.highlights,
@@ -49,18 +48,59 @@ function addToSources(
     publishedDate: input.publishedDate,
   };
 
+  const existingIndex = context.usedSources.findIndex(
+    (source) => source.url === input.url,
+  );
+
   if (existingIndex < 0) {
+    for (const existing of context.usedSources) {
+      const comparison = compareSourcesForNearDuplicate(
+        { url: existing.url, text: existing.text },
+        { url: nextSource.url, text: nextSource.text },
+      );
+
+      if (!comparison.isNearDuplicate) {
+        continue;
+      }
+
+      appendDedupDebugEntry({
+        decision: "near_duplicate_rejected",
+        keptSource: existing,
+        rejectedSource: nextSource,
+        comparison,
+      });
+
+      console.log("Source dedup rejected near-duplicate source:", {
+        keptUrl: existing.url,
+        rejectedUrl: nextSource.url,
+        reason: comparison.reason,
+        headingsSimilarity: comparison.headings.similarity,
+        paragraphMatchRatio: comparison.paragraphs.matchRatio,
+      });
+
+      return {
+        accepted: false,
+        reason: "near_duplicate_rejected" as const,
+      };
+    }
+
     context.usedSources.push(nextSource);
-    return;
+    return {
+      accepted: true,
+      reason: "added" as const,
+    };
   }
 
   const existing = context.usedSources[existingIndex];
   if (!existing) {
     context.usedSources.push(nextSource);
-    return;
+    return {
+      accepted: true,
+      reason: "added" as const,
+    };
   }
 
-  context.usedSources[existingIndex] = {
+  const mergedSource = {
     ...existing,
     title: nextSource.title || existing.title,
     highlights:
@@ -74,6 +114,19 @@ function addToSources(
     authors:
       nextSource.authors.length > 0 ? nextSource.authors : existing.authors,
     publishedDate: nextSource.publishedDate ?? existing.publishedDate,
+  };
+
+  context.usedSources[existingIndex] = mergedSource;
+
+  appendDedupDebugEntry({
+    decision: "exact_url_merged",
+    keptSource: mergedSource,
+    rejectedSource: nextSource,
+  });
+
+  return {
+    accepted: false,
+    reason: "exact_url_merged" as const,
   };
 }
 
@@ -193,9 +246,10 @@ export function createRunTools(
     ),
     execute: async ({ query }) => {
       const results = await searchText(query, context.stats);
+      const acceptedResults: typeof results = [];
 
       for (const result of results) {
-        addToSources(context, {
+        const addResult = addToSources(context, {
           url: result.url,
           title: result.title,
           highlights: result.highlights,
@@ -203,17 +257,21 @@ export function createRunTools(
           author: result.author,
           publishedDate: result.publishedDate,
         });
+
+        if (addResult?.accepted) {
+          acceptedResults.push(result);
+        }
       }
 
       try {
-        await retrievalStore.ingestSources(results);
+        await retrievalStore.ingestSources(acceptedResults);
       } catch (error) {
         console.warn("Retrieval ingest failed during webSearchTool:", error);
       }
 
       console.log(`Web search results for query "${query}":`, {
-        count: results.length,
-        results: results.map((result) => ({
+        count: acceptedResults.length,
+        results: acceptedResults.map((result) => ({
           url: result.url,
           title: result.title,
           publishedDate: result.publishedDate,
@@ -222,7 +280,7 @@ export function createRunTools(
         })),
       });
 
-      return results.map((result) => ({
+      return acceptedResults.map((result) => ({
         title: result.title,
         url: result.url,
         publishedDate: result.publishedDate,

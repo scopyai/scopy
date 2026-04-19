@@ -78,7 +78,7 @@ export async function scoreSearchResults(
       "Higher score means more likely to be authoritative and directly useful for answering the query.",
       "Lower score means more likely to be marketing, low-authority, redundant, off-topic, or otherwise weak.",
       "Prefer government, intergovernmental, academic, standards, major-journal, and high-quality research/report sources.",
-      "Penalize vendor marketing pages, generic industry blogs, low-quality aggregators, and sources unlikely to directly support or reject query.",
+      "Penalize vendor marketing pages, generic blogs, low-quality aggregators, and sources unlikely to directly support or reject query.",
       "",
       `User query: ${query}`,
       `Sources: ${JSON.stringify(candidateSources)}`,

@@ -6,3 +6,5 @@ dist
 *.venv
 .vscode
 archieve
+sources
+.DS_Store

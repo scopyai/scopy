@@ -1,9 +1,11 @@
 import "dotenv/config";
 import { research } from "./agents/agents";
+import { initDedupDebugLog } from "./agents/source-dedup/debug";
 import { initRunLogging } from "./logging";
 
 async function main() {
   initRunLogging();
+  initDedupDebugLog();
 
   const res = await research(
     // "who has bigger seeds: radish or cabbage? and what other distinctions do they have (seeds)?",

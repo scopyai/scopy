@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "NODE_ENV=production node dist/index.js",
-    "do": "pnpm run build && pnpm start"
+    "do": "pnpm run build && pnpm start",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -16,7 +17,8 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
   },
   "dependencies": {
     "@ai-sdk/devtools": "^0.0.15",
