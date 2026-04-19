@@ -1,6 +1,0 @@
-node_modules
-dist
-.git
-.gitignore
-scraper/.cache
-scraper/bin

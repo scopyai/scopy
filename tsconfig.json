@@ -1,22 +1,9 @@
 {
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "references"],
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "module": "commonjs",
-    "target": "esnext",
-    "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "strict": true,
-    "verbatimModuleSyntax": false,
-    "isolatedModules": true,
-    "noUncheckedSideEffectImports": true,
-    "moduleDetection": "force",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
-    "types": ["node"]
+    "strict": true
   }
 }

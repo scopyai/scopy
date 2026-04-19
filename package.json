@@ -1,33 +1,22 @@
 {
-  "name": "research-service",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "main",
+  "version": "0.0.1",
+  "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "NODE_ENV=production node dist/index.js",
-    "do": "pnpm run build && pnpm start",
-    "test": "vitest run"
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "format": "turbo format",
+    "typecheck": "turbo typecheck"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.28.0",
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.4"
+    "prettier": "^3.8.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "turbo": "^2.8.17",
+    "typescript": "5.9.3"
   },
-  "dependencies": {
-    "@ai-sdk/devtools": "^0.0.15",
-    "@ai-sdk/openai": "^3.0.48",
-    "@openrouter/ai-sdk-provider": "^2.3.3",
-    "@qdrant/js-client-rest": "^1.17.0",
-    "ai": "^6.0.141",
-    "dotenv": "^17.3.1",
-    "exa-js": "^2.11.0",
-    "zod": "^4.3.6"
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
   }
 }
