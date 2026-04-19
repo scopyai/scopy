@@ -1,5 +1,7 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
 import { z } from 'zod'
+
+dotenv.config()
 
 export const env = z.object({
   DATABASE_URL: z.string().min(1),

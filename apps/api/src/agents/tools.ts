@@ -6,9 +6,9 @@ import { compareSourcesForNearDuplicate } from "./source-dedup";
 import {
   researchPlanItem,
   researchPlanStatus,
-  WorkflowContext,
   shortSourceSchema,
   superShortSourceSchema,
+  type WorkflowContext,
   type sourceSchemaType,
 } from "./types";
 import { QdrantRetrievalStore } from "./retrieval";
