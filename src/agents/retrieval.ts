@@ -35,6 +35,7 @@ type RetrievalConfig = {
   vectorSize: number;
   chunkSize: number;
   chunkOverlap: number;
+  upsertBatchSize: number;
 };
 
 const DEFAULT_COLLECTION = "research_source_chunks";
@@ -42,6 +43,7 @@ const DEFAULT_INFERENCE_MODEL = "sentence-transformers/all-minilm-l6-v2";
 const DEFAULT_VECTOR_SIZE = 384;
 const DEFAULT_CHUNK_SIZE = 1200;
 const DEFAULT_CHUNK_OVERLAP = 200;
+const DEFAULT_UPSERT_BATCH_SIZE = 128;
 
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -165,6 +167,7 @@ export class QdrantRetrievalStore {
       vectorSize: DEFAULT_VECTOR_SIZE,
       chunkSize: DEFAULT_CHUNK_SIZE,
       chunkOverlap: DEFAULT_CHUNK_OVERLAP,
+      upsertBatchSize: DEFAULT_UPSERT_BATCH_SIZE,
     };
     this.collectionReady = this.initializeCollection();
   }
@@ -182,10 +185,89 @@ export class QdrantRetrievalStore {
     }
 
     await this.collectionReady;
+    const sourcesToIngest = sources
+      .map((source) => {
+        if (!source.text.trim()) {
+          return null;
+        }
 
-    for (const source of sources) {
-      await this.ingestSource(source);
+        const fingerprint = hash(source.text);
+        if (this.indexedSources.get(source.url) === fingerprint) {
+          return null;
+        }
+
+        const chunks = chunkSource(this.runId, source, this.config);
+        if (chunks.length === 0) {
+          return null;
+        }
+
+        return {
+          source,
+          fingerprint,
+          chunks,
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          source: RetrievalSource;
+          fingerprint: string;
+          chunks: SourceChunk[];
+        } => item !== null,
+      );
+
+    if (sourcesToIngest.length === 0) {
+      return;
     }
+
+    const points = sourcesToIngest.flatMap(({ chunks }) =>
+      chunks.map((chunk) => ({
+        id: chunk.id,
+        vector: {
+          text: chunk.chunkText,
+          model: this.config.inferenceModel,
+        },
+        payload: {
+          runId: this.runId,
+          sourceUrl: chunk.sourceUrl,
+          sourceTitle: chunk.sourceTitle,
+          chunkText: chunk.chunkText,
+          chunkIndex: chunk.chunkIndex,
+          startChar: chunk.startChar,
+          endChar: chunk.endChar,
+          publishedDate: chunk.publishedDate,
+        },
+      })),
+    );
+
+    for (let start = 0; start < points.length; start += this.config.upsertBatchSize) {
+      const batch = points.slice(start, start + this.config.upsertBatchSize);
+      await this.client.upsert(this.config.collection, {
+        wait: true,
+        points: batch,
+      });
+    }
+
+    for (const { source, fingerprint, chunks } of sourcesToIngest) {
+      this.indexedSources.set(source.url, fingerprint);
+
+      console.log("Retrieval ingest results:", {
+        sourceUrl: source.url,
+        chunkCount: chunks.length,
+        collection: this.config.collection,
+        inferenceModel: this.config.inferenceModel,
+      });
+    }
+
+    console.log("Retrieval ingest batch summary:", {
+      sourceCount: sourcesToIngest.length,
+      pointCount: points.length,
+      batchSize: this.config.upsertBatchSize,
+      batchCount: Math.ceil(points.length / this.config.upsertBatchSize),
+      collection: this.config.collection,
+      inferenceModel: this.config.inferenceModel,
+    });
   }
 
   async search(options: {
@@ -340,49 +422,4 @@ export class QdrantRetrievalStore {
     this.collectionEnsured = true;
   }
 
-  private async ingestSource(source: RetrievalSource) {
-    if (!this.client || !source.text.trim()) {
-      return;
-    }
-
-    const fingerprint = hash(source.text);
-    if (this.indexedSources.get(source.url) === fingerprint) {
-      return;
-    }
-
-    const chunks = chunkSource(this.runId, source, this.config);
-    if (chunks.length === 0) {
-      return;
-    }
-
-    await this.client.upsert(this.config.collection, {
-      wait: true,
-      points: chunks.map((chunk) => ({
-        id: chunk.id,
-        vector: {
-          text: chunk.chunkText,
-          model: this.config.inferenceModel,
-        },
-        payload: {
-          runId: this.runId,
-          sourceUrl: chunk.sourceUrl,
-          sourceTitle: chunk.sourceTitle,
-          chunkText: chunk.chunkText,
-          chunkIndex: chunk.chunkIndex,
-          startChar: chunk.startChar,
-          endChar: chunk.endChar,
-          publishedDate: chunk.publishedDate,
-        },
-      })),
-    });
-
-    this.indexedSources.set(source.url, fingerprint);
-
-    console.log("Retrieval ingest results:", {
-      sourceUrl: source.url,
-      chunkCount: chunks.length,
-      collection: this.config.collection,
-      inferenceModel: this.config.inferenceModel,
-    });
-  }
 }
