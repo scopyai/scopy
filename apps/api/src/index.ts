@@ -1,8 +1,15 @@
-import { Elysia } from 'elysia'
-import { node } from '@elysiajs/node'
+import { createBaseApp } from '@/app/base'
+import { authRoutes } from '@/app/auth'
+import { env } from '@/env'
+import { healthRoutes } from '@/modules/health'
+import { meRoutes } from '@/modules/me'
 
-new Elysia({ adapter: node() }).get('/', () => 'Hello Elysia').listen(3000, ({ hostname, port }) => {
-	console.log(
-		`🦊 Elysia is running at ${hostname}:${port}`
-	)
-})
+const app = createBaseApp()
+	.use(authRoutes)
+	.use(healthRoutes)
+	.use(meRoutes)
+	.listen(env.PORT, ({ hostname, port }) => {
+		console.log(`🦊 Elysia is running at ${hostname}:${port}`)
+	})
+
+export type App = typeof app
