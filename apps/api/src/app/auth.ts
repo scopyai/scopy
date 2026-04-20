@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia'
-import { auth } from '@/auth'
+import { auth } from '../auth'
 
 const getRequestSession = (headers: Headers) => auth.api.getSession({ headers })
 
@@ -22,7 +22,7 @@ export const authContext = new Elysia({ name: 'auth-context' }).macro({
 
 export const authRoutes = new Elysia({ name: 'auth-routes' }).mount(auth.handler)
 
-export const protectedRoutes = (prefix = '') =>
+export const protectedRoute = (prefix = '') =>
 	new Elysia({ prefix })
 		.use(authContext)
 		.guard({

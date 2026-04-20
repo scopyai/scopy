@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import 'dotenv'
 import { z } from 'zod'
 
 export const env = z.object({

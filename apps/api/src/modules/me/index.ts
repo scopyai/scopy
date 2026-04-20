@@ -1,6 +1,6 @@
-import { protectedRoutes } from '@/app/auth'
+import { protectedRoute } from '../../app/auth'
 
-export const meRoutes = protectedRoutes('/me')
+export const meRoutes = protectedRoute('/me')
 	.get('/session', ({ session, user }) => ({
 		session,
 		user,
