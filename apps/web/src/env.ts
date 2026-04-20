@@ -1,6 +1,5 @@
-import 'dotenv'
 import { z } from 'zod'
 
 export const env = z.object({
-  API_BASE_URL: z.string(),
-}).parse(process.env)
+  VITE_API_BASE_URL: z.string().default('http://localhost:3001'),
+}).parse(import.meta.env)

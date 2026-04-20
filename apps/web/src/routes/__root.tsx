@@ -1,4 +1,5 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router"
+import { ReactQueryProvider } from "@/lib/query-client"
 
 import appCss from "@workspace/ui/globals.css?url"
 
@@ -13,7 +14,7 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "TanStack Start Starter",
+        title: "Research",
       },
     ],
     links: [
@@ -28,12 +29,12 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <ReactQueryProvider>{children}</ReactQueryProvider>
         <Scripts />
       </body>
     </html>
