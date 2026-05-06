@@ -9,7 +9,6 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@api/*": ["../api/src/*"],
       "@workspace/ui/*": ["../../packages/ui/src/*"]
     }
   }

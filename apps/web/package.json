@@ -19,6 +19,7 @@
     "@tanstack/react-start": "^1.132.0",
     "@tanstack/router-plugin": "^1.132.0",
     "@workspace/ui": "workspace:*",
+    "api": "workspace:*",
     "better-auth": "^1.6.5",
     "dotenv": "^17.3.1",
     "lucide-react": "^1.8.0",

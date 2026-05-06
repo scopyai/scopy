@@ -111,6 +111,9 @@ importers:
       '@workspace/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      api:
+        specifier: workspace:*
+        version: link:../api
       better-auth:
         specifier: ^1.6.5
         version: 1.6.5(@opentelemetry/api@1.9.0)(@tanstack/react-start@1.163.2(crossws@0.4.5(srvx@0.11.15))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@7.3.2(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(kysely@0.28.16)(pg@8.20.0))(pg@8.20.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.3.0)(msw@2.13.4(@types/node@25.3.0)(typescript@5.9.3))(vite@7.3.2(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)))

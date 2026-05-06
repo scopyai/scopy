@@ -1,10 +1,45 @@
-# shadcn/ui monorepo template
+# TanStack Start + Elysia Monorepo Template
 
-This is a TanStack Start monorepo template with shadcn/ui.
+This is a reusable TypeScript monorepo template with:
 
-## Adding components
+- `apps/web`: TanStack Start, React, shadcn/ui, React Query, Eden treaty
+- `apps/api`: Elysia, Better Auth, Drizzle, PostgreSQL
+- `packages/ui`: shared shadcn/ui components
 
-To add components to your app, run the following command at the root of your `web` app:
+## Setup
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Create env files from the examples:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+Run the app:
+
+```bash
+pnpm dev
+```
+
+## Eden
+
+The web app consumes the API type through the `api` workspace package:
+
+```tsx
+import type { App } from "api";
+```
+
+Do not import API types through a frontend-only path alias such as `@api/*`; that breaks package resolution in monorepos.
+
+## Adding Components
+
+To add shadcn/ui components, run this at the repo root:
 
 ```bash
 pnpm dlx shadcn@latest add button -c apps/web
@@ -12,7 +47,7 @@ pnpm dlx shadcn@latest add button -c apps/web
 
 This will place the ui components in the `packages/ui/src/components` directory.
 
-## Using components
+## Using Components
 
 To use the components in your app, import them from the `ui` package.
 

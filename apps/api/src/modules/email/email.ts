@@ -1,5 +1,5 @@
 import { Unosend } from '@unosend/node';
-import { env } from "@/env"
+import { env } from "../../env"
 
 const unosend = new Unosend(env.UNOSEND_API_KEY);
 

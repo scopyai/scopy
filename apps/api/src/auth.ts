@@ -1,9 +1,9 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink } from 'better-auth/plugins'
-import { db } from '@/db/client'
-import { env } from '@/env'
-import { sendMagicLinkEmail } from '@/modules/email/email'
+import { db } from './db/client'
+import { env } from './env'
+import { sendMagicLinkEmail } from './modules/email/email'
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -15,7 +15,9 @@ export const auth = betterAuth({
   plugins: [
     magicLink({
       sendMagicLink: async ({ email, token, url }) => {
-        console.log(`Sending magic link to ${email} with token ${token} and url ${url}`)
+        void token
+        void url
+        console.log(`Sending magic link to ${email}`)
         const res = await sendMagicLinkEmail(email, url)
         console.log(`Email sent: ${res?.id}`)
       },
