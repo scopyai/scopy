@@ -41,9 +41,6 @@ importers:
       '@qdrant/js-client-rest':
         specifier: ^1.17.0
         version: 1.17.0(typescript@5.9.3)
-      '@unosend/node':
-        specifier: ^2.1.0
-        version: 2.1.0
       ai:
         specifier: ^6.0.141
         version: 6.0.168(zod@4.3.6)
@@ -2681,10 +2678,6 @@ packages:
   '@typescript-eslint/visitor-keys@8.56.1':
     resolution: {integrity: sha512-KiROIzYdEV85YygXw6BI/Dx4fnBlFQu6Mq4QE4MOH9fFnhohw6wX/OAvDY2/C+ut0I3RSPKenvZJIVYqJNkhEw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
-
-  '@unosend/node@2.1.0':
-    resolution: {integrity: sha512-0RYv+odbsk6lpNmkMWwTiuGdsqcfTK0eOjRQNPvujEeZ19M0Kf29j4nHV4AHCEW5WfNnTkYTQBsGlufH/ZWX7A==}
-    engines: {node: '>=18'}
 
   '@unrs/resolver-binding-android-arm-eabi@1.11.1':
     resolution: {integrity: sha512-ppLRUgHVaGRWUx0R0Ut06Mjo9gBaBkg3v/8AxusGLhsIotbBLuRk51rAzqLC8gq6NyyAojEXglNjzf6R948DNw==}
@@ -8017,8 +8010,6 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 8.56.1
       eslint-visitor-keys: 5.0.1
-
-  '@unosend/node@2.1.0': {}
 
   '@unrs/resolver-binding-android-arm-eabi@1.11.1':
     optional: true
