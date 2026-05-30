@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { Link, createFileRoute } from "@tanstack/react-router"
 import { Button } from "@workspace/ui/components/button"
 
 export const Route = createFileRoute("/")({ component: LandingPage })

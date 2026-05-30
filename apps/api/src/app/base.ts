@@ -1,4 +1,4 @@
-import { node } from '@elysiajs/node'
+import { node } from '@elysia/node'
 import { cors } from '@elysiajs/cors'
 import { Elysia } from 'elysia'
 import { env } from '../env'

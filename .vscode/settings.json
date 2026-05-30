@@ -1,0 +1,4 @@
+{
+  "ts.tsdk.promptToUseWorkspaceVersion": true,
+  "ts.tsdk.path": "node_modules/typescript/lib"
+}

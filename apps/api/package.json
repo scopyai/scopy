@@ -2,18 +2,19 @@
   "name": "api",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./src/app/base.ts",
   "types": "./src/app/base.ts",
   "exports": {
     ".": {
       "types": "./src/app/base.ts",
-      "default": "./src/index.ts"
+      "default": "./src/app/base.ts"
     }
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json --outDir dist",
-    "start": "NODE_ENV=production node dist/index.js",
+    "build": "tsc --noEmit",
+    "start": "NODE_ENV=production tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "db:push": "drizzle-kit push --config drizzle.config.ts",
@@ -23,7 +24,7 @@
     "@ai-sdk/devtools": "^0.0.15",
     "@ai-sdk/openai": "^3.0.48",
     "@elysiajs/cors": "^1.4.1",
-    "@elysiajs/node": "^1.4.5",
+    "@elysia/node": "^1.4.5",
     "@openrouter/ai-sdk-provider": "^2.3.3",
     "@qdrant/js-client-rest": "^1.17.0",
     "ai": "^6.0.141",

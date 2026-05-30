@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router"
+import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { authClient } from "@/lib/auth-client"
@@ -20,7 +20,7 @@ function ChatPage() {
 
   if (!session) return <Navigate to="/login" />
 
-  const displayName = user?.name ?? user?.email ?? session.user.email ?? "User"
+  const displayName = user?.name ?? user?.email ?? session.user.email
   const initials = displayName.slice(0, 2).toUpperCase()
 
   return (

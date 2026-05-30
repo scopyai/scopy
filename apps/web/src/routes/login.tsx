@@ -1,10 +1,10 @@
-import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router"
+import { Navigate, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation } from "@tanstack/react-query"
 import { useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card"
 import { authClient } from "@/lib/auth-client"
 
 export const Route = createFileRoute("/login")({ component: LoginPage })
@@ -123,7 +123,7 @@ function LoginPage() {
             </div>
             {mutation.error && (
               <p className="text-sm text-destructive">
-                {(mutation.error as Error).message}
+                {mutation.error.message}
               </p>
             )}
             <Button type="submit" disabled={mutation.isPending}>

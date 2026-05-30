@@ -1,11 +1,10 @@
 {
   "extends": "../../tsconfig.json",
   "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"],
   "compilerOptions": {
-    // "ignoreDeprecations": "6.0",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
