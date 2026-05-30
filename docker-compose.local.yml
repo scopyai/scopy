@@ -25,6 +25,8 @@ services:
       BETTER_AUTH_SECRET: local-development-secret-change-me
       BETTER_AUTH_URL: http://localhost:3001
       FRONTEND_URL: http://localhost:3000
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       PORT: 3001
     depends_on:
       db:
@@ -41,6 +43,8 @@ services:
       BETTER_AUTH_SECRET: local-development-secret-change-me
       BETTER_AUTH_URL: http://localhost:3001
       FRONTEND_URL: http://localhost:3000
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       PORT: 3001
     ports:
       - "3001:3001"
