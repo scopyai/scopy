@@ -1,8 +1,8 @@
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import dotenv from 'dotenv'
 import { z } from 'zod'
 
-dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
+dotenv.config({ path: resolve(process.cwd(), '.env') })
 
 export const env = z.object({
   PORT: z.coerce.number().int().positive().default(3001),

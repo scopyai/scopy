@@ -1,0 +1,56 @@
+# Dependencies & build output (also excluded from context for faster builds)
+node_modules
+**/node_modules
+dist
+**/dist
+.output
+**/.output
+.nitro
+**/.nitro
+.tanstack
+**/.tanstack
+.vinxi
+**/.vinxi
+.turbo
+**/.turbo
+
+# Version control & IDE
+.git
+.gitignore
+.vscode
+.cursor
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Tests & coverage
+coverage
+**/coverage
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/__tests__
+
+# Docs, agent skills, and local-only config
+README.md
+AGENTS.md
+.agents
+*.md
+!apps/**/.env.example
+docker-compose*.yml
+skills-lock.json
+.prettierrc
+.prettierignore
+.prettier*
+
+# OS & logs
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+*.log
+
+# Nested lockfiles (monorepo uses root lockfile)
+apps/**/pnpm-lock.yaml
