@@ -33,9 +33,10 @@ ENV HOST=0.0.0.0
 ENV PORT=3000
 
 COPY --from=builder --chown=app:app /repo/apps/web/.output ./.output
+COPY --from=builder --chown=app:app /repo/apps/web/package.json ./package.json
 
 USER app
 
 EXPOSE 3000
 
-CMD ["node", ".output/server/index.mjs"]
+CMD ["npm", "start"]
