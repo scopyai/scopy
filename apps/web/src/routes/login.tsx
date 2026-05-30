@@ -48,7 +48,7 @@ function LoginPage() {
     mutationFn: async () => {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: `${env.VITE_WEB_BASE_URL}/chat`,
+        callbackURL: `${env.VITE_WEB_BASE_URL}/dashboard`,
       })
 
       if (error) {
@@ -59,7 +59,7 @@ function LoginPage() {
 
   if (isPending) return null
 
-  if (session) return <Navigate to="/chat" />
+  if (session) return <Navigate to="/dashboard" />
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-background px-4">
