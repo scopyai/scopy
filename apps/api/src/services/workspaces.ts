@@ -1,26 +1,23 @@
-import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { db } from "../db/client";
+import { randomUUID } from "node:crypto"
+import { and, eq } from "drizzle-orm"
+import { db } from "../db/client"
 import {
   repository,
   reviewConfig,
   workspace,
   workspaceMember,
   type workspaceMemberRole,
-} from "../db/schema";
-import type {
-  GitHubInstallation,
-  GitHubRepository,
-} from "./github";
+} from "../db/schema"
+import type { GitHubInstallation, GitHubRepository } from "./github"
 
-type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number];
+type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number]
 
 const normalizeAccountType = (type: string): "user" | "organization" =>
-  type.toLowerCase() === "organization" ? "organization" : "user";
+  type.toLowerCase() === "organization" ? "organization" : "user"
 
 export const getWorkspaceForUser = async (
   workspaceId: string,
-  userId: string,
+  userId: string
 ) => {
   const rows = await db
     .select({
@@ -30,63 +27,66 @@ export const getWorkspaceForUser = async (
     .from(workspaceMember)
     .innerJoin(workspace, eq(workspace.id, workspaceMember.workspaceId))
     .where(
-      and(eq(workspaceMember.workspaceId, workspaceId), eq(workspaceMember.userId, userId)),
+      and(
+        eq(workspaceMember.workspaceId, workspaceId),
+        eq(workspaceMember.userId, userId)
+      )
     )
-    .limit(1);
+    .limit(1)
 
-  return rows[0] ?? null;
-};
+  return rows[0] ?? null
+}
 
 export const requireWorkspaceForUser = async (
   workspaceId: string,
-  userId: string,
+  userId: string
 ) => {
-  const workspaceWithRole = await getWorkspaceForUser(workspaceId, userId);
+  const workspaceWithRole = await getWorkspaceForUser(workspaceId, userId)
 
   if (!workspaceWithRole) {
-    throw new Error("Workspace not found");
+    throw new Error("Workspace not found")
   }
 
-  return workspaceWithRole;
-};
+  return workspaceWithRole
+}
 
 export const requireWorkspaceRole = async (
   workspaceId: string,
   userId: string,
-  roles: WorkspaceMemberRole[],
+  roles: WorkspaceMemberRole[]
 ) => {
-  const workspaceWithRole = await requireWorkspaceForUser(workspaceId, userId);
+  const workspaceWithRole = await requireWorkspaceForUser(workspaceId, userId)
 
   if (!roles.includes(workspaceWithRole.role)) {
-    throw new Error("Insufficient workspace permissions");
+    throw new Error("Insufficient workspace permissions")
   }
 
-  return workspaceWithRole;
-};
+  return workspaceWithRole
+}
 
 export const upsertGitHubWorkspace = async (
   installation: GitHubInstallation,
-  userId: string,
+  userId: string
 ) => {
   if (!installation.account) {
-    throw new Error("GitHub installation does not include an account");
+    throw new Error("GitHub installation does not include an account")
   }
 
-  const providerInstallationId = String(installation.id);
-  const providerAccountId = String(installation.account.id);
-  const providerAccountType = normalizeAccountType(installation.account.type);
+  const providerInstallationId = String(installation.id)
+  const providerAccountId = String(installation.account.id)
+  const providerAccountType = normalizeAccountType(installation.account.type)
   const connectionStatus: "active" | "suspended" = installation.suspended_at
     ? "suspended"
-    : "active";
+    : "active"
 
   const existing = await db.query.workspace.findFirst({
     where: and(
       eq(workspace.provider, "github"),
-      eq(workspace.providerAccountId, providerAccountId),
+      eq(workspace.providerAccountId, providerAccountId)
     ),
-  });
+  })
 
-  const workspaceId = existing?.id ?? randomUUID();
+  const workspaceId = existing?.id ?? randomUUID()
 
   const values = {
     id: workspaceId,
@@ -103,7 +103,7 @@ export const upsertGitHubWorkspace = async (
     installedByUserId: userId,
     installedAt: new Date(),
     updatedAt: new Date(),
-  };
+  }
 
   const [savedWorkspace] = await db
     .insert(workspace)
@@ -124,7 +124,7 @@ export const upsertGitHubWorkspace = async (
         updatedAt: values.updatedAt,
       },
     })
-    .returning();
+    .returning()
 
   const membership = {
     id: randomUUID(),
@@ -132,7 +132,7 @@ export const upsertGitHubWorkspace = async (
     userId,
     role: "owner" as const,
     updatedAt: new Date(),
-  };
+  }
 
   await db
     .insert(workspaceMember)
@@ -143,16 +143,16 @@ export const upsertGitHubWorkspace = async (
         role: membership.role,
         updatedAt: membership.updatedAt,
       },
-    });
+    })
 
-  return savedWorkspace;
-};
+  return savedWorkspace
+}
 
 export const syncWorkspaceRepositories = async (
   workspaceId: string,
-  repositories: GitHubRepository[],
+  repositories: GitHubRepository[]
 ) => {
-  const now = new Date();
+  const now = new Date()
 
   for (const githubRepository of repositories) {
     const [savedRepository] = await db
@@ -185,7 +185,7 @@ export const syncWorkspaceRepositories = async (
           updatedAt: now,
         },
       })
-      .returning();
+      .returning()
 
     await db
       .insert(reviewConfig)
@@ -195,7 +195,7 @@ export const syncWorkspaceRepositories = async (
       })
       .onConflictDoNothing({
         target: reviewConfig.repositoryId,
-      });
+      })
   }
 
   await db
@@ -204,5 +204,5 @@ export const syncWorkspaceRepositories = async (
       lastSyncedAt: now,
       updatedAt: now,
     })
-    .where(eq(workspace.id, workspaceId));
-};
+    .where(eq(workspace.id, workspaceId))
+}
