@@ -1,4 +1,6 @@
-This is a reusable monorepo template with a TanStack Start web app, an Elysia API, shadcn/ui components, Better Auth, Drizzle, and Eden treaty.
+This is an open-source ai code review tool, alternative to coderabbit, macroscope and greptile.
+
+This is a monorepo with a TanStack Start web app, an Elysia API, shadcn/ui components, Better Auth, Drizzle, and Eden treaty.
 
 # Rules for frontend (/web):
 
