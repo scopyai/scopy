@@ -119,7 +119,7 @@ export const listGitHubInstallationRepositories = async (
     {
       per_page: 100,
     },
-    (response) => response.data.repositories,
+    (response) => response.data,
   );
 
   return repositories as GitHubRepository[];

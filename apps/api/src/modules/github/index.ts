@@ -70,6 +70,40 @@ const redirectToDashboard = (workspaceId?: string) => {
   return Response.redirect(url, 302);
 };
 
+const handleInstallationCallback = async ({
+  query,
+  user: currentUser,
+  status,
+}: {
+  query: Record<string, string | undefined>;
+  user: { id: string };
+  status: (code: number, body?: { error: string }) => unknown;
+}) => {
+  const installationId = query.installation_id;
+  const state = query.state;
+
+  if (!installationId || !state || !verifyInstallState(state, currentUser.id)) {
+    return status(400, { error: "Invalid GitHub installation callback" });
+  }
+
+  try {
+    const installation = await getGitHubInstallation(installationId);
+    const savedWorkspace = await upsertGitHubWorkspace(
+      installation,
+      currentUser.id,
+    );
+    const repositories =
+      await listGitHubInstallationRepositories(installationId);
+
+    await syncWorkspaceRepositories(savedWorkspace.id, repositories);
+
+    return redirectToDashboard(savedWorkspace.id);
+  } catch (error) {
+    console.error("Failed to connect GitHub installation", error);
+    return status(502, { error: "Failed to connect GitHub installation" });
+  }
+};
+
 export const githubRoutes = protectedRoute("/github")
   .get("/install-url", ({ user: currentUser, status }) => {
     try {
@@ -80,30 +114,12 @@ export const githubRoutes = protectedRoute("/github")
       return status(503, { error: "GitHub App is not configured" });
     }
   })
-  .get("/callback", async ({ query, user: currentUser, status }) => {
-    const installationId = query.installation_id;
-    const state = query.state;
-
-    if (!installationId || !state || !verifyInstallState(state, currentUser.id)) {
-      return status(400, { error: "Invalid GitHub installation callback" });
-    }
-
-    try {
-      const installation = await getGitHubInstallation(installationId);
-      const savedWorkspace = await upsertGitHubWorkspace(
-        installation,
-        currentUser.id,
-      );
-      const repositories =
-        await listGitHubInstallationRepositories(installationId);
-
-      await syncWorkspaceRepositories(savedWorkspace.id, repositories);
-
-      return redirectToDashboard(savedWorkspace.id);
-    } catch {
-      return status(502, { error: "Failed to connect GitHub installation" });
-    }
-  })
+  .get("/callback", ({ query, user, status }) =>
+    handleInstallationCallback({ query, user, status }),
+  )
+  .get("/installation", ({ query, user, status }) =>
+    handleInstallationCallback({ query, user, status }),
+  )
   .post("/sync", async ({ user: currentUser, status }) => {
     const workspaces = await db
       .select({ workspace })
@@ -128,7 +144,8 @@ export const githubRoutes = protectedRoute("/github")
       return {
         synced: workspaces.length,
       };
-    } catch {
+    } catch (error) {
+      console.error("Failed to sync GitHub workspaces", error);
       return status(502, { error: "Failed to sync GitHub workspaces" });
     }
   });

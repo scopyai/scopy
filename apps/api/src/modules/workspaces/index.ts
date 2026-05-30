@@ -156,7 +156,8 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       return {
         synced: repositories.length,
       };
-    } catch {
+    } catch (error) {
+      console.error("Failed to sync GitHub repositories", error);
       return status(502, { error: "Failed to sync GitHub repositories" });
     }
   })
