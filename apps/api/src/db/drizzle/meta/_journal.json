@@ -8,6 +8,13 @@
       "when": 1776628991066,
       "tag": "0000_wonderful_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780170423828,
+      "tag": "0001_tan_butterfly",
+      "breakpoints": true
     }
   ]
 }

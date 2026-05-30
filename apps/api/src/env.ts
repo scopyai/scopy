@@ -12,4 +12,8 @@ export const env = z.object({
   FRONTEND_URL: z.url(),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
+  GITHUB_APP_ID: z.string().min(1).optional(),
+  GITHUB_APP_SLUG: z.string().min(1).optional(),
+  GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
+  GITHUB_APP_WEBHOOK_SECRET: z.string().min(1).optional(),
 }).parse(process.env)

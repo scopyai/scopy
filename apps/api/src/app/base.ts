@@ -3,8 +3,11 @@ import { cors } from '@elysiajs/cors'
 import { Elysia } from 'elysia'
 import { env } from '../env'
 import { authRoutes } from './auth'
+import { githubRoutes } from '../modules/github'
 import { healthRoutes } from '../modules/health'
 import { meRoutes } from '../modules/me'
+import { webhookRoutes } from '../modules/webhooks'
+import { workspaceRoutes } from '../modules/workspaces'
 	
 export const app = new Elysia({
 	name: 'api',
@@ -19,5 +22,8 @@ export const app = new Elysia({
 	.use(authRoutes)
 	.use(healthRoutes)
 	.use(meRoutes)
+	.use(githubRoutes)
+	.use(workspaceRoutes)
+	.use(webhookRoutes)
 
 export type App = typeof app

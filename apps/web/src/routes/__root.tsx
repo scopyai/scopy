@@ -1,4 +1,6 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router"
+import { ThemeProvider } from "next-themes"
+import { Toaster } from "@workspace/ui/components/sonner"
 import { ReactQueryProvider } from "@/lib/query-client"
 
 import appCss from "@workspace/ui/globals.css?url"
@@ -14,7 +16,7 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "App",
+        title: "Review",
       },
     ],
     links: [
@@ -29,12 +31,15 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body>
-        <ReactQueryProvider>{children}</ReactQueryProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          <ReactQueryProvider>{children}</ReactQueryProvider>
+          <Toaster />
+        </ThemeProvider>
         <Scripts />
       </body>
     </html>
