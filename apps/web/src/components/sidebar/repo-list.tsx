@@ -97,35 +97,38 @@ export function RepoList({ workspaceId }: RepoListProps) {
             </div>
           ) : (
             repos.map((repo) => (
-              <button
+              <div
                 key={repo.id}
-                type="button"
-                onClick={() => handleRepoClick(repo.id)}
                 className={cn(
-                  "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+                  "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50",
                   repo.archived && "opacity-50",
                   activeRepositoryId === repo.id && "bg-accent"
                 )}
               >
-                <GitForkIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                <span
-                  className={cn(
-                    "flex-1 truncate text-xs",
-                    repo.enabled ? "text-foreground" : "text-muted-foreground"
-                  )}
-                  title={repo.fullName}
+                <button
+                  type="button"
+                  onClick={() => handleRepoClick(repo.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                 >
-                  {repo.name}
-                </span>
+                  <GitForkIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span
+                    className={cn(
+                      "truncate text-xs",
+                      repo.enabled ? "text-foreground" : "text-muted-foreground"
+                    )}
+                    title={repo.fullName}
+                  >
+                    {repo.name}
+                  </span>
+                </button>
                 <Switch
                   checked={repo.enabled}
                   onCheckedChange={(checked) => handleToggle(repo.id, checked)}
-                  onClick={(e) => e.stopPropagation()}
                   disabled={updateRepo.isPending || repo.archived}
                   className="scale-75"
                   aria-label={`${repo.enabled ? "Disable" : "Enable"} ${repo.name}`}
                 />
-              </button>
+              </div>
             ))
           )}
         </div>
