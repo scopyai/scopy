@@ -1,6 +1,7 @@
 "use client"
 
 import { RefreshCwIcon, GitForkIcon } from "lucide-react"
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Switch } from "@workspace/ui/components/switch"
@@ -19,6 +20,14 @@ export function RepoList({ workspaceId }: RepoListProps) {
   const { data: repos, isPending } = useRepositories(workspaceId)
   const updateRepo = useUpdateRepository(workspaceId)
   const syncWorkspace = useSyncWorkspace(workspaceId)
+  const navigate = useNavigate()
+
+  const activeRepositoryId = useRouterState({
+    select: (s) => {
+      const lastMatch = s.matches.at(-1)
+      return (lastMatch?.params as { repositoryId?: string })?.repositoryId ?? null
+    },
+  })
 
   const handleSync = async () => {
     try {
@@ -35,6 +44,10 @@ export function RepoList({ workspaceId }: RepoListProps) {
     } catch {
       toast.error("Failed to update repository")
     }
+  }
+
+  const handleRepoClick = (repositoryId: string) => {
+    navigate({ to: "/repositories/$repositoryId", params: { repositoryId } })
   }
 
   return (
@@ -79,11 +92,14 @@ export function RepoList({ workspaceId }: RepoListProps) {
             </div>
           ) : (
             repos.map((repo) => (
-              <div
+              <button
                 key={repo.id}
+                type="button"
+                onClick={() => handleRepoClick(repo.id)}
                 className={cn(
-                  "group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50",
-                  repo.archived && "opacity-50"
+                  "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  repo.archived && "opacity-50",
+                  activeRepositoryId === repo.id && "bg-accent",
                 )}
               >
                 <GitForkIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -99,11 +115,12 @@ export function RepoList({ workspaceId }: RepoListProps) {
                 <Switch
                   checked={repo.enabled}
                   onCheckedChange={(checked) => handleToggle(repo.id, checked)}
+                  onClick={(e) => e.stopPropagation()}
                   disabled={updateRepo.isPending || repo.archived}
                   className="scale-75"
                   aria-label={`${repo.enabled ? "Disable" : "Enable"} ${repo.name}`}
                 />
-              </div>
+              </button>
             ))
           )}
         </div>

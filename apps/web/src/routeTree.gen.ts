@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GithubInstallationRouteImport } from './routes/github.installation'
 import { Route as GithubAuthorizationRouteImport } from './routes/github.authorization'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppRepositoriesRepositoryIdRouteImport } from './routes/_app.repositories.$repositoryId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -45,6 +46,12 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRepositoriesRepositoryIdRoute =
+  AppRepositoriesRepositoryIdRouteImport.update({
+    id: '/repositories/$repositoryId',
+    path: '/repositories/$repositoryId',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
+  '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -59,6 +67,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
+  '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -68,6 +77,7 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
+  '/_app/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -77,6 +87,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/github/authorization'
     | '/github/installation'
+    | '/repositories/$repositoryId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -84,6 +95,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/github/authorization'
     | '/github/installation'
+    | '/repositories/$repositoryId'
   id:
     | '__root__'
     | '/'
@@ -92,6 +104,7 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/github/authorization'
     | '/github/installation'
+    | '/_app/repositories/$repositoryId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -146,15 +159,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/repositories/$repositoryId': {
+      id: '/_app/repositories/$repositoryId'
+      path: '/repositories/$repositoryId'
+      fullPath: '/repositories/$repositoryId'
+      preLoaderRoute: typeof AppRepositoriesRepositoryIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
+  AppRepositoriesRepositoryIdRoute: typeof AppRepositoriesRepositoryIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
+  AppRepositoriesRepositoryIdRoute: AppRepositoriesRepositoryIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
