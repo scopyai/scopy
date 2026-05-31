@@ -3,7 +3,11 @@ import type { Task } from "graphile-worker"
 import { z } from "zod"
 import { db } from "../db/client"
 import { reviewRun } from "../db/schema"
-import { acknowledgeGitHubPullRequestOpened } from "../services/pull-requests"
+import {
+  publishReviewFailure,
+  REVIEW_MODEL,
+  runReviewAgent,
+} from "../review-agent"
 
 const payloadSchema = z.object({
   reviewRunId: z.uuid(),
@@ -19,6 +23,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
           repository: {
             with: {
               workspace: true,
+              reviewConfig: true,
             },
           },
         },
@@ -30,6 +35,15 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
     return
   }
 
+  helpers.logger.info("Starting pull request review job", {
+    reviewRunId: run.id,
+    pullRequestId: run.pullRequestId,
+    repository: run.pullRequest.repository.fullName,
+    headSha: run.headSha,
+    attempt: helpers.job.attempts,
+    maxAttempts: helpers.job.max_attempts,
+  })
+
   if (run.pullRequest.headSha !== run.headSha) {
     await db
       .update(reviewRun)
@@ -39,6 +53,12 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
         updatedAt: new Date(),
       })
       .where(eq(reviewRun.id, run.id))
+    helpers.logger.info("Superseded pull request review job", {
+      reviewRunId: run.id,
+      pullRequestId: run.pullRequestId,
+      expectedHeadSha: run.headSha,
+      currentHeadSha: run.pullRequest.headSha,
+    })
     return
   }
 
@@ -53,34 +73,79 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
     .where(eq(reviewRun.id, run.id))
 
   try {
-    await acknowledgeGitHubPullRequestOpened(
-      run.pullRequest.repository,
-      run.pullRequest.repository.workspace.providerInstallationId,
-      run.pullRequest.number,
-      run.pullRequest.id
-    )
+    const triggerSource =
+      typeof run.result?.triggerSource === "string"
+        ? run.result.triggerSource
+        : "automatic"
+    const result = await runReviewAgent({
+      pullRequest: run.pullRequest,
+      repository: run.pullRequest.repository,
+      reviewConfig: run.pullRequest.repository.reviewConfig,
+      installationId:
+        run.pullRequest.repository.workspace.providerInstallationId,
+      triggerSource,
+      logger: helpers.logger,
+    })
 
     await db
       .update(reviewRun)
       .set({
-        status: "completed",
-        result: {
-          kind: "placeholder",
-          message: "Review workflow completed without running an AI reviewer.",
-        },
+        status: result.kind === "skipped" ? "skipped" : "completed",
+        result,
         completedAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(reviewRun.id, run.id))
+    helpers.logger.info("Completed pull request review job", {
+      reviewRunId: run.id,
+      pullRequestId: run.pullRequestId,
+      headSha: run.headSha,
+      status: result.kind === "skipped" ? "skipped" : "completed",
+      durationMs: result.durationMs,
+    })
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown review workflow error"
+    const isFinalAttempt = helpers.job.attempts >= helpers.job.max_attempts
+    const triggerSource =
+      typeof run.result?.triggerSource === "string"
+        ? run.result.triggerSource
+        : "automatic"
+    let commentId: number | undefined
+
+    if (isFinalAttempt) {
+      try {
+        commentId = await publishReviewFailure({
+          pullRequest: run.pullRequest,
+          repository: run.pullRequest.repository,
+          installationId:
+            run.pullRequest.repository.workspace.providerInstallationId,
+        })
+      } catch (publishError) {
+        helpers.logger.error("Failed to publish review failure notice", {
+          reviewRunId: run.id,
+          pullRequestId: run.pullRequestId,
+          headSha: run.headSha,
+          error: publishError,
+        })
+      }
+    }
 
     await db
       .update(reviewRun)
       .set({
-        status: "failed",
+        status: isFinalAttempt ? "failed" : "running",
         error: message,
+        result: isFinalAttempt
+          ? {
+              kind: "failed",
+              triggerSource,
+              modelId: REVIEW_MODEL,
+              commentId,
+              completedAt: new Date().toISOString(),
+            }
+          : run.result,
+        completedAt: isFinalAttempt ? new Date() : null,
         updatedAt: new Date(),
       })
       .where(eq(reviewRun.id, run.id))
@@ -89,9 +154,14 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
       headSha: run.headSha,
+      attempt: helpers.job.attempts,
+      maxAttempts: helpers.job.max_attempts,
+      isFinalAttempt,
       error,
     })
 
-    throw error
+    if (!isFinalAttempt) {
+      throw error
+    }
   }
 }

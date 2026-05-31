@@ -73,9 +73,6 @@ type GitHubReviewComment = GitHubIssueComment & {
 
 type TimelineEventType = "issue_comment" | "review" | "review_comment"
 
-const pullRequestOpenedAcknowledgement =
-  "Thanks for opening this pull request. We'll start the review soon."
-
 const toDate = (value: string) => new Date(value)
 const toNullableDate = (value: string | null | undefined) =>
   value ? new Date(value) : null
@@ -93,44 +90,6 @@ const toActor = (actor: GitHubActor | null | undefined): ProviderActor | null =>
 const getInstallationOctokit = async (installationId: string) => {
   const app = createGitHubApp()
   return app.getInstallationOctokit(Number(installationId))
-}
-
-export const acknowledgeGitHubPullRequestOpened = async (
-  repo: typeof repository.$inferSelect,
-  installationId: string,
-  number: number,
-  pullRequestId: string,
-) => {
-  const octokit = await getInstallationOctokit(installationId)
-  const marker = `<!-- reviewbot:acknowledgement:${encodeURIComponent(pullRequestId)} -->`
-  const comments = await octokit.paginate(
-    "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
-    {
-      owner: repo.owner,
-      repo: repo.name,
-      issue_number: number,
-      per_page: 100,
-    },
-  )
-
-  if (
-    comments.some(
-      (comment) =>
-        typeof comment.body === "string" && comment.body.includes(marker),
-    )
-  ) {
-    return
-  }
-
-  await octokit.request(
-    "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
-    {
-      owner: repo.owner,
-      repo: repo.name,
-      issue_number: number,
-      body: `${pullRequestOpenedAcknowledgement}\n\n${marker}`,
-    },
-  )
 }
 
 const upsertTimelineEvent = async ({

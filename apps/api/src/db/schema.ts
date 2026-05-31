@@ -361,7 +361,7 @@ export const reviewRun = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("review_run_pull_request_head_sha_idx").on(
+    index("review_run_pull_request_head_sha_idx").on(
       table.pullRequestId,
       table.headSha,
     ),

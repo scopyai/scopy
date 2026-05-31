@@ -29,6 +29,13 @@
       "when": 1780245145704,
       "tag": "0003_clumsy_greymalkin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780255767145,
+      "tag": "0004_simple_omega_sentinel",
+      "breakpoints": true
     }
   ]
 }

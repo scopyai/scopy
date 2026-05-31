@@ -8,6 +8,11 @@ import {
   workspace,
   type ProviderActor,
 } from "../db/schema"
+import { env } from "../env"
+import {
+  containsBotMention,
+  isBotAuthoredComment,
+} from "../review-agent/triggers"
 import { listGitHubInstallationRepositories } from "./github"
 import {
   addPullRequestLifecycleEvent,
@@ -32,11 +37,13 @@ const enqueueJob = (
   executor: JobExecutor,
   identifier: string,
   payload: Record<string, unknown>,
+  maxAttempts?: number,
 ) =>
   executor.execute(sql`
     select graphile_worker.add_job(
       ${identifier},
-      ${JSON.stringify(payload)}::json
+      ${JSON.stringify(payload)}::json,
+      max_attempts := ${maxAttempts ?? null}
     )
   `)
 
@@ -74,6 +81,10 @@ export type GitHubWebhookPayload = {
     number?: number
     pull_request?: unknown
   }
+  comment?: {
+    body?: string | null
+    user?: GitHubWebhookActor
+  }
 }
 
 const pullRequestEventNames = new Set([
@@ -95,7 +106,6 @@ const pullRequestLifecycleActions = new Set([
 const pullRequestReviewActions = new Set([
   "opened",
   "ready_for_review",
-  "synchronize",
 ])
 
 const toProviderActor = (
@@ -159,7 +169,7 @@ const matchesBranchPattern = (branch: string, pattern: string) => {
   return new RegExp(`^${expression}$`).test(branch)
 }
 
-const shouldReviewPullRequest = async (
+const shouldAutomaticallyReviewPullRequest = async (
   eventName: string,
   action: string | undefined,
   savedPullRequest: Awaited<ReturnType<typeof syncGitHubPullRequest>>,
@@ -186,34 +196,87 @@ const shouldReviewPullRequest = async (
   )
 }
 
+const shouldManuallyReviewPullRequest = async (
+  eventName: string,
+  action: string | undefined,
+  payload: GitHubWebhookPayload,
+  savedPullRequest: Awaited<ReturnType<typeof syncGitHubPullRequest>>,
+) => {
+  const appSlug = env.GITHUB_APP_SLUG
+  const commentBody = payload.comment?.body
+
+  if (
+    eventName !== "issue_comment" ||
+    action !== "created" ||
+    !appSlug ||
+    !commentBody ||
+    !containsBotMention(commentBody, appSlug) ||
+    isBotAuthoredComment(payload.sender ?? payload.comment?.user, appSlug)
+  ) {
+    return false
+  }
+
+  const config = await db.query.reviewConfig.findFirst({
+    where: eq(reviewConfig.repositoryId, savedPullRequest.repositoryId),
+  })
+
+  return Boolean(config?.enabled && config.reviewPullRequests)
+}
+
 const finishWebhookEvent = async (
   eventId: string,
   review?: {
     pullRequestId: string
     headSha: string
+    triggerSource: "automatic" | "mention"
   },
 ) => {
   await db.transaction(async (tx) => {
     if (review) {
-      const [run] = await tx
-        .insert(reviewRun)
-        .values({
-          id: randomUUID(),
+      const existingAutomaticRun =
+        review.triggerSource === "automatic"
+          ? await tx.query.reviewRun.findFirst({
+              where: and(
+                eq(reviewRun.pullRequestId, review.pullRequestId),
+                eq(reviewRun.headSha, review.headSha),
+              ),
+            })
+          : null
+
+      if (existingAutomaticRun) {
+        console.info("Skipped duplicate automatic pull request review run", {
+          webhookEventId: eventId,
+          reviewRunId: existingAutomaticRun.id,
           pullRequestId: review.pullRequestId,
-          triggerWebhookEventId: eventId,
           headSha: review.headSha,
         })
-        .onConflictDoNothing({
-          target: [reviewRun.pullRequestId, reviewRun.headSha],
-        })
-        .returning()
+      }
+
+      const [run] = existingAutomaticRun
+        ? []
+        : await tx
+            .insert(reviewRun)
+            .values({
+              id: randomUUID(),
+              pullRequestId: review.pullRequestId,
+              triggerWebhookEventId: eventId,
+              headSha: review.headSha,
+              result: {
+                triggerSource: review.triggerSource,
+              },
+            })
+            .returning()
 
       if (run) {
-        await enqueueJob(
-          tx,
-          "review_pull_request",
-          { reviewRunId: run.id },
-        )
+        await enqueueJob(tx, "review_pull_request", { reviewRunId: run.id }, 5)
+        console.info("Enqueued pull request review run", {
+          webhookEventId: eventId,
+          reviewRunId: run.id,
+          pullRequestId: review.pullRequestId,
+          headSha: review.headSha,
+          triggerSource: review.triggerSource,
+          maxAttempts: 5,
+        })
       }
     }
 
@@ -365,18 +428,40 @@ export const processGitHubWebhookEvent = async (eventId: string) => {
           )
         }
 
-        const shouldReview = await shouldReviewPullRequest(
+        const shouldAutomaticallyReview =
+          await shouldAutomaticallyReviewPullRequest(
+            event.eventName,
+            payload.action,
+            savedPullRequest,
+          )
+        const shouldManuallyReview = await shouldManuallyReviewPullRequest(
           event.eventName,
           payload.action,
+          payload,
           savedPullRequest,
         )
+        const triggerSource = shouldManuallyReview
+          ? "mention"
+          : shouldAutomaticallyReview
+            ? "automatic"
+            : null
+        console.info("Evaluated pull request review trigger", {
+          webhookEventId: event.id,
+          eventName: event.eventName,
+          action: payload.action ?? null,
+          pullRequestId: savedPullRequest.id,
+          repositoryId: savedPullRequest.repositoryId,
+          headSha: savedPullRequest.headSha,
+          triggerSource,
+        })
 
         await finishWebhookEvent(
           event.id,
-          shouldReview
+          triggerSource
             ? {
                 pullRequestId: savedPullRequest.id,
                 headSha: savedPullRequest.headSha,
+                triggerSource,
               }
             : undefined,
         )

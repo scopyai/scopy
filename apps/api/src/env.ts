@@ -18,4 +18,5 @@ export const env = z.object({
   GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
   GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
   GITHUB_APP_WEBHOOK_SECRET: z.string().min(1).optional(),
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
 }).parse(process.env)
