@@ -39,6 +39,14 @@ export const pullRequestTimelineEventType = pgEnum(
   "pull_request_timeline_event_type",
   ["lifecycle", "issue_comment", "review", "review_comment"],
 );
+export const reviewRunStatus = pgEnum("review_run_status", [
+  "queued",
+  "running",
+  "completed",
+  "skipped",
+  "failed",
+  "superseded",
+]);
 
 export type ProviderActor = {
   id: string;
@@ -329,6 +337,41 @@ export const reviewConfig = pgTable(
   (table) => [uniqueIndex("review_config_repository_id_idx").on(table.repositoryId)],
 );
 
+export const reviewRun = pgTable(
+  "review_run",
+  {
+    id: text("id").primaryKey(),
+    pullRequestId: text("pull_request_id")
+      .notNull()
+      .references(() => pullRequest.id, { onDelete: "cascade" }),
+    triggerWebhookEventId: text("trigger_webhook_event_id").references(
+      () => webhookEvent.id,
+      { onDelete: "set null" },
+    ),
+    headSha: text("head_sha").notNull(),
+    status: reviewRunStatus("status").default("queued").notNull(),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    error: text("error"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("review_run_pull_request_head_sha_idx").on(
+      table.pullRequestId,
+      table.headSha,
+    ),
+    index("review_run_pull_request_id_idx").on(table.pullRequestId),
+    index("review_run_trigger_webhook_event_id_idx").on(
+      table.triggerWebhookEventId,
+    ),
+  ],
+);
+
 export const webhookEvent = pgTable(
   "webhook_event",
   {
@@ -411,6 +454,7 @@ export const pullRequestRelations = relations(pullRequest, ({ one, many }) => ({
     references: [repository.id],
   }),
   timelineEvents: many(pullRequestTimelineEvent),
+  reviewRuns: many(reviewRun),
 }));
 
 export const pullRequestTimelineEventRelations = relations(
@@ -430,9 +474,21 @@ export const reviewConfigRelations = relations(reviewConfig, ({ one }) => ({
   }),
 }));
 
-export const webhookEventRelations = relations(webhookEvent, ({ one }) => ({
+export const reviewRunRelations = relations(reviewRun, ({ one }) => ({
+  pullRequest: one(pullRequest, {
+    fields: [reviewRun.pullRequestId],
+    references: [pullRequest.id],
+  }),
+  triggerWebhookEvent: one(webhookEvent, {
+    fields: [reviewRun.triggerWebhookEventId],
+    references: [webhookEvent.id],
+  }),
+}));
+
+export const webhookEventRelations = relations(webhookEvent, ({ one, many }) => ({
   workspace: one(workspace, {
     fields: [webhookEvent.workspaceId],
     references: [workspace.id],
   }),
+  reviewRuns: many(reviewRun),
 }));

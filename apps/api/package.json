@@ -11,9 +11,13 @@
     }
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --platform node --target node20 --out-dir dist --clean",
+    "dev": "concurrently --kill-others --names api,worker \"pnpm dev:api\" \"pnpm worker\"",
+    "dev:api": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts src/worker.ts src/worker-migrate.ts --format esm --platform node --target node20 --out-dir dist --clean",
     "start": "node dist/index.js",
+    "worker": "tsx watch src/worker.ts",
+    "worker:start": "node dist/worker.js",
+    "worker:migrate": "tsx src/worker-migrate.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
@@ -28,6 +32,7 @@
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "elysia": "^1.4.28",
+    "graphile-worker": "^0.16.6",
     "octokit": "^5.0.5",
     "pg": "^8.20.0",
     "zod": "^4.3.6"
@@ -35,6 +40,7 @@
   "devDependencies": {
     "@types/node": "^25.1.0",
     "@types/pg": "^8.20.0",
+    "concurrently": "^10.0.0",
     "drizzle-kit": "^0.31.10",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
