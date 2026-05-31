@@ -5,9 +5,11 @@ import { z } from "zod"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { ConnectGitHub } from "@/components/connect-github"
+import { getGitHubConnectionErrorMessage } from "@/lib/github-connection-errors"
 
 const searchSchema = z.object({
   workspaceId: z.string().optional(),
+  githubError: z.string().optional(),
 })
 
 export const Route = createFileRoute("/_app/dashboard")({
@@ -16,18 +18,24 @@ export const Route = createFileRoute("/_app/dashboard")({
 })
 
 function DashboardPage() {
-  const { workspaceId: callbackWorkspaceId } = Route.useSearch()
+  const { workspaceId: callbackWorkspaceId, githubError } = Route.useSearch()
   const navigate = useNavigate()
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces, isPending } = useWorkspaces()
 
   useEffect(() => {
+    if (githubError) {
+      toast.error(getGitHubConnectionErrorMessage(githubError))
+      navigate({ to: "/dashboard", search: {}, replace: true })
+      return
+    }
+
     if (callbackWorkspaceId) {
       setSelectedWorkspaceId(callbackWorkspaceId)
       toast.success("Organization connected successfully")
       navigate({ to: "/dashboard", search: {}, replace: true })
     }
-  }, [callbackWorkspaceId, setSelectedWorkspaceId, navigate])
+  }, [callbackWorkspaceId, githubError, setSelectedWorkspaceId, navigate])
 
   if (isPending) return null
 

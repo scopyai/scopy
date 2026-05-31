@@ -15,6 +15,13 @@ type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number]
 const normalizeAccountType = (type: string): "user" | "organization" =>
   type.toLowerCase() === "organization" ? "organization" : "user"
 
+export class PersonalGitHubWorkspaceAlreadyConnectedError extends Error {
+  constructor() {
+    super("This personal GitHub account is already connected")
+    this.name = "PersonalGitHubWorkspaceAlreadyConnectedError"
+  }
+}
+
 export const getWorkspaceForUser = async (
   workspaceId: string,
   userId: string
@@ -86,6 +93,24 @@ export const upsertGitHubWorkspace = async (
     ),
   })
 
+  const existingMembership = existing
+    ? await db.query.workspaceMember.findFirst({
+        where: and(
+          eq(workspaceMember.workspaceId, existing.id),
+          eq(workspaceMember.userId, userId)
+        ),
+      })
+    : null
+
+  if (
+    existing &&
+    providerAccountType === "user" &&
+    !existingMembership &&
+    existing.installedByUserId !== userId
+  ) {
+    throw new PersonalGitHubWorkspaceAlreadyConnectedError()
+  }
+
   const workspaceId = existing?.id ?? randomUUID()
 
   const values = {
@@ -120,17 +145,18 @@ export const upsertGitHubWorkspace = async (
         repositorySelection: values.repositorySelection,
         permissions: values.permissions,
         connectionStatus: values.connectionStatus,
-        installedByUserId: values.installedByUserId,
         updatedAt: values.updatedAt,
       },
     })
     .returning()
 
+  const role: WorkspaceMemberRole =
+    !existing || existing.installedByUserId === userId ? "owner" : "member"
   const membership = {
     id: randomUUID(),
     workspaceId: savedWorkspace.id,
     userId,
-    role: "owner" as const,
+    role,
     updatedAt: new Date(),
   }
 
