@@ -15,6 +15,13 @@
       "when": 1780170423828,
       "tag": "0001_tan_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780225230709,
+      "tag": "0002_mighty_cerebro",
+      "breakpoints": true
     }
   ]
 }

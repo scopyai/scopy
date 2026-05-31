@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq, notInArray } from "drizzle-orm"
+import { and, eq, isNull, notInArray } from "drizzle-orm"
 import { db } from "../db/client"
 import {
   repository,
@@ -180,6 +180,9 @@ export const syncWorkspaceRepositories = async (
   repositorySelection?: "all" | "selected"
 ) => {
   const now = new Date()
+  const providerRepositoryIds = repositories.map((githubRepository) =>
+    String(githubRepository.id)
+  )
 
   for (const githubRepository of repositories) {
     const [savedRepository] = await db
@@ -195,6 +198,7 @@ export const syncWorkspaceRepositories = async (
         defaultBranch: githubRepository.default_branch,
         htmlUrl: githubRepository.html_url,
         archived: githubRepository.archived,
+        providerAccessRemovedAt: null,
         lastSyncedAt: now,
         updatedAt: now,
       })
@@ -208,6 +212,7 @@ export const syncWorkspaceRepositories = async (
           defaultBranch: githubRepository.default_branch,
           htmlUrl: githubRepository.html_url,
           archived: githubRepository.archived,
+          providerAccessRemovedAt: null,
           lastSyncedAt: now,
           updatedAt: now,
         },
@@ -225,18 +230,26 @@ export const syncWorkspaceRepositories = async (
       })
   }
 
-  const providerRepositoryIds = repositories.map((githubRepository) =>
-    String(githubRepository.id)
-  )
   const staleRepositoriesWhere =
     providerRepositoryIds.length === 0
-      ? eq(repository.workspaceId, workspaceId)
+      ? and(
+          eq(repository.workspaceId, workspaceId),
+          isNull(repository.providerAccessRemovedAt)
+        )
       : and(
           eq(repository.workspaceId, workspaceId),
-          notInArray(repository.providerRepositoryId, providerRepositoryIds)
+          notInArray(repository.providerRepositoryId, providerRepositoryIds),
+          isNull(repository.providerAccessRemovedAt)
         )
 
-  await db.delete(repository).where(staleRepositoriesWhere)
+  await db
+    .update(repository)
+    .set({
+      enabled: false,
+      providerAccessRemovedAt: now,
+      updatedAt: now,
+    })
+    .where(staleRepositoriesWhere)
 
   await db
     .update(workspace)

@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -29,6 +30,22 @@ export const workspaceMemberRole = pgEnum("workspace_member_role", [
   "admin",
   "member",
 ]);
+export const pullRequestState = pgEnum("pull_request_state", [
+  "open",
+  "closed",
+  "merged",
+]);
+export const pullRequestTimelineEventType = pgEnum(
+  "pull_request_timeline_event_type",
+  ["lifecycle", "issue_comment", "review", "review_comment"],
+);
+
+export type ProviderActor = {
+  id: string;
+  login: string;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+};
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -184,6 +201,7 @@ export const repository = pgTable(
     htmlUrl: text("html_url").notNull(),
     enabled: boolean("enabled").default(false).notNull(),
     archived: boolean("archived").default(false).notNull(),
+    providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -197,6 +215,86 @@ export const repository = pgTable(
       table.providerRepositoryId,
     ),
     index("repository_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export const pullRequest = pgTable(
+  "pull_request",
+  {
+    id: text("id").primaryKey(),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repository.id, { onDelete: "cascade" }),
+    providerPullRequestId: text("provider_pull_request_id").notNull(),
+    number: integer("number").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    htmlUrl: text("html_url").notNull(),
+    author: jsonb("author").$type<ProviderActor | null>(),
+    state: pullRequestState("state").notNull(),
+    draft: boolean("draft").default(false).notNull(),
+    baseRef: text("base_ref").notNull(),
+    headRef: text("head_ref").notNull(),
+    headSha: text("head_sha").notNull(),
+    labels: jsonb("labels").$type<string[]>().default([]).notNull(),
+    assignees: jsonb("assignees").$type<ProviderActor[]>().default([]).notNull(),
+    openedAt: timestamp("opened_at").notNull(),
+    closedAt: timestamp("closed_at"),
+    mergedAt: timestamp("merged_at"),
+    providerCreatedAt: timestamp("provider_created_at").notNull(),
+    providerUpdatedAt: timestamp("provider_updated_at").notNull(),
+    lastSyncedAt: timestamp("last_synced_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("pull_request_repository_provider_id_idx").on(
+      table.repositoryId,
+      table.providerPullRequestId,
+    ),
+    uniqueIndex("pull_request_repository_number_idx").on(
+      table.repositoryId,
+      table.number,
+    ),
+    index("pull_request_repository_id_idx").on(table.repositoryId),
+  ],
+);
+
+export const pullRequestTimelineEvent = pgTable(
+  "pull_request_timeline_event",
+  {
+    id: text("id").primaryKey(),
+    pullRequestId: text("pull_request_id")
+      .notNull()
+      .references(() => pullRequest.id, { onDelete: "cascade" }),
+    eventType: pullRequestTimelineEventType("event_type").notNull(),
+    externalKey: text("external_key").notNull(),
+    action: text("action"),
+    author: jsonb("author").$type<ProviderActor | null>(),
+    body: text("body"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    htmlUrl: text("html_url"),
+    providerCreatedAt: timestamp("provider_created_at").notNull(),
+    providerUpdatedAt: timestamp("provider_updated_at").notNull(),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("pull_request_timeline_external_key_idx").on(
+      table.pullRequestId,
+      table.externalKey,
+    ),
+    index("pull_request_timeline_pull_request_id_idx").on(table.pullRequestId),
   ],
 );
 
@@ -245,6 +343,7 @@ export const webhookEvent = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     receivedAt: timestamp("received_at").defaultNow().notNull(),
     processedAt: timestamp("processed_at"),
+    processingError: text("processing_error"),
   },
   (table) => [
     uniqueIndex("webhook_event_provider_delivery_idx").on(
@@ -297,13 +396,32 @@ export const workspaceMemberRelations = relations(workspaceMember, ({ one }) => 
   }),
 }));
 
-export const repositoryRelations = relations(repository, ({ one }) => ({
+export const repositoryRelations = relations(repository, ({ one, many }) => ({
   workspace: one(workspace, {
     fields: [repository.workspaceId],
     references: [workspace.id],
   }),
   reviewConfig: one(reviewConfig),
+  pullRequests: many(pullRequest),
 }));
+
+export const pullRequestRelations = relations(pullRequest, ({ one, many }) => ({
+  repository: one(repository, {
+    fields: [pullRequest.repositoryId],
+    references: [repository.id],
+  }),
+  timelineEvents: many(pullRequestTimelineEvent),
+}));
+
+export const pullRequestTimelineEventRelations = relations(
+  pullRequestTimelineEvent,
+  ({ one }) => ({
+    pullRequest: one(pullRequest, {
+      fields: [pullRequestTimelineEvent.pullRequestId],
+      references: [pullRequest.id],
+    }),
+  }),
+);
 
 export const reviewConfigRelations = relations(reviewConfig, ({ one }) => ({
   repository: one(repository, {

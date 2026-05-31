@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { protectedRoute } from "../../app/auth";
 import { db } from "../../db/client";
 import {
   repository,
+  pullRequest,
+  pullRequestTimelineEvent,
   reviewConfig,
   user,
   workspace,
@@ -16,6 +18,7 @@ import {
   requireWorkspaceRole,
   syncWorkspaceRepositories,
 } from "../../services/workspaces";
+import { syncRepositoryPullRequests } from "../../services/pull-requests";
 
 const updateWorkspaceSchema = z.object({
   name: z.string().min(1).max(120),
@@ -212,18 +215,22 @@ export const workspaceRoutes = protectedRoute("/workspaces")
             ? false
             : undefined;
 
-      const where =
-        enabled === undefined
-          ? eq(repository.workspaceId, params.workspaceId)
-          : and(
-              eq(repository.workspaceId, params.workspaceId),
-              eq(repository.enabled, enabled),
-            );
+      const conditions = [
+        eq(repository.workspaceId, params.workspaceId),
+      ];
+
+      if (query.includeUnavailable !== "true") {
+        conditions.push(isNull(repository.providerAccessRemovedAt));
+      }
+
+      if (enabled !== undefined) {
+        conditions.push(eq(repository.enabled, enabled));
+      }
 
       return db
         .select()
         .from(repository)
-        .where(where)
+        .where(and(...conditions))
         .orderBy(asc(repository.fullName));
     },
   )
@@ -275,6 +282,32 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(404, { error: "Workspace not found" });
       }
 
+      const existingRepository = await db.query.repository.findFirst({
+        where: and(
+          eq(repository.id, params.repositoryId),
+          eq(repository.workspaceId, params.workspaceId),
+        ),
+      });
+
+      if (!existingRepository) {
+        return status(404, { error: "Repository not found" });
+      }
+
+      if (existingRepository.providerAccessRemovedAt) {
+        return status(409, {
+          error: "Repository is no longer accessible through the GitHub App",
+        });
+      }
+
+      if (parsed.data.enabled && !existingRepository.enabled) {
+        try {
+          await syncRepositoryPullRequests(existingRepository);
+        } catch (error) {
+          console.error("Failed to hydrate GitHub pull requests", error);
+          return status(502, { error: "Failed to hydrate GitHub pull requests" });
+        }
+      }
+
       const [updatedRepository] = await db
         .update(repository)
         .set({
@@ -294,6 +327,125 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       }
 
       return updatedRepository;
+    },
+  )
+  .get(
+    "/:workspaceId/repositories/:repositoryId/pull-requests",
+    async ({ params, user: currentUser, status }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
+        params.workspaceId,
+        currentUser.id,
+      ).catch(() => null);
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const repo = await db.query.repository.findFirst({
+        where: and(
+          eq(repository.id, params.repositoryId),
+          eq(repository.workspaceId, params.workspaceId),
+          isNull(repository.providerAccessRemovedAt),
+        ),
+      });
+
+      if (!repo) {
+        return status(404, { error: "Repository not found" });
+      }
+
+      return db
+        .select()
+        .from(pullRequest)
+        .where(eq(pullRequest.repositoryId, repo.id))
+        .orderBy(desc(pullRequest.providerUpdatedAt));
+    },
+  )
+  .post(
+    "/:workspaceId/repositories/:repositoryId/pull-requests/sync",
+    async ({ params, user: currentUser, status }) => {
+      const workspaceWithRole = await requireWorkspaceRole(
+        params.workspaceId,
+        currentUser.id,
+        ["owner", "admin"],
+      ).catch(() => null);
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const repo = await db.query.repository.findFirst({
+        where: and(
+          eq(repository.id, params.repositoryId),
+          eq(repository.workspaceId, params.workspaceId),
+        ),
+      });
+
+      if (!repo) {
+        return status(404, { error: "Repository not found" });
+      }
+
+      if (!repo.enabled) {
+        return status(409, { error: "Repository tracking is disabled" });
+      }
+
+      try {
+        return await syncRepositoryPullRequests(repo);
+      } catch (error) {
+        console.error("Failed to sync GitHub pull requests", error);
+        return status(502, { error: "Failed to sync GitHub pull requests" });
+      }
+    },
+  )
+  .get(
+    "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId",
+    async ({ params, user: currentUser, status }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
+        params.workspaceId,
+        currentUser.id,
+      ).catch(() => null);
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const rows = await db
+        .select({
+          pullRequest,
+          repository,
+        })
+        .from(pullRequest)
+        .innerJoin(repository, eq(repository.id, pullRequest.repositoryId))
+        .where(
+          and(
+            eq(pullRequest.id, params.pullRequestId),
+            eq(repository.id, params.repositoryId),
+            eq(repository.workspaceId, params.workspaceId),
+            isNull(repository.providerAccessRemovedAt),
+          ),
+        )
+        .limit(1);
+      const row = rows[0];
+
+      if (!row) {
+        return status(404, { error: "Pull request not found" });
+      }
+
+      const timeline = await db
+        .select()
+        .from(pullRequestTimelineEvent)
+        .where(eq(pullRequestTimelineEvent.pullRequestId, row.pullRequest.id))
+        .orderBy(
+          asc(pullRequestTimelineEvent.providerCreatedAt),
+          asc(pullRequestTimelineEvent.createdAt),
+        );
+
+      return {
+        ...row.pullRequest,
+        timeline: timeline.map((event) => ({
+          ...event,
+          body: event.deletedAt ? null : event.body,
+        })),
+      };
     },
   )
   .get(
