@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq } from "drizzle-orm"
+import { and, eq, notInArray } from "drizzle-orm"
 import { db } from "../db/client"
 import {
   repository,
@@ -150,7 +150,8 @@ export const upsertGitHubWorkspace = async (
 
 export const syncWorkspaceRepositories = async (
   workspaceId: string,
-  repositories: GitHubRepository[]
+  repositories: GitHubRepository[],
+  repositorySelection?: "all" | "selected"
 ) => {
   const now = new Date()
 
@@ -198,9 +199,23 @@ export const syncWorkspaceRepositories = async (
       })
   }
 
+  const providerRepositoryIds = repositories.map((githubRepository) =>
+    String(githubRepository.id)
+  )
+  const staleRepositoriesWhere =
+    providerRepositoryIds.length === 0
+      ? eq(repository.workspaceId, workspaceId)
+      : and(
+          eq(repository.workspaceId, workspaceId),
+          notInArray(repository.providerRepositoryId, providerRepositoryIds)
+        )
+
+  await db.delete(repository).where(staleRepositoriesWhere)
+
   await db
     .update(workspace)
     .set({
+      ...(repositorySelection ? { repositorySelection } : {}),
       lastSyncedAt: now,
       updatedAt: now,
     })

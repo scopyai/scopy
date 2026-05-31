@@ -3,12 +3,17 @@ import { eq } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { db } from "../../db/client";
 import { webhookEvent, workspace } from "../../db/schema";
-import { createGitHubWebhooks } from "../../services/github";
+import {
+  createGitHubWebhooks,
+  listGitHubInstallationRepositories,
+} from "../../services/github";
+import { syncWorkspaceRepositories } from "../../services/workspaces";
 
 type GitHubWebhookPayload = {
   action?: string;
   installation?: {
     id: number;
+    repository_selection?: "all" | "selected";
   };
 };
 
@@ -106,6 +111,23 @@ export const webhookRoutes = new Elysia({ prefix: "/webhooks" }).post(
         payload.installation?.id,
         payload.action,
       );
+    }
+
+    if (eventName === "installation_repositories" && relatedWorkspace) {
+      try {
+        const repositories = await listGitHubInstallationRepositories(
+          relatedWorkspace.providerInstallationId,
+        );
+
+        await syncWorkspaceRepositories(
+          relatedWorkspace.id,
+          repositories,
+          payload.installation?.repository_selection,
+        );
+      } catch (error) {
+        console.error("Failed to sync GitHub repositories from webhook", error);
+        return status(502, { error: "Failed to sync GitHub repositories" });
+      }
     }
 
     return {

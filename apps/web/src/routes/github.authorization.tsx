@@ -4,17 +4,16 @@ import { z } from "zod"
 import { env } from "@/env"
 
 const searchSchema = z.object({
-  installation_id: z.coerce.string().optional(),
-  setup_action: z.string().optional(),
+  code: z.string().optional(),
   state: z.string().optional(),
 })
 
-export const Route = createFileRoute("/github/installation")({
+export const Route = createFileRoute("/github/authorization")({
   validateSearch: searchSchema,
-  component: GitHubInstallationPage,
+  component: GitHubAuthorizationPage,
 })
 
-function GitHubInstallationPage() {
+function GitHubAuthorizationPage() {
   const search = Route.useSearch()
 
   useEffect(() => {
@@ -32,7 +31,7 @@ function GitHubInstallationPage() {
   return (
     <div className="flex min-h-svh items-center justify-center bg-background px-4">
       <p className="text-sm text-muted-foreground">
-        Updating GitHub connection...
+        Authorizing GitHub connection...
       </p>
     </div>
   )

@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { protectedRoute } from "../../app/auth";
 import { db } from "../../db/client";
 import { workspace, workspaceMember } from "../../db/schema";
@@ -7,7 +7,9 @@ import { env } from "../../env";
 import {
   getGitHubInstallUrl,
   getGitHubInstallation,
+  getGitHubUserAuthorizationUrl,
   listGitHubInstallationRepositories,
+  verifyGitHubInstallationForUser,
 } from "../../services/github";
 import {
   syncWorkspaceRepositories,
@@ -15,30 +17,42 @@ import {
 } from "../../services/workspaces";
 
 type InstallState = {
+  type: "install" | "verify-installation";
   userId: string;
   nonce: string;
   expiresAt: number;
+  installationId?: string;
 };
 
 const sign = (payload: string) =>
   createHmac("sha256", env.BETTER_AUTH_SECRET).update(payload).digest("base64url");
 
-const createInstallState = (userId: string) => {
+const createInstallState = (
+  userId: string,
+  type: InstallState["type"] = "install",
+  installationId?: string,
+) => {
   const state: InstallState = {
+    type,
     userId,
     nonce: randomUUID(),
     expiresAt: Date.now() + 10 * 60 * 1000,
+    ...(installationId ? { installationId } : {}),
   };
   const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
 
   return `${payload}.${sign(payload)}`;
 };
 
-const verifyInstallState = (state: string, userId: string) => {
+const verifyInstallState = (
+  state: string,
+  userId: string,
+  type: InstallState["type"],
+) => {
   const [payload, signature] = state.split(".");
 
   if (!payload || !signature) {
-    return false;
+    return null;
   }
 
   const expectedSignature = sign(payload);
@@ -46,7 +60,7 @@ const verifyInstallState = (state: string, userId: string) => {
   const expected = Buffer.from(expectedSignature);
 
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-    return false;
+    return null;
   }
 
   try {
@@ -54,9 +68,19 @@ const verifyInstallState = (state: string, userId: string) => {
       Buffer.from(payload, "base64url").toString("utf8"),
     ) as InstallState;
 
-    return parsed.userId === userId && parsed.expiresAt > Date.now();
+    if (
+      parsed.type !== type ||
+      parsed.userId !== userId ||
+      typeof parsed.nonce !== "string" ||
+      typeof parsed.expiresAt !== "number" ||
+      parsed.expiresAt <= Date.now()
+    ) {
+      return null;
+    }
+
+    return parsed;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -70,6 +94,24 @@ const redirectToDashboard = (workspaceId?: string) => {
   return Response.redirect(url, 302);
 };
 
+const connectGitHubInstallation = async (
+  installationId: string,
+  userId: string,
+) => {
+  const installation = await getGitHubInstallation(installationId);
+  const savedWorkspace = await upsertGitHubWorkspace(installation, userId);
+  const repositories =
+    await listGitHubInstallationRepositories(installationId);
+
+  await syncWorkspaceRepositories(
+    savedWorkspace.id,
+    repositories,
+    installation.repository_selection,
+  );
+
+  return redirectToDashboard(savedWorkspace.id);
+};
+
 const handleInstallationCallback = async ({
   query,
   user: currentUser,
@@ -81,23 +123,89 @@ const handleInstallationCallback = async ({
 }) => {
   const installationId = query.installation_id;
   const state = query.state;
+  const code = query.code;
+  const isInstallationUpdate = query.setup_action === "update";
 
-  if (!installationId || !state || !verifyInstallState(state, currentUser.id)) {
+  if (code) {
+    const verifiedState = state
+      ? verifyInstallState(state, currentUser.id, "verify-installation")
+      : null;
+
+    if (!verifiedState?.installationId) {
+      return status(400, { error: "Invalid GitHub authorization callback" });
+    }
+
+    try {
+      await verifyGitHubInstallationForUser(verifiedState.installationId, code);
+
+      return connectGitHubInstallation(
+        verifiedState.installationId,
+        currentUser.id,
+      );
+    } catch (error) {
+      console.error("Failed to verify GitHub installation ownership", error);
+      return status(403, { error: "GitHub installation is not accessible" });
+    }
+  }
+
+  const verifiedInstallState = state
+    ? verifyInstallState(state, currentUser.id, "install")
+    : null;
+
+  if (
+    !installationId ||
+    (!isInstallationUpdate && !verifiedInstallState)
+  ) {
     return status(400, { error: "Invalid GitHub installation callback" });
   }
 
   try {
-    const installation = await getGitHubInstallation(installationId);
-    const savedWorkspace = await upsertGitHubWorkspace(
-      installation,
-      currentUser.id,
-    );
-    const repositories =
-      await listGitHubInstallationRepositories(installationId);
+    if (verifiedInstallState) {
+      return Response.redirect(
+        getGitHubUserAuthorizationUrl(
+          createInstallState(
+            currentUser.id,
+            "verify-installation",
+            installationId,
+          ),
+        ),
+        302,
+      );
+    }
 
-    await syncWorkspaceRepositories(savedWorkspace.id, repositories);
+    if (isInstallationUpdate) {
+      const [existingWorkspace] = await db
+        .select({ workspace })
+        .from(workspaceMember)
+        .innerJoin(workspace, eq(workspace.id, workspaceMember.workspaceId))
+        .where(
+          and(
+            eq(workspaceMember.userId, currentUser.id),
+            eq(workspace.provider, "github"),
+            eq(workspace.providerInstallationId, installationId),
+            ne(workspace.connectionStatus, "deleted"),
+          ),
+        )
+        .limit(1);
 
-    return redirectToDashboard(savedWorkspace.id);
+      if (!existingWorkspace) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const installation = await getGitHubInstallation(installationId);
+      const repositories =
+        await listGitHubInstallationRepositories(installationId);
+
+      await syncWorkspaceRepositories(
+        existingWorkspace.workspace.id,
+        repositories,
+        installation.repository_selection,
+      );
+
+      return redirectToDashboard(existingWorkspace.workspace.id);
+    }
+
+    return status(400, { error: "Invalid GitHub installation callback" });
   } catch (error) {
     console.error("Failed to connect GitHub installation", error);
     return status(502, { error: "Failed to connect GitHub installation" });

@@ -58,6 +58,37 @@ export const workspaceRoutes = protectedRoute("/workspaces")
 
     return workspaceWithRole;
   })
+  .get(
+    "/:workspaceId/github-links",
+    async ({ params, user: currentUser, status }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
+        params.workspaceId,
+        currentUser.id,
+      ).catch(() => null);
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const ws = workspaceWithRole.workspace;
+
+      if (ws.connectionStatus === "deleted") {
+        return {
+          action: "reinstall" as const,
+        };
+      }
+
+      const installationSettingsUrl =
+        ws.providerAccountType === "organization"
+          ? `https://github.com/organizations/${ws.providerAccountLogin}/settings/installations/${ws.providerInstallationId}`
+          : `https://github.com/settings/installations/${ws.providerInstallationId}`;
+
+      return {
+        action: "configure" as const,
+        installationSettingsUrl,
+      };
+    },
+  )
   .patch("/:workspaceId", async ({ body, params, user: currentUser, status }) => {
     const parsed = updateWorkspaceSchema.safeParse(body);
 
@@ -97,16 +128,17 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       return status(404, { error: "Workspace not found" });
     }
 
-    const [updatedWorkspace] = await db
-      .update(workspace)
-      .set({
-        connectionStatus: "deleted",
-        updatedAt: new Date(),
-      })
-      .where(eq(workspace.id, params.workspaceId))
+    const [removedMembership] = await db
+      .delete(workspaceMember)
+      .where(
+        and(
+          eq(workspaceMember.workspaceId, params.workspaceId),
+          eq(workspaceMember.userId, currentUser.id),
+        ),
+      )
       .returning();
 
-    return updatedWorkspace;
+    return removedMembership;
   })
   .get("/:workspaceId/members", async ({ params, user: currentUser, status }) => {
     const workspaceWithRole = await requireWorkspaceForUser(
