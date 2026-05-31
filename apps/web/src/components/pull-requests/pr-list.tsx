@@ -1,6 +1,5 @@
 import { GitPullRequestIcon } from "lucide-react"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
-import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Separator } from "@workspace/ui/components/separator"
 import { PullRequestListItem } from "./pr-list-item"
 
@@ -28,31 +27,24 @@ export function PullRequestList({
   selectedPullRequestId,
   onSelect,
 }: PullRequestListProps) {
-  if (isPending) {
-    return (
-      <div className="flex flex-col gap-px px-2 py-2">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="flex items-start gap-2 rounded-md px-3 py-2.5">
-            <Skeleton className="mt-0.5 size-3.5 rounded-full shrink-0" />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Skeleton className="h-3 w-12" />
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-32" />
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+  const isInitialLoad = isPending && pullRequests === undefined
+
+  if (isInitialLoad) {
+    return <div className="min-h-0 flex-1" aria-busy="true" />
   }
 
   if (!pullRequests || pullRequests.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center px-4">
-        <GitPullRequestIcon className="size-8 text-muted-foreground/40" />
-        <p className="text-sm text-muted-foreground">No pull requests found</p>
-        <p className="text-xs text-muted-foreground/60">
-          Enable repository tracking to import pull requests.
-        </p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted">
+          <GitPullRequestIcon className="size-5 text-muted-foreground" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">No pull requests</p>
+          <p className="max-w-[220px] text-xs text-muted-foreground">
+            Enable repository tracking to import pull requests from GitHub.
+          </p>
+        </div>
       </div>
     )
   }

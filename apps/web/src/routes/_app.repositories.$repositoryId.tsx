@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useCallback, useRef, useState } from "react"
 import { z } from "zod"
-import { ExternalLinkIcon } from "lucide-react"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useRepositories } from "@/hooks/use-repositories"
 import { usePullRequests } from "@/hooks/use-pull-requests"
@@ -92,10 +91,9 @@ function RepositoryPage() {
                 href={repository.htmlUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group/link inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm font-medium underline-offset-2 hover:underline"
+                className="min-w-0 max-w-full truncate text-sm font-medium underline-offset-2 hover:underline"
               >
-                <span className="truncate">{repository.fullName}</span>
-                <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/link:opacity-100" />
+                {repository.fullName}
               </a>
               {repository.archived && (
                 <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">

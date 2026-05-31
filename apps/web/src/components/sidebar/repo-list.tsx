@@ -3,7 +3,6 @@
 import { RefreshCwIcon, GitForkIcon } from "lucide-react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
-import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Switch } from "@workspace/ui/components/switch"
 import { Button } from "@workspace/ui/components/button"
 import { useRepositories } from "@/hooks/use-repositories"
@@ -77,22 +76,13 @@ export function RepoList({ workspaceId }: RepoListProps) {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-2 pb-2">
-          {isPending ? (
-            <div className="space-y-1">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5"
-                >
-                  <Skeleton className="size-3.5 rounded-sm" />
-                  <Skeleton className="h-3.5 flex-1" />
-                  <Skeleton className="h-4 w-8 rounded-full" />
-                </div>
-              ))}
-            </div>
+          {isPending && repos === undefined ? (
+            <div className="py-6" aria-busy="true" />
           ) : !repos || repos.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <GitForkIcon className="size-8 text-muted-foreground/50" />
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted">
+                <GitForkIcon className="size-4 text-muted-foreground" />
+              </div>
               <p className="text-xs text-muted-foreground">
                 No repositories found
               </p>
