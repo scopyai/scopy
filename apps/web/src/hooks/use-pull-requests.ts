@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { authClient } from "@/lib/auth-client"
+import { refetchOnFocusQueryOptions } from "@/lib/query-client"
 
 export function usePullRequests(
   workspaceId: string | null | undefined,
@@ -19,5 +20,6 @@ export function usePullRequests(
       return data
     },
     enabled: !!session && !!workspaceId && !!repositoryId,
+    ...refetchOnFocusQueryOptions,
   })
 }
