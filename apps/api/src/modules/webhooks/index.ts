@@ -1,23 +1,9 @@
-import { randomUUID } from "node:crypto"
-import { and, eq } from "drizzle-orm"
 import { Elysia } from "elysia"
-import { db } from "../../db/client"
-import { webhookEvent, workspace } from "../../db/schema"
+import { createGitHubWebhooks } from "../../services/github"
 import {
-  enqueueGitHubWebhookEvent,
+  persistGitHubWebhookEvent,
   type GitHubWebhookPayload,
-  verifyGitHubWebhook,
 } from "../../services/webhook-events"
-
-const findWorkspaceByInstallationId = async (installationId?: number) => {
-  if (!installationId) {
-    return null
-  }
-
-  return db.query.workspace.findFirst({
-    where: eq(workspace.providerInstallationId, String(installationId)),
-  })
-}
 
 export const webhookRoutes = new Elysia({ prefix: "/webhooks" }).post(
   "/github",
@@ -37,7 +23,7 @@ export const webhookRoutes = new Elysia({ prefix: "/webhooks" }).post(
     }
 
     try {
-      const isValid = await verifyGitHubWebhook(payloadText, signature)
+      const isValid = await createGitHubWebhooks().verify(payloadText, signature)
 
       if (!isValid) {
         console.warn("Rejected GitHub webhook with invalid signature", {
@@ -69,39 +55,10 @@ export const webhookRoutes = new Elysia({ prefix: "/webhooks" }).post(
     }
 
     try {
-      const relatedWorkspace = await findWorkspaceByInstallationId(
-        payload.installation?.id,
-      )
-
-      await db.transaction(async (tx) => {
-        const [savedWebhookEvent] = await tx
-          .insert(webhookEvent)
-          .values({
-            id: randomUUID(),
-            provider: "github",
-            deliveryId,
-            eventName,
-            action: payload.action ?? null,
-            workspaceId: relatedWorkspace?.id ?? null,
-            payload: payload as Record<string, unknown>,
-          })
-          .onConflictDoNothing({
-            target: [webhookEvent.provider, webhookEvent.deliveryId],
-          })
-          .returning()
-
-        const event =
-          savedWebhookEvent ??
-          (await tx.query.webhookEvent.findFirst({
-            where: and(
-              eq(webhookEvent.provider, "github"),
-              eq(webhookEvent.deliveryId, deliveryId),
-            ),
-          }))
-
-        if (event && !event.processedAt) {
-          await enqueueGitHubWebhookEvent(event.id, tx)
-        }
+      await persistGitHubWebhookEvent({
+        deliveryId,
+        eventName,
+        payload,
       })
     } catch (error) {
       console.error("Failed to persist or enqueue GitHub webhook", {

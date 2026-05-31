@@ -6,7 +6,7 @@ import { reviewRun } from "../db/schema"
 import { acknowledgeGitHubPullRequestOpened } from "../services/pull-requests"
 
 const payloadSchema = z.object({
-  reviewRunId: z.string().uuid(),
+  reviewRunId: z.uuid(),
 })
 
 export const reviewPullRequest: Task = async (payload, helpers) => {
@@ -57,7 +57,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
       run.pullRequest.repository,
       run.pullRequest.repository.workspace.providerInstallationId,
       run.pullRequest.number,
-      run.pullRequest.id,
+      run.pullRequest.id
     )
 
     await db

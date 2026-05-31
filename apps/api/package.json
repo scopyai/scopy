@@ -13,11 +13,11 @@
   "scripts": {
     "dev": "concurrently --kill-others --names api,worker \"pnpm dev:api\" \"pnpm worker\"",
     "dev:api": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts src/worker.ts src/worker-migrate.ts --format esm --platform node --target node20 --out-dir dist --clean",
+    "build": "tsup src/index.ts src/worker.ts --format esm --platform node --target node20 --out-dir dist --clean",
     "start": "node dist/index.js",
     "worker": "tsx watch src/worker.ts",
     "worker:start": "node dist/worker.js",
-    "worker:migrate": "tsx src/worker-migrate.ts",
+    "worker:migrate": "graphile-worker --schema-only",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",

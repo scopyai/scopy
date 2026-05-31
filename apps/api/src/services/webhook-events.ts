@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { eq } from "drizzle-orm"
+import { and, eq, sql, type SQL } from "drizzle-orm"
 import { db } from "../db/client"
 import {
   reviewConfig,
@@ -8,11 +8,7 @@ import {
   workspace,
   type ProviderActor,
 } from "../db/schema"
-import {
-  createGitHubWebhooks,
-  listGitHubInstallationRepositories,
-} from "./github"
-import { enqueueJob, type JobExecutor } from "./jobs"
+import { listGitHubInstallationRepositories } from "./github"
 import {
   addPullRequestLifecycleEvent,
   getTrackedPullRequestNumbers,
@@ -27,6 +23,22 @@ type GitHubWebhookActor = {
   avatar_url?: string | null
   html_url?: string | null
 }
+
+type JobExecutor = {
+  execute: (query: SQL) => Promise<unknown>
+}
+
+const enqueueJob = (
+  executor: JobExecutor,
+  identifier: string,
+  payload: Record<string, unknown>,
+) =>
+  executor.execute(sql`
+    select graphile_worker.add_job(
+      ${identifier},
+      ${JSON.stringify(payload)}::json
+    )
+  `)
 
 export type GitHubWebhookPayload = {
   action?: string
@@ -215,15 +227,51 @@ const finishWebhookEvent = async (
   })
 }
 
-export const enqueueGitHubWebhookEvent = async (
-  eventId: string,
-  executor: JobExecutor = db,
-) => {
-  await enqueueJob(
-    executor,
-    "process_github_webhook",
-    { webhookEventId: eventId },
+export const persistGitHubWebhookEvent = async ({
+  deliveryId,
+  eventName,
+  payload,
+}: {
+  deliveryId: string
+  eventName: string
+  payload: GitHubWebhookPayload
+}) => {
+  const relatedWorkspace = await findWorkspaceByInstallationId(
+    payload.installation?.id,
   )
+
+  await db.transaction(async (tx) => {
+    const [savedWebhookEvent] = await tx
+      .insert(webhookEvent)
+      .values({
+        id: randomUUID(),
+        provider: "github",
+        deliveryId,
+        eventName,
+        action: payload.action ?? null,
+        workspaceId: relatedWorkspace?.id ?? null,
+        payload: payload as Record<string, unknown>,
+      })
+      .onConflictDoNothing({
+        target: [webhookEvent.provider, webhookEvent.deliveryId],
+      })
+      .returning()
+
+    const event =
+      savedWebhookEvent ??
+      (await tx.query.webhookEvent.findFirst({
+        where: and(
+          eq(webhookEvent.provider, "github"),
+          eq(webhookEvent.deliveryId, deliveryId),
+        ),
+      }))
+
+    if (event && !event.processedAt) {
+      await enqueueJob(tx, "process_github_webhook", {
+        webhookEventId: event.id,
+      })
+    }
+  })
 }
 
 export const processGitHubWebhookEvent = async (eventId: string) => {
@@ -350,12 +398,4 @@ export const processGitHubWebhookEvent = async (eventId: string) => {
 
     throw error
   }
-}
-
-export const verifyGitHubWebhook = async (
-  payloadText: string,
-  signature: string,
-) => {
-  const webhooks = createGitHubWebhooks()
-  return webhooks.verify(payloadText, signature)
 }
