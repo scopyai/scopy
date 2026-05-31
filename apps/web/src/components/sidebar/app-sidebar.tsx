@@ -18,11 +18,9 @@ export function AppSidebar() {
 
   return (
     <aside className="flex h-svh w-[240px] shrink-0 flex-col border-r border-border bg-background">
-      <div className="p-2">
+      <div className="flex h-14 shrink-0 items-center border-b border-border px-2">
         <WorkspaceSwitcher />
       </div>
-
-      <Separator />
 
       {selectedWorkspaceId ? (
         <RepoList workspaceId={selectedWorkspaceId} />

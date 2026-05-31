@@ -25,7 +25,9 @@ export function RepoList({ workspaceId }: RepoListProps) {
   const activeRepositoryId = useRouterState({
     select: (s) => {
       const lastMatch = s.matches.at(-1)
-      return (lastMatch?.params as { repositoryId?: string })?.repositoryId ?? null
+      return (
+        (lastMatch?.params as { repositoryId?: string })?.repositoryId ?? null
+      )
     },
   })
 
@@ -53,7 +55,7 @@ export function RepoList({ workspaceId }: RepoListProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
           Repositories
         </span>
         <Button
@@ -65,7 +67,10 @@ export function RepoList({ workspaceId }: RepoListProps) {
           title="Sync repositories"
         >
           <RefreshCwIcon
-            className={cn("size-3.5", syncWorkspace.isPending && "animate-spin")}
+            className={cn(
+              "size-3.5",
+              syncWorkspace.isPending && "animate-spin"
+            )}
           />
         </Button>
       </div>
@@ -75,7 +80,10 @@ export function RepoList({ workspaceId }: RepoListProps) {
           {isPending ? (
             <div className="space-y-1">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-md px-2 py-1.5">
+                <div
+                  key={i}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5"
+                >
                   <Skeleton className="size-3.5 rounded-sm" />
                   <Skeleton className="h-3.5 flex-1" />
                   <Skeleton className="h-4 w-8 rounded-full" />
@@ -85,8 +93,15 @@ export function RepoList({ workspaceId }: RepoListProps) {
           ) : !repos || repos.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <GitForkIcon className="size-8 text-muted-foreground/50" />
-              <p className="text-xs text-muted-foreground">No repositories found</p>
-              <Button variant="outline" size="sm" onClick={handleSync} className="text-xs">
+              <p className="text-xs text-muted-foreground">
+                No repositories found
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSync}
+                className="text-xs"
+              >
                 Sync now
               </Button>
             </div>
@@ -97,9 +112,9 @@ export function RepoList({ workspaceId }: RepoListProps) {
                 type="button"
                 onClick={() => handleRepoClick(repo.id)}
                 className={cn(
-                  "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
                   repo.archived && "opacity-50",
-                  activeRepositoryId === repo.id && "bg-accent",
+                  activeRepositoryId === repo.id && "bg-accent"
                 )}
               >
                 <GitForkIcon className="size-3.5 shrink-0 text-muted-foreground" />

@@ -95,9 +95,9 @@ export function WorkspaceSwitcher() {
 
   if (workspacesPending) {
     return (
-      <div className="flex items-center gap-2 p-2">
-        <Skeleton className="size-7 rounded-full" />
-        <Skeleton className="h-4 w-28" />
+      <div className="flex w-full items-center gap-2">
+        <Skeleton className="size-6 rounded-full" />
+        <Skeleton className="h-4 flex-1" />
       </div>
     )
   }
@@ -106,7 +106,7 @@ export function WorkspaceSwitcher() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex w-full items-center gap-2 rounded-md p-2 text-left text-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          <button className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
             {selectedEntry ? (
               <>
                 <Avatar size="sm">

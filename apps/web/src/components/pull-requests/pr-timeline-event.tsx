@@ -11,7 +11,11 @@ import {
   FileIcon,
   ExternalLinkIcon,
 } from "lucide-react"
-import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 import { Badge } from "@workspace/ui/components/badge"
 import { cn } from "@workspace/ui/lib/utils"
 
@@ -21,7 +25,11 @@ type Author = {
   htmlUrl?: string | null
 }
 
-type TimelineEventType = "lifecycle" | "issue_comment" | "review" | "review_comment"
+type TimelineEventType =
+  | "lifecycle"
+  | "issue_comment"
+  | "review"
+  | "review_comment"
 
 interface TimelineEventProps {
   eventType: TimelineEventType
@@ -49,7 +57,9 @@ function AuthorAvatar({ author }: { author: Author | null }) {
   if (!author) return null
   return (
     <Avatar size="sm" className="shrink-0">
-      {author.avatarUrl && <AvatarImage src={author.avatarUrl} alt={author.login} />}
+      {author.avatarUrl && (
+        <AvatarImage src={author.avatarUrl} alt={author.login} />
+      )}
       <AvatarFallback>{author.login[0]?.toUpperCase()}</AvatarFallback>
     </Avatar>
   )
@@ -57,7 +67,7 @@ function AuthorAvatar({ author }: { author: Author | null }) {
 
 function MarkdownBody({ content }: { content: string }) {
   return (
-    <div className="max-w-none text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:text-sm [&_h3]:font-medium [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-0.5 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono [&_pre]:mb-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_hr]:border-border [&_hr]:my-3">
+    <div className="max-w-none text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:text-sm [&_h3]:font-medium [&_hr]:my-3 [&_hr]:border-border [&_li]:mb-0.5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_pre]:mb-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <ReactMarkdown>{content}</ReactMarkdown>
     </div>
   )
@@ -105,7 +115,8 @@ const reviewBadgeConfig: Record<
 > = {
   approved: {
     label: "approved",
-    className: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
+    className:
+      "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
     icon: CheckCircleIcon,
   },
   changes_requested: {
@@ -125,8 +136,16 @@ const reviewBadgeConfig: Record<
   },
 }
 
-function LifecycleEvent({ action, author }: { action: string | null; author: Author | null }) {
-  const config = action ? (lifecycleConfig[action] ?? lifecycleConfig.opened) : lifecycleConfig.opened
+function LifecycleEvent({
+  action,
+  author,
+}: {
+  action: string | null
+  author: Author | null
+}) {
+  const config = action
+    ? (lifecycleConfig[action] ?? lifecycleConfig.opened)
+    : lifecycleConfig.opened
   const Icon = config.icon
 
   return (
@@ -158,14 +177,14 @@ function CommentEvent({
   deletedAt: string | Date | null
 }) {
   return (
-    <div className="flex items-start gap-2.5 w-full">
+    <div className="flex w-full items-start gap-2.5">
       <AuthorAvatar author={author} />
       <div className="min-w-0 flex-1 rounded-md border border-border bg-card p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-xs font-medium">
             {author?.login ?? "Unknown"}
           </span>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex shrink-0 items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
               {formatTimestamp(providerCreatedAt)}
             </span>
@@ -174,7 +193,7 @@ function CommentEvent({
                 href={htmlUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
                 aria-label="View on GitHub"
               >
                 <ExternalLinkIcon className="size-3" />
@@ -183,11 +202,13 @@ function CommentEvent({
           </div>
         </div>
         {deletedAt ? (
-          <p className="text-xs italic text-muted-foreground">[Comment deleted]</p>
+          <p className="text-xs text-muted-foreground italic">
+            [Comment deleted]
+          </p>
         ) : body ? (
           <MarkdownBody content={body} />
         ) : (
-          <p className="text-xs italic text-muted-foreground">No content</p>
+          <p className="text-xs text-muted-foreground italic">No content</p>
         )}
       </div>
     </div>
@@ -209,16 +230,19 @@ function ReviewEvent({
   providerCreatedAt: string | Date
   deletedAt: string | Date | null
 }) {
-  const reviewConfig =
-    action ? (reviewBadgeConfig[action] ?? reviewBadgeConfig.commented) : reviewBadgeConfig.commented
+  const reviewConfig = action
+    ? (reviewBadgeConfig[action] ?? reviewBadgeConfig.commented)
+    : reviewBadgeConfig.commented
   const ReviewIcon = reviewConfig.icon
 
   return (
-    <div className="flex items-start gap-2.5 w-full">
+    <div className="flex w-full items-start gap-2.5">
       <AuthorAvatar author={author} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-sm font-medium">{author?.login ?? "Unknown"}</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-sm font-medium">
+            {author?.login ?? "Unknown"}
+          </span>
           <Badge
             variant="outline"
             className={cn("h-5 gap-1 text-[11px]", reviewConfig.className)}
@@ -234,7 +258,7 @@ function ReviewEvent({
               href={htmlUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+              className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
               aria-label="View on GitHub"
             >
               <ExternalLinkIcon className="size-3" />
@@ -270,9 +294,9 @@ function ReviewCommentEvent({
   const line = typeof metadata.line === "number" ? metadata.line : null
 
   return (
-    <div className="flex items-start gap-2.5 w-full">
+    <div className="flex w-full items-start gap-2.5">
       <AuthorAvatar author={author} />
-      <div className="min-w-0 flex-1 rounded-md border border-border bg-card overflow-hidden">
+      <div className="min-w-0 flex-1 overflow-hidden rounded-md border border-border bg-card">
         {path && (
           <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5">
             <FileIcon className="size-3 shrink-0 text-muted-foreground" />
@@ -285,7 +309,7 @@ function ReviewCommentEvent({
                 href={htmlUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-auto shrink-0 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                className="ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
                 aria-label="View on GitHub"
               >
                 <ExternalLinkIcon className="size-3" />
@@ -295,17 +319,21 @@ function ReviewCommentEvent({
         )}
         <div className="p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium">{author?.login ?? "Unknown"}</span>
+            <span className="text-xs font-medium">
+              {author?.login ?? "Unknown"}
+            </span>
             <span className="text-xs text-muted-foreground">
               {formatTimestamp(providerCreatedAt)}
             </span>
           </div>
           {deletedAt ? (
-            <p className="text-xs italic text-muted-foreground">[Comment deleted]</p>
+            <p className="text-xs text-muted-foreground italic">
+              [Comment deleted]
+            </p>
           ) : body ? (
             <MarkdownBody content={body} />
           ) : (
-            <p className="text-xs italic text-muted-foreground">No content</p>
+            <p className="text-xs text-muted-foreground italic">No content</p>
           )}
         </div>
       </div>
@@ -332,8 +360,8 @@ export function PullRequestTimelineEvent({
       {!isLast && (
         <div
           className={cn(
-            "absolute left-[11px] top-5 w-px bg-border",
-            isCompact ? "h-[calc(100%+8px)]" : "h-[calc(100%+12px)]",
+            "absolute top-5 left-[11px] w-px bg-border",
+            isCompact ? "h-[calc(100%+8px)]" : "h-[calc(100%+12px)]"
           )}
           aria-hidden
         />
@@ -343,7 +371,7 @@ export function PullRequestTimelineEvent({
       <div
         className={cn(
           "relative z-10 mt-0.5 flex size-[22px] shrink-0 items-center justify-center rounded-full",
-          isCompact ? "bg-background" : "bg-muted ring-1 ring-border",
+          isCompact ? "bg-background" : "bg-muted ring-1 ring-border"
         )}
       >
         {isCompact ? (

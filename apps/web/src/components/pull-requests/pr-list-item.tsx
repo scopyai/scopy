@@ -1,4 +1,10 @@
-import { GitPullRequestIcon, GitMergeIcon, GitPullRequestClosedIcon } from "lucide-react"
+import type { ElementType } from "react"
+import {
+  GitPullRequestArrowIcon,
+  GitPullRequestDraftIcon,
+  GitMergeIcon,
+  GitPullRequestClosedIcon,
+} from "lucide-react"
 import { Badge } from "@workspace/ui/components/badge"
 import { cn } from "@workspace/ui/lib/utils"
 
@@ -36,22 +42,20 @@ function formatRelativeTime(date: string | Date): string {
   return "just now"
 }
 
-const stateConfig: Record<
-  PullRequestState,
-  { icon: React.ElementType; className: string }
-> = {
-  open: {
-    icon: GitPullRequestIcon,
-    className: "text-green-500",
-  },
-  merged: {
-    icon: GitMergeIcon,
-    className: "text-purple-500",
-  },
-  closed: {
-    icon: GitPullRequestClosedIcon,
-    className: "text-muted-foreground",
-  },
+function getStateIcon(state: PullRequestState, draft: boolean): {
+  icon: ElementType
+  className: string
+} {
+  if (state === "merged") {
+    return { icon: GitMergeIcon, className: "text-purple-500" }
+  }
+  if (state === "closed") {
+    return { icon: GitPullRequestClosedIcon, className: "text-red-500" }
+  }
+  if (draft) {
+    return { icon: GitPullRequestDraftIcon, className: "text-muted-foreground" }
+  }
+  return { icon: GitPullRequestArrowIcon, className: "text-green-500" }
 }
 
 export function PullRequestListItem({
@@ -65,7 +69,7 @@ export function PullRequestListItem({
   isSelected,
   onClick,
 }: PullRequestListItemProps) {
-  const { icon: StateIcon, className: stateClassName } = stateConfig[state]
+  const { icon: StateIcon, className: stateClassName } = getStateIcon(state, draft)
 
   return (
     <button
@@ -77,19 +81,21 @@ export function PullRequestListItem({
       )}
     >
       <div className="flex items-start gap-2">
-        <StateIcon className={cn("mt-0.5 size-3.5 shrink-0", stateClassName)} />
+        <StateIcon className={cn("mt-0.5 size-4 shrink-0", stateClassName)} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              #{number}
-            </span>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <p className="min-w-0 truncate text-sm font-medium leading-snug">
+              {title}
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                #{number}
+              </span>
+            </p>
             {draft && (
-              <Badge variant="outline" className="h-4 text-[10px] px-1 py-0 shrink-0">
+              <Badge variant="outline" className="h-4 shrink-0 text-[10px] px-1 py-0">
                 Draft
               </Badge>
             )}
           </div>
-          <p className="mt-0.5 text-sm font-medium leading-snug truncate">{title}</p>
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
             {author && (
               <span className="text-xs text-muted-foreground">{author.login}</span>
