@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { db } from "../../db/client";
-import { webhookEvent, workspace } from "../../db/schema";
+import { webhookEvent, workspace, type ProviderActor } from "../../db/schema";
 import {
   createGitHubWebhooks,
   listGitHubInstallationRepositories,
@@ -26,13 +26,49 @@ type GitHubWebhookPayload = {
   };
   pull_request?: {
     number?: number;
+    body?: string | null;
+    html_url?: string;
+    state?: "open" | "closed";
+    draft?: boolean;
+    merged?: boolean;
+    merged_at?: string | null;
+    closed_at?: string | null;
     updated_at?: string;
+    created_at?: string;
+    base?: {
+      ref?: string;
+    };
+    head?: {
+      ref?: string;
+      sha?: string;
+    };
+    user?: GitHubWebhookActor;
   };
+  sender?: GitHubWebhookActor;
   issue?: {
     number?: number;
     pull_request?: unknown;
   };
 };
+
+type GitHubWebhookActor = {
+  id: number;
+  login: string;
+  avatar_url?: string | null;
+  html_url?: string | null;
+};
+
+const toProviderActor = (
+  actor: GitHubWebhookActor | null | undefined,
+): ProviderActor | null =>
+  actor
+    ? {
+        id: String(actor.id),
+        login: actor.login,
+        avatarUrl: actor.avatar_url ?? null,
+        htmlUrl: actor.html_url ?? null,
+      }
+    : null;
 
 const pullRequestEventNames = new Set([
   "pull_request",
@@ -40,6 +76,13 @@ const pullRequestEventNames = new Set([
   "pull_request_review",
   "pull_request_review_comment",
   "pull_request_review_thread",
+]);
+const pullRequestLifecycleActions = new Set([
+  "opened",
+  "closed",
+  "reopened",
+  "ready_for_review",
+  "converted_to_draft",
 ]);
 
 const findWorkspaceByInstallationId = async (installationId?: number) => {
@@ -174,7 +217,11 @@ export const webhookRoutes = new Elysia({ prefix: "/webhooks" }).post(
         if (repo && number) {
           const savedPullRequest = await syncGitHubPullRequest(repo, number);
 
-          if (eventName === "pull_request" && payload.action) {
+          if (
+            eventName === "pull_request" &&
+            payload.action &&
+            pullRequestLifecycleActions.has(payload.action)
+          ) {
             const action =
               payload.action === "closed" && savedPullRequest.state === "merged"
                 ? "merged"
@@ -184,9 +231,32 @@ export const webhookRoutes = new Elysia({ prefix: "/webhooks" }).post(
               savedPullRequest.id,
               deliveryId,
               action,
-              payload.pull_request?.updated_at
-                ? new Date(payload.pull_request.updated_at)
-                : new Date(),
+              {
+                author: toProviderActor(
+                  payload.sender ?? payload.pull_request?.user,
+                ),
+                body: payload.pull_request?.body ?? null,
+                htmlUrl:
+                  payload.pull_request?.html_url ?? savedPullRequest.htmlUrl,
+                providerCreatedAt: payload.pull_request?.updated_at
+                  ? new Date(payload.pull_request.updated_at)
+                  : new Date(),
+                providerUpdatedAt: payload.pull_request?.updated_at
+                  ? new Date(payload.pull_request.updated_at)
+                  : new Date(),
+                metadata: {
+                  state: savedPullRequest.state,
+                  draft: savedPullRequest.draft,
+                  baseRef:
+                    payload.pull_request?.base?.ref ?? savedPullRequest.baseRef,
+                  headRef:
+                    payload.pull_request?.head?.ref ?? savedPullRequest.headRef,
+                  headSha:
+                    payload.pull_request?.head?.sha ?? savedPullRequest.headSha,
+                  closedAt: payload.pull_request?.closed_at ?? null,
+                  mergedAt: payload.pull_request?.merged_at ?? null,
+                },
+              },
             );
           }
         }

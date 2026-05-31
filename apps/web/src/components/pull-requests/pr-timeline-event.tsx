@@ -1,9 +1,6 @@
 import type { ElementType } from "react"
 import ReactMarkdown from "react-markdown"
 import {
-  GitPullRequestIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
   CheckCircleIcon,
   XCircleIcon,
   MessageSquareIcon,
@@ -17,6 +14,7 @@ import {
   AvatarImage,
 } from "@workspace/ui/components/avatar"
 import { Badge } from "@workspace/ui/components/badge"
+import { getLifecycleActionDisplay } from "./pr-status"
 import { cn } from "@workspace/ui/lib/utils"
 
 type Author = {
@@ -53,60 +51,12 @@ function formatTimestamp(date: string | Date): string {
   })
 }
 
-function AuthorAvatar({ author }: { author: Author | null }) {
-  if (!author) return null
-  return (
-    <Avatar size="sm" className="shrink-0">
-      {author.avatarUrl && (
-        <AvatarImage src={author.avatarUrl} alt={author.login} />
-      )}
-      <AvatarFallback>{author.login[0]?.toUpperCase()}</AvatarFallback>
-    </Avatar>
-  )
-}
-
 function MarkdownBody({ content }: { content: string }) {
   return (
     <div className="max-w-none text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:text-sm [&_h3]:font-medium [&_hr]:my-3 [&_hr]:border-border [&_li]:mb-0.5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_pre]:mb-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <ReactMarkdown>{content}</ReactMarkdown>
     </div>
   )
-}
-
-const lifecycleConfig: Record<
-  string,
-  { icon: ElementType; label: string; className: string }
-> = {
-  opened: {
-    icon: GitPullRequestIcon,
-    label: "opened this pull request",
-    className: "text-green-500",
-  },
-  reopened: {
-    icon: GitPullRequestIcon,
-    label: "reopened this pull request",
-    className: "text-green-500",
-  },
-  closed: {
-    icon: GitPullRequestClosedIcon,
-    label: "closed this pull request",
-    className: "text-muted-foreground",
-  },
-  merged: {
-    icon: GitMergeIcon,
-    label: "merged this pull request",
-    className: "text-purple-500",
-  },
-  ready_for_review: {
-    icon: GitPullRequestIcon,
-    label: "marked this pull request as ready for review",
-    className: "text-green-500",
-  },
-  converted_to_draft: {
-    icon: GitPullRequestIcon,
-    label: "converted this pull request to draft",
-    className: "text-muted-foreground",
-  },
 }
 
 const reviewBadgeConfig: Record<
@@ -143,14 +93,12 @@ function LifecycleEvent({
   action: string | null
   author: Author | null
 }) {
-  const config = action
-    ? (lifecycleConfig[action] ?? lifecycleConfig.opened)
-    : lifecycleConfig.opened
+  const config = getLifecycleActionDisplay(action)
   const Icon = config.icon
 
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Icon className={cn("size-3.5 shrink-0", config.className)} />
+      <Icon className={cn("size-3.5 shrink-0", config.iconClassName)} />
       {author ? (
         <span>
           <span className="font-medium text-foreground">{author.login}</span>{" "}
@@ -177,40 +125,37 @@ function CommentEvent({
   deletedAt: string | Date | null
 }) {
   return (
-    <div className="flex w-full items-start gap-2.5">
-      <AuthorAvatar author={author} />
-      <div className="min-w-0 flex-1 rounded-md border border-border bg-card p-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-xs font-medium">
-            {author?.login ?? "Unknown"}
+    <div className="min-w-0 flex-1 rounded-md border border-border bg-card p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-xs font-medium">
+          {author?.login ?? "Unknown"}
+        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">
+            {formatTimestamp(providerCreatedAt)}
           </span>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">
-              {formatTimestamp(providerCreatedAt)}
-            </span>
-            {htmlUrl && (
-              <a
-                href={htmlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-                aria-label="View on GitHub"
-              >
-                <ExternalLinkIcon className="size-3" />
-              </a>
-            )}
-          </div>
+          {htmlUrl && (
+            <a
+              href={htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              aria-label="View on GitHub"
+            >
+              <ExternalLinkIcon className="size-3" />
+            </a>
+          )}
         </div>
-        {deletedAt ? (
-          <p className="text-xs text-muted-foreground italic">
-            [Comment deleted]
-          </p>
-        ) : body ? (
-          <MarkdownBody content={body} />
-        ) : (
-          <p className="text-xs text-muted-foreground italic">No content</p>
-        )}
       </div>
+      {deletedAt ? (
+        <p className="text-xs text-muted-foreground italic">
+          [Comment deleted]
+        </p>
+      ) : body ? (
+        <MarkdownBody content={body} />
+      ) : (
+        <p className="text-xs text-muted-foreground italic">No content</p>
+      )}
     </div>
   )
 }
@@ -236,41 +181,38 @@ function ReviewEvent({
   const ReviewIcon = reviewConfig.icon
 
   return (
-    <div className="flex w-full items-start gap-2.5">
-      <AuthorAvatar author={author} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-medium">
-            {author?.login ?? "Unknown"}
-          </span>
-          <Badge
-            variant="outline"
-            className={cn("h-5 gap-1 text-[11px]", reviewConfig.className)}
+    <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-sm font-medium">
+          {author?.login ?? "Unknown"}
+        </span>
+        <Badge
+          variant="outline"
+          className={cn("h-5 gap-1 text-[11px]", reviewConfig.className)}
+        >
+          <ReviewIcon className="size-3" />
+          {reviewConfig.label}
+        </Badge>
+        <span className="text-xs text-muted-foreground">
+          {formatTimestamp(providerCreatedAt)}
+        </span>
+        {htmlUrl && (
+          <a
+            href={htmlUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+            aria-label="View on GitHub"
           >
-            <ReviewIcon className="size-3" />
-            {reviewConfig.label}
-          </Badge>
-          <span className="text-xs text-muted-foreground">
-            {formatTimestamp(providerCreatedAt)}
-          </span>
-          {htmlUrl && (
-            <a
-              href={htmlUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-              aria-label="View on GitHub"
-            >
-              <ExternalLinkIcon className="size-3" />
-            </a>
-          )}
-        </div>
-        {!deletedAt && body && (
-          <div className="mt-2 rounded-md border border-border bg-card p-3">
-            <MarkdownBody content={body} />
-          </div>
+            <ExternalLinkIcon className="size-3" />
+          </a>
         )}
       </div>
+      {!deletedAt && body && (
+        <div className="mt-2 rounded-md border border-border bg-card p-3">
+          <MarkdownBody content={body} />
+        </div>
+      )}
     </div>
   )
 }
@@ -294,48 +236,45 @@ function ReviewCommentEvent({
   const line = typeof metadata.line === "number" ? metadata.line : null
 
   return (
-    <div className="flex w-full items-start gap-2.5">
-      <AuthorAvatar author={author} />
-      <div className="min-w-0 flex-1 overflow-hidden rounded-md border border-border bg-card">
-        {path && (
-          <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5">
-            <FileIcon className="size-3 shrink-0 text-muted-foreground" />
-            <code className="truncate text-xs text-muted-foreground">
-              {path}
-              {line != null && `:${line}`}
-            </code>
-            {htmlUrl && (
-              <a
-                href={htmlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-                aria-label="View on GitHub"
-              >
-                <ExternalLinkIcon className="size-3" />
-              </a>
-            )}
-          </div>
-        )}
-        <div className="p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium">
-              {author?.login ?? "Unknown"}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {formatTimestamp(providerCreatedAt)}
-            </span>
-          </div>
-          {deletedAt ? (
-            <p className="text-xs text-muted-foreground italic">
-              [Comment deleted]
-            </p>
-          ) : body ? (
-            <MarkdownBody content={body} />
-          ) : (
-            <p className="text-xs text-muted-foreground italic">No content</p>
+    <div className="min-w-0 flex-1 overflow-hidden rounded-md border border-border bg-card">
+      {path && (
+        <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5">
+          <FileIcon className="size-3 shrink-0 text-muted-foreground" />
+          <code className="truncate text-xs text-muted-foreground">
+            {path}
+            {line != null && `:${line}`}
+          </code>
+          {htmlUrl && (
+            <a
+              href={htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              aria-label="View on GitHub"
+            >
+              <ExternalLinkIcon className="size-3" />
+            </a>
           )}
         </div>
+      )}
+      <div className="p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium">
+            {author?.login ?? "Unknown"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {formatTimestamp(providerCreatedAt)}
+          </span>
+        </div>
+        {deletedAt ? (
+          <p className="text-xs text-muted-foreground italic">
+            [Comment deleted]
+          </p>
+        ) : body ? (
+          <MarkdownBody content={body} />
+        ) : (
+          <p className="text-xs text-muted-foreground italic">No content</p>
+        )}
       </div>
     </div>
   )
@@ -353,36 +292,47 @@ export function PullRequestTimelineEvent({
   isLast,
 }: TimelineEventProps) {
   const isCompact = eventType === "lifecycle"
+  // Review events with no body render a single inline line; centre the avatar on it.
+  const isInlineRow = eventType === "review" && !body
 
   return (
-    <div className="relative flex gap-3">
-      {/* Vertical connector line */}
+    <div
+      className={cn(
+        "relative flex gap-3",
+        isCompact ? "pb-2" : "pb-3",
+        isInlineRow && "items-center"
+      )}
+    >
+      {/* Vertical connector — starts at centre of this node, ends at centre of next */}
       {!isLast && (
         <div
-          className={cn(
-            "absolute top-5 left-[11px] w-px bg-border",
-            isCompact ? "h-[calc(100%+8px)]" : "h-[calc(100%+12px)]"
-          )}
+          className="absolute left-3 top-3 -bottom-3 w-px bg-border"
           aria-hidden
         />
       )}
 
-      {/* Node dot */}
+      {/* Node — both types are size-6 (24 px) so the line centre (left-3 = 12 px) is always correct */}
       <div
         className={cn(
-          "relative z-10 mt-0.5 flex size-[22px] shrink-0 items-center justify-center rounded-full",
-          isCompact ? "bg-background" : "bg-muted ring-1 ring-border"
+          "relative z-10 flex size-6 shrink-0 items-center justify-center",
         )}
       >
         {isCompact ? (
-          <div className="size-1.5 rounded-full bg-muted-foreground/40" />
+          <div className="size-2.5 rounded-full bg-muted-foreground" />
         ) : (
-          <div className="size-1.5 rounded-full bg-muted-foreground/60" />
+          <Avatar size="sm">
+            {author?.avatarUrl && (
+              <AvatarImage src={author.avatarUrl} alt={author?.login ?? ""} />
+            )}
+            <AvatarFallback>
+              {author?.login?.[0]?.toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
         )}
       </div>
 
-      {/* Event content */}
-      <div className={cn("min-w-0 flex-1 pb-3", isCompact && "pb-2")}>
+      {/* Event content — bottom gap lives on the outer row, not here */}
+      <div className="min-w-0 flex-1">
         {eventType === "lifecycle" && (
           <LifecycleEvent action={action} author={author} />
         )}

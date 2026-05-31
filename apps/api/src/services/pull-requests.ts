@@ -153,6 +153,44 @@ const upsertTimelineEvent = async ({
     })
 }
 
+const ensureInitialPullRequestLifecycleEvent = async ({
+  pullRequestId,
+  author,
+  htmlUrl,
+  providerCreatedAt,
+}: {
+  pullRequestId: string
+  author: ProviderActor | null
+  htmlUrl: string
+  providerCreatedAt: Date
+}) => {
+  const existingOpenedEvent = await db.query.pullRequestTimelineEvent.findFirst({
+    where: and(
+      eq(pullRequestTimelineEvent.pullRequestId, pullRequestId),
+      eq(pullRequestTimelineEvent.eventType, "lifecycle"),
+      eq(pullRequestTimelineEvent.action, "opened"),
+    ),
+  })
+
+  if (existingOpenedEvent) {
+    return
+  }
+
+  await upsertTimelineEvent({
+    pullRequestId,
+    eventType: "lifecycle",
+    externalKey: "lifecycle:initialized",
+    action: "opened",
+    author,
+    metadata: {
+      source: "initial_sync",
+    },
+    htmlUrl,
+    providerCreatedAt,
+    providerUpdatedAt: providerCreatedAt,
+  })
+}
+
 const markMissingTimelineEventsDeleted = async (
   pullRequestId: string,
   eventType: TimelineEventType,
@@ -370,18 +408,11 @@ export const syncGitHubPullRequest = async (
     .returning()
 
   await Promise.all([
-    upsertTimelineEvent({
+    ensureInitialPullRequestLifecycleEvent({
       pullRequestId: savedPullRequest.id,
-      eventType: "lifecycle",
-      externalKey: "lifecycle:initialized",
-      action: "opened",
       author: values.author,
-      metadata: {
-        source: "initial_sync",
-      },
       htmlUrl: values.htmlUrl,
       providerCreatedAt: values.providerCreatedAt,
-      providerUpdatedAt: values.providerCreatedAt,
     }),
     syncIssueComments(
       savedPullRequest.id,
@@ -443,19 +474,42 @@ export const addPullRequestLifecycleEvent = async (
   pullRequestId: string,
   deliveryId: string,
   action: string,
-  createdAt: Date,
-) =>
-  upsertTimelineEvent({
+  details: {
+    author: ProviderActor | null
+    body: string | null
+    htmlUrl: string | null
+    providerCreatedAt: Date
+    providerUpdatedAt: Date
+    metadata: Record<string, unknown>
+  },
+) => {
+  if (action === "opened") {
+    await db
+      .delete(pullRequestTimelineEvent)
+      .where(
+        and(
+          eq(pullRequestTimelineEvent.pullRequestId, pullRequestId),
+          eq(pullRequestTimelineEvent.externalKey, "lifecycle:initialized"),
+        ),
+      )
+  }
+
+  return upsertTimelineEvent({
     pullRequestId,
     eventType: "lifecycle",
     externalKey: `lifecycle:webhook:${deliveryId}`,
     action,
+    author: details.author,
+    body: details.body,
     metadata: {
       source: "webhook",
+      ...details.metadata,
     },
-    providerCreatedAt: createdAt,
-    providerUpdatedAt: createdAt,
+    htmlUrl: details.htmlUrl,
+    providerCreatedAt: details.providerCreatedAt,
+    providerUpdatedAt: details.providerUpdatedAt,
   })
+}
 
 export const getTrackedRepositoryForWebhook = async (
   workspaceId: string,

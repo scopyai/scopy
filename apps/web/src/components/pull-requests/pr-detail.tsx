@@ -1,11 +1,5 @@
 import ReactMarkdown from "react-markdown"
 import {
-  GitPullRequestArrowIcon,
-  GitPullRequestDraftIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  ArrowRightIcon,
-  ExternalLinkIcon,
   XIcon,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
@@ -15,6 +9,7 @@ import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Separator } from "@workspace/ui/components/separator"
 import { PullRequestTimelineEvent } from "./pr-timeline-event"
+import { getPullRequestStateDisplay } from "./pr-status"
 import { cn } from "@workspace/ui/lib/utils"
 
 type Author = {
@@ -58,29 +53,6 @@ interface PullRequestDetailProps {
   onClose: () => void
 }
 
-const stateConfig = {
-  open: {
-    icon: GitPullRequestArrowIcon,
-    label: "Open",
-    className: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
-  },
-  merged: {
-    icon: GitMergeIcon,
-    label: "Merged",
-    className: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-  },
-  closed: {
-    icon: GitPullRequestClosedIcon,
-    label: "Closed",
-    className: "bg-muted text-muted-foreground border-border",
-  },
-  draft: {
-    icon: GitPullRequestDraftIcon,
-    label: "Draft",
-    className: "bg-muted text-muted-foreground border-border",
-  },
-}
-
 function PullRequestDetailSkeleton() {
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -112,7 +84,7 @@ export function PullRequestDetail({
   if (isPending) {
     return (
       <div className="flex h-full flex-col">
-        <div className="relative p-4 pt-3">
+        <div className="relative p-4 pt-3 pr-5">
           <Skeleton className="absolute right-3 top-3 size-6 rounded" />
           <Skeleton className="h-6 w-3/4" />
           <Skeleton className="mt-2 h-4 w-1/3" />
@@ -124,15 +96,16 @@ export function PullRequestDetail({
 
   if (!pullRequest) return null
 
-  const stateKey =
-    pullRequest.state === "open" && pullRequest.draft ? "draft" : pullRequest.state
-  const { icon: StateIcon, label: stateLabel, className: stateClassName } =
-    stateConfig[stateKey]
+  const {
+    icon: StateIcon,
+    label: stateLabel,
+    badgeClassName: stateClassName,
+  } = getPullRequestStateDisplay(pullRequest.state, pullRequest.draft)
 
   return (
     <div className="flex h-full flex-col">
       <ScrollArea className="flex-1 min-h-0">
-        <div className="relative space-y-4 p-4 pt-3">
+        <div className="relative space-y-4 p-4 pt-3 pr-5">
           <Button
             variant="ghost"
             size="sm"
@@ -143,37 +116,34 @@ export function PullRequestDetail({
             <XIcon className="size-3.5" />
           </Button>
 
-          {/* Title row */}
-          <div className="pr-8">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="min-w-0 flex-1 text-base font-semibold leading-snug">
-                {pullRequest.title}
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
+          {/* Header: title line + meta line */}
+          <div className="space-y-1.5">
+            {/* Line 1: title as hover-link + number */}
+            <div className="pr-9">
+              <h2 className="text-base font-semibold leading-snug">
+                <a
+                  href={pullRequest.htmlUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline-offset-2 hover:underline"
+                >
+                  {pullRequest.title}
+                </a>
+                <span className="ml-1.5 text-sm font-normal text-muted-foreground">
                   #{pullRequest.number}
                 </span>
               </h2>
-              <a
-                href={pullRequest.htmlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex shrink-0 items-center gap-1 pt-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              >
-                GitHub
-                <ExternalLinkIcon className="size-3" />
-              </a>
             </div>
 
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className={cn("h-5 gap-1 shrink-0 text-xs", stateClassName)}>
+            {/* Line 2: state badge + avatar + merge summary */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Badge
+                variant="outline"
+                className={cn("h-5 gap-1 shrink-0 text-xs", stateClassName)}
+              >
                 <StateIcon className="size-3" />
                 {stateLabel}
               </Badge>
-            </div>
-          </div>
-
-          {/* Author & branches */}
-          <div>
-            <div className="flex items-center gap-2">
               {pullRequest.author && (
                 <>
                   <Avatar size="sm">
@@ -191,24 +161,21 @@ export function PullRequestDetail({
                     <span className="font-medium text-foreground">
                       {pullRequest.author.login}
                     </span>{" "}
-                    wants to merge into
+                    wants to merge{" "}
+                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                      {pullRequest.headRef}
+                    </code>{" "}
+                    into{" "}
+                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                      {pullRequest.baseRef}
+                    </code>
                   </span>
                 </>
               )}
             </div>
 
-            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                {pullRequest.baseRef}
-              </code>
-              <ArrowRightIcon className="size-3 shrink-0" />
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                {pullRequest.headRef}
-              </code>
-            </div>
-
             {pullRequest.labels.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1">
                 {pullRequest.labels.map((label) => (
                   <Badge key={label} variant="secondary" className="h-4 text-[10px]">
                     {label}

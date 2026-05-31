@@ -1,14 +1,6 @@
-import type { ElementType } from "react"
-import {
-  GitPullRequestArrowIcon,
-  GitPullRequestDraftIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-} from "lucide-react"
 import { Badge } from "@workspace/ui/components/badge"
+import { getPullRequestStateDisplay, type PullRequestState } from "./pr-status"
 import { cn } from "@workspace/ui/lib/utils"
-
-type PullRequestState = "open" | "closed" | "merged"
 
 interface PullRequestListItemProps {
   id: string
@@ -42,22 +34,6 @@ function formatRelativeTime(date: string | Date): string {
   return "just now"
 }
 
-function getStateIcon(state: PullRequestState, draft: boolean): {
-  icon: ElementType
-  className: string
-} {
-  if (state === "merged") {
-    return { icon: GitMergeIcon, className: "text-purple-500" }
-  }
-  if (state === "closed") {
-    return { icon: GitPullRequestClosedIcon, className: "text-red-500" }
-  }
-  if (draft) {
-    return { icon: GitPullRequestDraftIcon, className: "text-muted-foreground" }
-  }
-  return { icon: GitPullRequestArrowIcon, className: "text-green-500" }
-}
-
 export function PullRequestListItem({
   number,
   title,
@@ -69,7 +45,8 @@ export function PullRequestListItem({
   isSelected,
   onClick,
 }: PullRequestListItemProps) {
-  const { icon: StateIcon, className: stateClassName } = getStateIcon(state, draft)
+  const { icon: StateIcon, iconClassName: stateClassName } =
+    getPullRequestStateDisplay(state, draft)
 
   return (
     <button
