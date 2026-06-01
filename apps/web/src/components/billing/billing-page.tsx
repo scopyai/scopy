@@ -5,7 +5,7 @@ import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { AccountSummary } from "./account-summary"
 import { PlanCards } from "./plan-cards"
 import { SubscriptionActions } from "./subscription-actions"
-import { CreditLedger } from "./credit-ledger"
+import { CreditHistory } from "./credit-history"
 
 function BillingLoadingSkeleton() {
   return (
@@ -89,7 +89,7 @@ export function BillingPage() {
         />
       </div>
 
-      <CreditLedger workspaceId={selectedWorkspaceId} />
+      <CreditHistory workspaceId={selectedWorkspaceId} />
     </div>
   )
 }

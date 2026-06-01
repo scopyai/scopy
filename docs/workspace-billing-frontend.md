@@ -9,7 +9,7 @@ for every read and mutation, including loading and error states.
   `account.tier` is `free`, `premium`, `ultra`, or `enterprise`. A workspace
   without a subscription returns `free` with `creditBalance: 0`.
 - `api.workspaces({ workspaceId }).billing.credits.get({ query })` accepts
-  `page` and `pageSize` and returns recent credit ledger entries plus
+  `page` and `pageSize` and returns recent credit history entries plus
   pagination metadata.
 
 All workspace members may use these reads.
@@ -30,7 +30,7 @@ Only the workspace owner may use these endpoints:
   Ultra to Premium is scheduled for the next renewal and preserves the current
   Ultra credits until then.
 
-Invalidate the workspace billing and credit-ledger queries after a completed
+Invalidate the workspace billing and credit-history queries after a completed
 mutation. Checkout returns to `/billing/success?workspaceId=...`; that route
 should invalidate and refetch billing state before navigating onward.
 

@@ -1,0 +1,515 @@
+import { randomUUID } from "node:crypto"
+import type {
+  NormalizedCheckoutCompletedEvent,
+  NormalizedDisputeCreatedEvent,
+  NormalizedRefundCreatedEvent,
+  NormalizedSubscriptionEntity,
+  NormalizedWebhookEvent,
+} from "@creem_io/webhook-types"
+import { desc, eq, sql } from "drizzle-orm"
+import { db } from "../db/client"
+import { workspace, workspaceCreditTransaction } from "../db/schema"
+import { env } from "../env"
+import { creem } from "./creem"
+import {
+  getMonthlyAllowance,
+  getPlanByProductId,
+  getPurchasablePlan,
+  isPaidTier,
+  publicBillingPlans,
+  type PurchasableBillingTier,
+} from "./plans"
+import {
+  calculateResetDelta,
+  getPlanChangeKind,
+  getWorkspaceReferenceId,
+  isStaleCreemEvent,
+  periodResetKey,
+  shouldRevokeForSubscriptionStatus,
+} from "./policy"
+
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type CreditResetSubscription = {
+  id: string
+  productId: string
+  customerId: string
+  status: string
+  periodStart: Date
+  periodEnd: Date
+}
+
+const toDate = (value: Date | string | number, field: string) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid Creem ${field}: ${String(value)}`)
+  }
+  return date
+}
+
+export class BillingError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: 400 | 404 | 409 = 400,
+  ) {
+    super(message)
+    this.name = "BillingError"
+  }
+}
+
+const lockWorkspace = async (tx: Transaction, workspaceId: string) => {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`)
+}
+
+const getWorkspace = async (workspaceId: string) =>
+  (await db.query.workspace.findFirst({
+    where: eq(workspace.id, workspaceId),
+  })) ?? null
+
+const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
+  workspaceId: value.id,
+  tier: value.billingTier,
+  status: value.billingStatus,
+  periodStart: value.billingPeriodStart,
+  periodEnd: value.billingPeriodEnd,
+  pendingTier: value.pendingBillingTier,
+  pendingChangeAt: value.pendingBillingTier ? value.billingPeriodEnd : null,
+  cancelAtPeriodEnd: value.billingStatus === "scheduled_cancel",
+  monthlyAllowance: getMonthlyAllowance(value.billingTier),
+  creditBalance: value.creditBalance,
+  creemCustomerId: value.creemCustomerId,
+  creemSubscriptionId: value.creemSubscriptionId,
+})
+
+const resolveWorkspace = async (
+  tx: Transaction,
+  metadata: Record<string, string | number | null> | undefined,
+  subscriptionId: string | null,
+) => {
+  const referenceId = getWorkspaceReferenceId(metadata)
+  if (referenceId) {
+    return tx.query.workspace.findFirst({ where: eq(workspace.id, referenceId) })
+  }
+
+  return subscriptionId
+    ? tx.query.workspace.findFirst({
+        where: eq(workspace.creemSubscriptionId, subscriptionId),
+      })
+    : null
+}
+
+const appendTransaction = async (
+  tx: Transaction,
+  values: {
+    workspaceId: string
+    type: "reset" | "revoke"
+    amount: number
+    balanceAfter: number
+    idempotencyKey: string
+    reason: string
+    metadata?: Record<string, unknown>
+  },
+) => {
+  await tx
+    .insert(workspaceCreditTransaction)
+    .values({
+      id: randomUUID(),
+      ...values,
+      metadata: values.metadata ?? {},
+    })
+    .onConflictDoNothing({
+      target: workspaceCreditTransaction.idempotencyKey,
+    })
+}
+
+const resetCredits = async (
+  tx: Transaction,
+  currentWorkspace: typeof workspace.$inferSelect,
+  subscription: CreditResetSubscription,
+  reason: string,
+) => {
+  const plan = getPlanByProductId(subscription.productId)
+  if (!plan) throw new BillingError(`Unknown Creem product: ${subscription.productId}`)
+
+  const idempotencyKey = periodResetKey(
+    subscription.id,
+    subscription.productId,
+    subscription.periodStart,
+  )
+  const existing = await tx.query.workspaceCreditTransaction.findFirst({
+    where: eq(workspaceCreditTransaction.idempotencyKey, idempotencyKey),
+  })
+  if (existing) return
+
+  await tx
+    .update(workspace)
+    .set({
+      billingTier: plan.slug,
+      billingStatus: subscription.status,
+      creditBalance: plan.monthlyCredits,
+      creemCustomerId: subscription.customerId,
+      creemSubscriptionId: subscription.id,
+      billingPeriodStart: subscription.periodStart,
+      billingPeriodEnd: subscription.periodEnd,
+      pendingBillingTier: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(workspace.id, currentWorkspace.id))
+
+  await appendTransaction(tx, {
+    workspaceId: currentWorkspace.id,
+    type: "reset",
+    amount: calculateResetDelta(currentWorkspace.creditBalance, plan.monthlyCredits),
+    balanceAfter: plan.monthlyCredits,
+    idempotencyKey,
+    reason,
+    metadata: {
+      subscriptionId: subscription.id,
+      productId: subscription.productId,
+      periodStart: subscription.periodStart.toISOString(),
+    },
+  })
+}
+
+const revokeCredits = async (
+  tx: Transaction,
+  currentWorkspace: typeof workspace.$inferSelect,
+  idempotencyKey: string,
+  reason: string,
+  status?: string,
+) => {
+  const existing = await tx.query.workspaceCreditTransaction.findFirst({
+    where: eq(workspaceCreditTransaction.idempotencyKey, idempotencyKey),
+  })
+  if (existing) return
+
+  await tx
+    .update(workspace)
+    .set({
+      ...(status
+        ? {
+            billingTier: "free" as const,
+            billingStatus: status,
+            pendingBillingTier: null,
+          }
+        : {}),
+      creditBalance: 0,
+      updatedAt: new Date(),
+    })
+    .where(eq(workspace.id, currentWorkspace.id))
+
+  await appendTransaction(tx, {
+    workspaceId: currentWorkspace.id,
+    type: "revoke",
+    amount: -currentWorkspace.creditBalance,
+    balanceAfter: 0,
+    idempotencyKey,
+    reason,
+  })
+}
+
+const applySubscriptionEvent = async (
+  event: Extract<NormalizedWebhookEvent, { object: NormalizedSubscriptionEntity }>,
+) => {
+  await db.transaction(async (tx) => {
+    const subscription = event.object
+    const currentWorkspace = await resolveWorkspace(
+      tx,
+      subscription.metadata,
+      subscription.id,
+    )
+    if (!currentWorkspace) return
+
+    await lockWorkspace(tx, currentWorkspace.id)
+    const lockedWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, currentWorkspace.id),
+    })
+    if (!lockedWorkspace) return
+    if (isStaleCreemEvent(lockedWorkspace.creemLastEventAt, new Date(event.created_at))) {
+      return
+    }
+
+    if (event.eventType === "subscription.paid") {
+      const periodStart = toDate(
+        subscription.current_period_start_date,
+        "subscription period start",
+      )
+      const periodEnd = toDate(
+        subscription.current_period_end_date,
+        "subscription period end",
+      )
+      await resetCredits(
+        tx,
+        lockedWorkspace,
+        {
+          id: subscription.id,
+          productId: subscription.product.id,
+          customerId: subscription.customer.id,
+          status: subscription.status,
+          periodStart,
+          periodEnd,
+        },
+        "subscription_paid",
+      )
+    } else if (shouldRevokeForSubscriptionStatus(subscription.status)) {
+      await revokeCredits(
+        tx,
+        lockedWorkspace,
+        `${event.id}:revoke`,
+        `subscription_${subscription.status}`,
+        subscription.status,
+      )
+    } else {
+      const plan = getPlanByProductId(subscription.product.id)
+      const preservePendingDowngrade =
+        lockedWorkspace.billingTier === "ultra" &&
+        lockedWorkspace.pendingBillingTier === "premium" &&
+        plan?.slug === "premium"
+      const periodStart = toDate(
+        subscription.current_period_start_date,
+        "subscription period start",
+      )
+      const periodEnd = toDate(
+        subscription.current_period_end_date,
+        "subscription period end",
+      )
+
+      await tx
+        .update(workspace)
+        .set({
+          billingTier: preservePendingDowngrade
+            ? lockedWorkspace.billingTier
+            : plan?.slug ?? lockedWorkspace.billingTier,
+          billingStatus: subscription.status,
+          creemCustomerId: subscription.customer.id,
+          creemSubscriptionId: subscription.id,
+          billingPeriodStart: periodStart,
+          billingPeriodEnd: periodEnd,
+          pendingBillingTier:
+            subscription.status === "scheduled_cancel"
+              ? null
+              : lockedWorkspace.pendingBillingTier,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspace.id, currentWorkspace.id))
+    }
+
+    await tx
+      .update(workspace)
+      .set({ creemLastEventAt: new Date(event.created_at) })
+      .where(eq(workspace.id, currentWorkspace.id))
+  })
+}
+
+const applyCheckoutCompleted = async (event: NormalizedCheckoutCompletedEvent) => {
+  const referenceId = getWorkspaceReferenceId(event.object.metadata)
+  if (!referenceId) return
+
+  const subscriptionId =
+    typeof event.object.subscription === "object"
+      ? event.object.subscription.id
+      : event.object.subscription ?? null
+  await db
+    .update(workspace)
+    .set({
+      creemCustomerId: event.object.customer?.id ?? null,
+      creemSubscriptionId: subscriptionId,
+      updatedAt: new Date(),
+    })
+    .where(eq(workspace.id, referenceId))
+}
+
+const getFinancialSubscriptionId = (
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+) =>
+  typeof event.object.subscription === "string"
+    ? event.object.subscription
+    : event.object.subscription?.id ?? event.object.transaction.subscription ?? null
+
+const applyFinancialRevoke = async (
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+) => {
+  const subscriptionId = getFinancialSubscriptionId(event)
+  if (!subscriptionId) return
+
+  await db.transaction(async (tx) => {
+    const currentWorkspace = await resolveWorkspace(tx, undefined, subscriptionId)
+    if (!currentWorkspace) return
+    await lockWorkspace(tx, currentWorkspace.id)
+    const lockedWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, currentWorkspace.id),
+    })
+    if (!lockedWorkspace) return
+    await revokeCredits(tx, lockedWorkspace, `${event.id}:revoke`, event.eventType)
+  })
+}
+
+export const applyCreemWebhook = async (event: NormalizedWebhookEvent) => {
+  if (event.eventType === "checkout.completed") return applyCheckoutCompleted(event)
+  if (event.eventType === "refund.created" || event.eventType === "dispute.created") {
+    return applyFinancialRevoke(event)
+  }
+  return applySubscriptionEvent(event)
+}
+
+export const getWorkspaceBilling = async (workspaceId: string) => {
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
+  return { plans: publicBillingPlans, account: toBillingAccount(currentWorkspace) }
+}
+
+export const listWorkspaceCreditTransactions = async (
+  workspaceId: string,
+  page: number,
+  pageSize: number,
+) => {
+  const offset = (page - 1) * pageSize
+  const [items, [{ count }]] = await Promise.all([
+    db.query.workspaceCreditTransaction.findMany({
+      where: eq(workspaceCreditTransaction.workspaceId, workspaceId),
+      orderBy: [desc(workspaceCreditTransaction.createdAt)],
+      limit: pageSize,
+      offset,
+    }),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(workspaceCreditTransaction)
+      .where(eq(workspaceCreditTransaction.workspaceId, workspaceId)),
+  ])
+  return { items, page, pageSize, total: count }
+}
+
+export const createWorkspaceCheckout = async (
+  workspaceId: string,
+  email: string,
+  tier: string,
+  requestId: string,
+) => {
+  const plan = getPurchasablePlan(tier)
+  if (!plan) throw new BillingError("Unknown purchasable billing tier")
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
+  if (isPaidTier(currentWorkspace.billingTier)) {
+    throw new BillingError("Workspace already has a billing plan", 409)
+  }
+
+  const checkout = await creem.checkouts.create({
+    productId: plan.productId,
+    requestId,
+    customer: { email },
+    successUrl: new URL(
+      `/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
+      env.FRONTEND_URL,
+    ).toString(),
+    metadata: { referenceId: workspaceId },
+  })
+  if (!checkout.checkoutUrl) {
+    throw new Error("Creem checkout did not include a redirect URL")
+  }
+  return { url: checkout.checkoutUrl }
+}
+
+export const createWorkspacePortal = async (workspaceId: string) => {
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace?.creemCustomerId) {
+    throw new BillingError("Workspace does not have a Creem customer", 404)
+  }
+  const portal = await creem.customers.generateBillingLinks({
+    customerId: currentWorkspace.creemCustomerId,
+  })
+  return { url: portal.customerPortalLink }
+}
+
+export const cancelWorkspaceSubscription = async (workspaceId: string) => {
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace?.creemSubscriptionId) {
+    throw new BillingError("Workspace does not have an active subscription", 404)
+  }
+  const subscription = await creem.subscriptions.cancel(
+    currentWorkspace.creemSubscriptionId,
+    { mode: "scheduled", onExecute: "cancel" },
+  )
+  await db
+    .update(workspace)
+    .set({
+      billingStatus: "scheduled_cancel",
+      billingPeriodEnd: subscription.currentPeriodEndDate
+        ? toDate(subscription.currentPeriodEndDate, "subscription period end")
+        : currentWorkspace.billingPeriodEnd,
+      pendingBillingTier: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(workspace.id, workspaceId))
+  return { success: true, message: "Subscription will cancel at period end" }
+}
+
+export const changeWorkspacePlan = async (
+  workspaceId: string,
+  tier: PurchasableBillingTier,
+) => {
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace?.creemSubscriptionId) {
+    throw new BillingError("Workspace does not have an active subscription", 404)
+  }
+  if (currentWorkspace.billingStatus === "scheduled_cancel") {
+    throw new BillingError("Resume the subscription before changing plans", 409)
+  }
+  const planChangeKind = getPlanChangeKind(currentWorkspace.billingTier, tier)
+  if (planChangeKind === "same") {
+    throw new BillingError("Workspace is already on this billing plan", 409)
+  }
+  if (planChangeKind === "unsupported") {
+    throw new BillingError("Unsupported billing plan change", 409)
+  }
+  const plan = getPurchasablePlan(tier)
+  if (!plan) throw new BillingError("Unknown purchasable billing tier")
+
+  const subscription = await creem.subscriptions.upgrade(
+    currentWorkspace.creemSubscriptionId,
+    {
+      productId: plan.productId,
+      updateBehavior:
+        planChangeKind === "upgrade"
+          ? "proration-charge-immediately"
+          : "proration-none",
+    },
+  )
+
+  if (planChangeKind === "downgrade") {
+    await db
+      .update(workspace)
+      .set({ pendingBillingTier: "premium", updatedAt: new Date() })
+      .where(eq(workspace.id, workspaceId))
+    return getWorkspaceBilling(workspaceId)
+  }
+
+  await db.transaction(async (tx) => {
+    await lockWorkspace(tx, workspaceId)
+    const productId =
+      typeof subscription.product === "string"
+        ? subscription.product
+        : subscription.product.id
+    const customerId =
+      typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer.id
+    if (!subscription.currentPeriodStartDate || !subscription.currentPeriodEndDate) {
+      throw new Error("Upgraded subscription did not include a billing period")
+    }
+
+    await resetCredits(tx, currentWorkspace, {
+      id: subscription.id,
+      productId,
+      customerId,
+      status: subscription.status,
+      periodStart: toDate(
+        subscription.currentPeriodStartDate,
+        "subscription period start",
+      ),
+      periodEnd: toDate(
+        subscription.currentPeriodEndDate,
+        "subscription period end",
+      ),
+    }, "subscription_upgrade")
+  })
+  return getWorkspaceBilling(workspaceId)
+}

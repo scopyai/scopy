@@ -39,6 +39,10 @@ export type WorkspaceBillingTier =
   | PurchasableBillingTier
   | "enterprise"
 
+export const isPaidTier = (
+  tier: WorkspaceBillingTier,
+): tier is PurchasableBillingTier => tier === "premium" || tier === "ultra"
+
 export const getPurchasablePlan = (tier: string) =>
   billingPlans.find(
     (plan): plan is (typeof billingPlans)[0] | (typeof billingPlans)[1] =>
@@ -50,3 +54,10 @@ export const getPlanByProductId = (productId: string) =>
     (plan): plan is (typeof billingPlans)[0] | (typeof billingPlans)[1] =>
       plan.productId === productId
   )
+
+export const getMonthlyAllowance = (tier: WorkspaceBillingTier) =>
+  isPaidTier(tier) ? getPurchasablePlan(tier)?.monthlyCredits ?? 0 : 0
+
+export const publicBillingPlans = billingPlans.map(
+  ({ productId: _productId, ...plan }) => plan,
+)

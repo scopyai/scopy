@@ -1,24 +1,25 @@
-export const periodGrantKey = (
+export const periodResetKey = (
   subscriptionId: string,
   productId: string,
   periodStart: Date,
-) => `${subscriptionId}:${productId}:${periodStart.toISOString()}:grant`;
+) => `${subscriptionId}:${productId}:${periodStart.toISOString()}:reset`;
 
 export const calculateResetDelta = (
   currentBalance: number,
   monthlyAllowance: number,
 ) => monthlyAllowance - currentBalance;
 
-export const canConsumeCredits = (balance: number, amount: number) =>
-  Number.isInteger(amount) && amount > 0 && balance >= amount;
-
-export const retainsCreditsDuringCancellation = (
-  periodEnd: Date,
-  now = new Date(),
-) => periodEnd.getTime() > now.getTime();
-
 export const shouldRevokeForSubscriptionStatus = (status: string) =>
-  status === "paused" || status === "expired";
+  status === "paused" || status === "expired" || status === "canceled";
+
+export const isStaleCreemEvent = (
+  lastEventAt: Date | null,
+  eventAt: Date,
+) => lastEventAt !== null && lastEventAt.getTime() > eventAt.getTime();
+
+export const getWorkspaceReferenceId = (
+  metadata: Record<string, string | number | null> | undefined,
+) => typeof metadata?.referenceId === "string" ? metadata.referenceId : null;
 
 export const getPlanChangeKind = (
   currentTier: string,

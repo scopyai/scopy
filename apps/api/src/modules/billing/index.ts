@@ -6,9 +6,9 @@ import {
   createWorkspaceCheckout,
   createWorkspacePortal,
   getWorkspaceBilling,
-  listWorkspaceCreditLedger,
+  listWorkspaceCreditTransactions,
   changeWorkspacePlan,
-} from "../../services/billing";
+} from "../../billing/service";
 import {
   requireWorkspaceForUser,
   requireWorkspaceRole,
@@ -58,7 +58,7 @@ export const billingRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid pagination parameters" });
       }
 
-      return listWorkspaceCreditLedger(
+      return listWorkspaceCreditTransactions(
         params.workspaceId,
         parsed.data.page,
         parsed.data.pageSize,

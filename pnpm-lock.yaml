@@ -23,9 +23,6 @@ importers:
 
   apps/api:
     dependencies:
-      '@creem_io/better-auth':
-        specifier: ^1.1.1
-        version: 1.1.1(better-auth@1.6.5(@opentelemetry/api@1.9.0)(@tanstack/react-start@1.168.18(crossws@0.4.5(srvx@0.11.15))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(kysely@0.28.16)(pg@8.20.0))(pg@8.20.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(solid-js@1.9.13)(vitest@4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.3.0)(msw@2.13.4(@types/node@25.3.0)(typescript@5.9.3))(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))))(zod@4.3.6)
       '@creem_io/webhook-types':
         specifier: ^1.0.0
         version: 1.0.0
@@ -498,12 +495,6 @@ packages:
 
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
-
-  '@creem_io/better-auth@1.1.1':
-    resolution: {integrity: sha512-WtddbNpkkYJz3/dSrfvX1Gqhw4pfXS33peyULOi8p3SO8MBRwNbNiRUoj0rCzjsoLRK0nV259f2MhtsjuboHpw==}
-    peerDependencies:
-      better-auth: ^1.3.34
-      zod: ^3.23.8 || ^4
 
   '@creem_io/webhook-types@1.0.0':
     resolution: {integrity: sha512-LZUgFG+UNb+SkVAz/TngdGDgwfE1mxzX1tlcRmwfA94h/SH5nv0Qtg25GO+JTXyMsMAu5pD596HpezAo3WtJcQ==}
@@ -6944,16 +6935,6 @@ snapshots:
   '@better-fetch/fetch@1.1.21': {}
 
   '@borewit/text-codec@0.2.2': {}
-
-  '@creem_io/better-auth@1.1.1(better-auth@1.6.5(@opentelemetry/api@1.9.0)(@tanstack/react-start@1.168.18(crossws@0.4.5(srvx@0.11.15))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(kysely@0.28.16)(pg@8.20.0))(pg@8.20.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(solid-js@1.9.13)(vitest@4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.3.0)(msw@2.13.4(@types/node@25.3.0)(typescript@5.9.3))(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))))(zod@4.3.6)':
-    dependencies:
-      '@creem_io/webhook-types': 1.0.0
-      better-auth: 1.6.5(@opentelemetry/api@1.9.0)(@tanstack/react-start@1.168.18(crossws@0.4.5(srvx@0.11.15))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(kysely@0.28.16)(pg@8.20.0))(pg@8.20.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(solid-js@1.9.13)(vitest@4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.3.0)(msw@2.13.4(@types/node@25.3.0)(typescript@5.9.3))(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)))
-      creem: 1.4.5
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - supports-color
 
   '@creem_io/webhook-types@1.0.0': {}
 

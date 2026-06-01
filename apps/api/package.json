@@ -26,7 +26,6 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
-    "@creem_io/better-auth": "^1.1.1",
     "@creem_io/webhook-types": "^1.0.0",
     "@elysia/node": "^1.4.5",
     "@elysiajs/cors": "^1.4.1",

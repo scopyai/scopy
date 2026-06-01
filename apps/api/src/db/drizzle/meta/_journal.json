@@ -50,6 +50,13 @@
       "when": 1780327778016,
       "tag": "0006_whole_mentallo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780341656877,
+      "tag": "0007_simplify_workspace_billing",
+      "breakpoints": true
     }
   ]
 }

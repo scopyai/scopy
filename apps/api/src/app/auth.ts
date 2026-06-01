@@ -1,8 +1,5 @@
 import { Elysia } from 'elysia'
 import { auth } from '../auth'
-import { interceptCreemScheduledCancellation } from '../billing/creem-webhook'
-import { env } from '../env'
-import { handleSubscriptionScheduledCancel } from '../services/billing'
 
 const getRequestSession = (headers: Headers) => auth.api.getSession({ headers })
 
@@ -23,24 +20,7 @@ export const authContext = new Elysia({ name: 'auth-context' }).macro({
 	},
 })
 
-const authHandler = async (request: Request) => {
-	const url = new URL(request.url)
-	if (
-		request.method === 'POST' &&
-		url.pathname === '/api/auth/creem/webhook'
-	) {
-		const response = await interceptCreemScheduledCancellation(
-			request,
-			env.CREEM_WEBHOOK_SECRET,
-			handleSubscriptionScheduledCancel,
-		)
-		if (response) return response
-	}
-
-	return auth.handler(request)
-}
-
-export const authRoutes = new Elysia({ name: 'auth-routes' }).mount(authHandler)
+export const authRoutes = new Elysia({ name: 'auth-routes' }).mount(auth.handler)
 
 export const protectedRoute = (prefix = '') =>
 	new Elysia({ prefix })

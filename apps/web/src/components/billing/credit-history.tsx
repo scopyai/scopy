@@ -20,13 +20,13 @@ import { cn } from "@workspace/ui/lib/utils"
 import { useWorkspaceBillingCredits } from "@/hooks/use-workspace-billing-credits"
 import {
   formatDate,
-  formatLedgerDelta,
-  formatLedgerEventType,
+  formatCreditTransactionAmount,
+  formatCreditTransactionType,
 } from "@/lib/billing-format"
 
 const PAGE_SIZE = 25
 
-export function CreditLedger({
+export function CreditHistory({
   workspaceId,
 }: {
   workspaceId: string | null | undefined
@@ -63,31 +63,31 @@ export function CreditLedger({
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Delta</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="text-right">Balance</TableHead>
                   <TableHead>Reason</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.items.map((item) => {
-                  const delta = Number(item.delta)
+                  const amount = Number(item.amount)
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="text-muted-foreground">
                         {formatDate(item.createdAt)}
                       </TableCell>
                       <TableCell>
-                        {formatLedgerEventType(item.eventType)}
+                        {formatCreditTransactionType(item.type)}
                       </TableCell>
                       <TableCell
                         className={cn(
                           "text-right font-mono tabular-nums",
-                          delta > 0
+                          amount > 0
                             ? "text-green-600 dark:text-green-400"
                             : "text-red-600 dark:text-red-400",
                         )}
                       >
-                        {formatLedgerDelta(delta)}
+                        {formatCreditTransactionAmount(amount)}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {Number(item.balanceAfter)}

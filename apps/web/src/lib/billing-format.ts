@@ -16,19 +16,17 @@ export function formatCredits(n: number): string {
   return n.toLocaleString("en-US")
 }
 
-export function formatLedgerEventType(
-  eventType: "grant" | "consume" | "revoke" | "adjustment",
+export function formatCreditTransactionType(
+  eventType: "reset" | "revoke",
 ): string {
   return {
-    grant: "Grant",
-    consume: "Consumed",
+    reset: "Reset",
     revoke: "Revoked",
-    adjustment: "Adjustment",
   }[eventType]
 }
 
-export function formatLedgerDelta(delta: number): string {
-  return delta > 0 ? `+${delta}` : String(delta)
+export function formatCreditTransactionAmount(amount: number): string {
+  return amount > 0 ? `+${amount}` : String(amount)
 }
 
 export function formatPeriodEnd(date: Date | string | null): string {

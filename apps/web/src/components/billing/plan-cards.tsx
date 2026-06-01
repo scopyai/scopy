@@ -27,7 +27,6 @@ type Plan = {
   price: number | null
   currency: string | null
   monthlyCredits: number | null
-  productId: string | null
   contactSales: boolean
 }
 
