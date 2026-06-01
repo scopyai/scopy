@@ -2,13 +2,13 @@ import { Elysia } from "elysia"
 import {
   parseCreemWebhook,
   verifyCreemWebhookSignature,
-} from "../../billing/creem"
-import { applyCreemWebhook } from "../../billing/service"
-import { createGitHubWebhooks } from "../../services/github"
+} from "../billing/creem"
+import { applyCreemWebhook } from "../billing/service"
+import { createGitHubWebhooks } from "../github/service"
 import {
   persistGitHubWebhookEvent,
   type GitHubWebhookPayload,
-} from "../../services/webhook-events"
+} from "./service"
 
 export const webhookRoutes = new Elysia({ prefix: "/webhooks" })
   .post("/creem", async ({ request, status }) => {

@@ -5,14 +5,14 @@ import {
   isNull,
   notInArray,
 } from "drizzle-orm"
-import { db } from "../db/client"
+import { db } from "../../db/client"
 import {
   pullRequest,
   pullRequestTimelineEvent,
   repository,
   type ProviderActor,
-} from "../db/schema"
-import { createGitHubApp } from "./github"
+} from "../../db/schema"
+import { createGitHubApp } from "../github/service"
 
 type GitHubActor = {
   id: number

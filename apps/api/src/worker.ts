@@ -1,8 +1,8 @@
 import { run, type TaskList } from "graphile-worker"
 import { z } from "zod"
 import { env } from "./env"
-import { processGitHubWebhookEvent } from "./services/webhook-events"
-import { reviewPullRequest } from "./tasks/review-pull-request"
+import { processGitHubWebhookEvent } from "./modules/webhooks/service"
+import { reviewPullRequest } from "./modules/reviews/task"
 
 const webhookPayloadSchema = z.object({
   webhookEventId: z.uuid(),

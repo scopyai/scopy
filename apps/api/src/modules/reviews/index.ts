@@ -1,7 +1,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
-import { env } from "../env"
-import type { pullRequest, repository, reviewConfig } from "../db/schema"
+import { env } from "../../env"
+import type { pullRequest, repository, reviewConfig } from "../../db/schema"
 import {
   filterPullRequestFiles,
   getDiffSkipReason,

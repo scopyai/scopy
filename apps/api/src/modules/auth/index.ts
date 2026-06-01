@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia'
-import { auth } from '../auth'
+import { auth } from './service'
 
 const getRequestSession = (headers: Headers) => auth.api.getSession({ headers })
 

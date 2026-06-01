@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { protectedRoute } from "../../app/auth";
+import { protectedRoute } from "../auth";
 import {
   BillingError,
   cancelWorkspaceSubscription,
@@ -8,11 +8,11 @@ import {
   getWorkspaceBilling,
   listWorkspaceCreditTransactions,
   changeWorkspacePlan,
-} from "../../billing/service";
+} from "./service";
 import {
   requireWorkspaceForUser,
   requireWorkspaceRole,
-} from "../../services/workspaces";
+} from "../workspaces/service";
 
 const checkoutSchema = z.object({
   tier: z.enum(["premium", "ultra"]),

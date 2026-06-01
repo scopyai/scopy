@@ -7,9 +7,9 @@ import type {
   NormalizedWebhookEvent,
 } from "@creem_io/webhook-types"
 import { desc, eq, sql } from "drizzle-orm"
-import { db } from "../db/client"
-import { workspace, workspaceCreditTransaction } from "../db/schema"
-import { env } from "../env"
+import { db } from "../../db/client"
+import { workspace, workspaceCreditTransaction } from "../../db/schema"
+import { env } from "../../env"
 import { creem } from "./creem"
 import {
   getMonthlyAllowance,

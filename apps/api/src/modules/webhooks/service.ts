@@ -1,26 +1,26 @@
 import { randomUUID } from "node:crypto"
 import { and, eq, sql, type SQL } from "drizzle-orm"
-import { db } from "../db/client"
+import { db } from "../../db/client"
 import {
   reviewConfig,
   reviewRun,
   webhookEvent,
   workspace,
   type ProviderActor,
-} from "../db/schema"
-import { env } from "../env"
+} from "../../db/schema"
+import { env } from "../../env"
 import {
   containsBotMention,
   isBotAuthoredComment,
-} from "../review-agent/triggers"
-import { listGitHubInstallationRepositories } from "./github"
+} from "../reviews/triggers"
+import { listGitHubInstallationRepositories } from "../github/service"
 import {
   addPullRequestLifecycleEvent,
   getTrackedPullRequestNumbers,
   getTrackedRepositoryForWebhook,
   syncGitHubPullRequest,
-} from "./pull-requests"
-import { syncWorkspaceRepositories } from "./workspaces"
+} from "../pull-requests/service"
+import { syncWorkspaceRepositories } from "../workspaces/service"
 
 type GitHubWebhookActor = {
   id: number

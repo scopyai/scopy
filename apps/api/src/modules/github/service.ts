@@ -1,6 +1,6 @@
 import { App, Octokit } from "octokit";
 import { Webhooks } from "@octokit/webhooks";
-import { env } from "../env";
+import { env } from "../../env";
 
 type GitHubAccount = {
   id: number;

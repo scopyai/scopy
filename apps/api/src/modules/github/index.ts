@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto"
 import { and, eq, ne } from "drizzle-orm"
-import { protectedRoute } from "../../app/auth"
+import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
 import { workspace, workspaceMember } from "../../db/schema"
 import { env } from "../../env"
@@ -10,12 +10,12 @@ import {
   getGitHubUserAuthorizationUrl,
   listGitHubInstallationRepositories,
   verifyGitHubInstallationForUser,
-} from "../../services/github"
+} from "./service"
 import {
   PersonalGitHubWorkspaceAlreadyConnectedError,
   syncWorkspaceRepositories,
   upsertGitHubWorkspace,
-} from "../../services/workspaces"
+} from "../workspaces/service"
 
 type InstallState = {
   type: "install" | "verify-installation"

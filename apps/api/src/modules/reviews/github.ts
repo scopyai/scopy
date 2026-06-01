@@ -1,5 +1,5 @@
-import type { repository } from "../db/schema"
-import { createGitHubApp } from "../services/github"
+import type { repository } from "../../db/schema"
+import { createGitHubApp } from "../github/service"
 import type { PullRequestFile } from "./diff"
 
 type Repository = typeof repository.$inferSelect

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { protectedRoute } from "../../app/auth";
+import { protectedRoute } from "../auth";
 import { db } from "../../db/client";
 import {
   repository,
@@ -12,13 +12,13 @@ import {
   workspace,
   workspaceMember,
 } from "../../db/schema";
-import { listGitHubInstallationRepositories } from "../../services/github";
+import { listGitHubInstallationRepositories } from "../github/service";
 import {
   requireWorkspaceForUser,
   requireWorkspaceRole,
   syncWorkspaceRepositories,
-} from "../../services/workspaces";
-import { syncRepositoryPullRequests } from "../../services/pull-requests";
+} from "./service";
+import { syncRepositoryPullRequests } from "../pull-requests/service";
 
 const updateWorkspaceSchema = z.object({
   name: z.string().min(1).max(120),

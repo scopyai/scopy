@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm"
 import type { Task } from "graphile-worker"
 import { z } from "zod"
-import { db } from "../db/client"
-import { reviewRun } from "../db/schema"
+import { db } from "../../db/client"
+import { reviewRun } from "../../db/schema"
 import {
   publishReviewFailure,
   REVIEW_MODEL,
   runReviewAgent,
-} from "../review-agent"
+} from "."
 
 const payloadSchema = z.object({
   reviewRunId: z.uuid(),

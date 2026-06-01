@@ -2,12 +2,12 @@
   "name": "api",
   "private": true,
   "type": "module",
-  "main": "./src/app/base.ts",
-  "types": "./src/app/base.ts",
+  "main": "./src/app.ts",
+  "types": "./src/app.ts",
   "exports": {
     ".": {
-      "types": "./src/app/base.ts",
-      "default": "./src/app/base.ts"
+      "types": "./src/app.ts",
+      "default": "./src/app.ts"
     }
   },
   "scripts": {

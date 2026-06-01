@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { and, eq, isNull, notInArray } from "drizzle-orm"
-import { db } from "../db/client"
+import { db } from "../../db/client"
 import {
   repository,
   reviewConfig,
   workspace,
   workspaceMember,
   type workspaceMemberRole,
-} from "../db/schema"
-import type { GitHubInstallation, GitHubRepository } from "./github"
+} from "../../db/schema"
+import type { GitHubInstallation, GitHubRepository } from "../github/service"
 
 type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number]
 
