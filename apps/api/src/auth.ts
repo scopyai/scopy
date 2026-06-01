@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { creem } from '@creem_io/better-auth'
 import { db } from './db/client'
+import * as schema from './db/schema'
 import { env } from './env'
 import {
   handleCheckoutCompleted,
@@ -18,6 +19,7 @@ export const auth = betterAuth({
   trustedOrigins: [env.FRONTEND_URL],
   database: drizzleAdapter(db, {
     provider: 'pg',
+    schema,
   }),
   socialProviders: {
     google: {
@@ -35,6 +37,7 @@ export const auth = betterAuth({
       onRefundCreated: handleRefundCreated,
       onDisputeCreated: handleDisputeCreated,
       onSubscriptionPaid: handleSubscriptionPaid,
+      onSubscriptionActive: handleSubscriptionStatus,
       onSubscriptionPaused: handleSubscriptionStatus,
       onSubscriptionExpired: handleSubscriptionStatus,
       onSubscriptionUnpaid: handleSubscriptionStatus,

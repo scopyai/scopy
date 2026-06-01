@@ -3,11 +3,13 @@
 import { useState } from "react"
 import {
   ChevronsUpDown,
+  CreditCardIcon,
   Plus,
   RefreshCwIcon,
   Settings2Icon,
   UnlinkIcon,
 } from "lucide-react"
+import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import {
   Avatar,
@@ -53,6 +55,7 @@ export function WorkspaceSwitcher() {
   const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
   const leaveWorkspace = useLeaveWorkspace()
   const { data: githubLinks } = useWorkspaceGithubLinks(selectedWorkspaceId)
+  const navigate = useNavigate()
   const [workspaceToLeave, setWorkspaceToLeave] = useState<{
     id: string
     name: string
@@ -188,6 +191,10 @@ export function WorkspaceSwitcher() {
               <DropdownMenuLabel className="truncate">
                 Manage {selectedEntry.workspace.name}
               </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => navigate({ to: "/billing" })}>
+                <CreditCardIcon />
+                Billing
+              </DropdownMenuItem>
               {githubLinks?.action === "reinstall" ||
               selectedEntry.workspace.connectionStatus === "deleted" ? (
                 <DropdownMenuItem onClick={handleAddOrg} disabled={fetchingUrl}>

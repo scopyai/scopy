@@ -1,11 +1,11 @@
-import { env } from "../env";
+import { env } from "../env"
 
 export const billingPlans = [
   {
     slug: "premium",
     name: "Premium",
     billingPeriod: "monthly",
-    price: 2_000,
+    price: 500,
     currency: "USD",
     monthlyCredits: 100,
     productId: env.CREEM_PREMIUM_PRODUCT_ID,
@@ -15,7 +15,7 @@ export const billingPlans = [
     slug: "ultra",
     name: "Ultra",
     billingPeriod: "monthly",
-    price: 5_000,
+    price: 1000,
     currency: "USD",
     monthlyCredits: 500,
     productId: env.CREEM_ULTRA_PRODUCT_ID,
@@ -31,23 +31,22 @@ export const billingPlans = [
     productId: null,
     contactSales: true,
   },
-] as const;
+] as const
 
-export type PurchasableBillingTier = "premium" | "ultra";
+export type PurchasableBillingTier = "premium" | "ultra"
 export type WorkspaceBillingTier =
   | "free"
   | PurchasableBillingTier
-  | "enterprise";
+  | "enterprise"
 
 export const getPurchasablePlan = (tier: string) =>
   billingPlans.find(
     (plan): plan is (typeof billingPlans)[0] | (typeof billingPlans)[1] =>
-      plan.slug === tier && plan.productId !== null,
-  );
+      plan.slug === tier && plan.productId !== null
+  )
 
 export const getPlanByProductId = (productId: string) =>
   billingPlans.find(
     (plan): plan is (typeof billingPlans)[0] | (typeof billingPlans)[1] =>
-      plan.productId === productId,
-  );
-
+      plan.productId === productId
+  )

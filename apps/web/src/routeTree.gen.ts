@@ -15,7 +15,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GithubInstallationRouteImport } from './routes/github.installation'
 import { Route as GithubAuthorizationRouteImport } from './routes/github.authorization'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppBillingRouteImport } from './routes/_app.billing'
 import { Route as AppRepositoriesRepositoryIdRouteImport } from './routes/_app.repositories.$repositoryId'
+import { Route as AppBillingSuccessRouteImport } from './routes/_app.billing.success'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -46,27 +48,41 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBillingRoute = AppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRepositoriesRepositoryIdRoute =
   AppRepositoriesRepositoryIdRouteImport.update({
     id: '/repositories/$repositoryId',
     path: '/repositories/$repositoryId',
     getParentRoute: () => AppRoute,
   } as any)
+const AppBillingSuccessRoute = AppBillingSuccessRouteImport.update({
+  id: '/success',
+  path: '/success',
+  getParentRoute: () => AppBillingRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/billing': typeof AppBillingRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
+  '/billing/success': typeof AppBillingSuccessRoute
   '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/billing': typeof AppBillingRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
+  '/billing/success': typeof AppBillingSuccessRoute
   '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
 }
 export interface FileRoutesById {
@@ -74,9 +90,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/billing': typeof AppBillingRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
+  '/_app/billing/success': typeof AppBillingSuccessRoute
   '/_app/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
 }
 export interface FileRouteTypes {
@@ -84,26 +102,32 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/billing'
     | '/dashboard'
     | '/github/authorization'
     | '/github/installation'
+    | '/billing/success'
     | '/repositories/$repositoryId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
+    | '/billing'
     | '/dashboard'
     | '/github/authorization'
     | '/github/installation'
+    | '/billing/success'
     | '/repositories/$repositoryId'
   id:
     | '__root__'
     | '/'
     | '/_app'
     | '/login'
+    | '/_app/billing'
     | '/_app/dashboard'
     | '/github/authorization'
     | '/github/installation'
+    | '/_app/billing/success'
     | '/_app/repositories/$repositoryId'
   fileRoutesById: FileRoutesById
 }
@@ -159,6 +183,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/billing': {
+      id: '/_app/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AppBillingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/repositories/$repositoryId': {
       id: '/_app/repositories/$repositoryId'
       path: '/repositories/$repositoryId'
@@ -166,15 +197,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRepositoriesRepositoryIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/billing/success': {
+      id: '/_app/billing/success'
+      path: '/success'
+      fullPath: '/billing/success'
+      preLoaderRoute: typeof AppBillingSuccessRouteImport
+      parentRoute: typeof AppBillingRoute
+    }
   }
 }
 
+interface AppBillingRouteChildren {
+  AppBillingSuccessRoute: typeof AppBillingSuccessRoute
+}
+
+const AppBillingRouteChildren: AppBillingRouteChildren = {
+  AppBillingSuccessRoute: AppBillingSuccessRoute,
+}
+
+const AppBillingRouteWithChildren = AppBillingRoute._addFileChildren(
+  AppBillingRouteChildren,
+)
+
 interface AppRouteChildren {
+  AppBillingRoute: typeof AppBillingRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppRepositoriesRepositoryIdRoute: typeof AppRepositoriesRepositoryIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppBillingRoute: AppBillingRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppRepositoriesRepositoryIdRoute: AppRepositoriesRepositoryIdRoute,
 }
