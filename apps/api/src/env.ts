@@ -12,6 +12,14 @@ export const env = z.object({
   FRONTEND_URL: z.url(),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
+  CREEM_API_KEY: z.string().min(1),
+  CREEM_WEBHOOK_SECRET: z.string().min(1),
+  CREEM_TEST_MODE: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  CREEM_PREMIUM_PRODUCT_ID: z.string().min(1),
+  CREEM_ULTRA_PRODUCT_ID: z.string().min(1),
   GITHUB_APP_ID: z.string().min(1).optional(),
   GITHUB_APP_SLUG: z.string().min(1).optional(),
   GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),

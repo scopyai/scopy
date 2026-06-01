@@ -18,6 +18,7 @@
     "worker": "tsx watch src/worker.ts",
     "worker:start": "node dist/worker.js",
     "worker:migrate": "graphile-worker --schema-only",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
@@ -25,12 +26,14 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
+    "@creem_io/better-auth": "^1.1.1",
     "@elysia/node": "^1.4.5",
     "@elysiajs/cors": "^1.4.1",
     "@octokit/webhooks": "^14.2.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
     "ai": "^6.0.193",
     "better-auth": "^1.6.5",
+    "creem": "^1.4.5",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "elysia": "^1.4.28",

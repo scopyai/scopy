@@ -47,6 +47,16 @@ export const reviewRunStatus = pgEnum("review_run_status", [
   "failed",
   "superseded",
 ]);
+export const workspaceBillingTier = pgEnum("workspace_billing_tier", [
+  "free",
+  "premium",
+  "ultra",
+  "enterprise",
+]);
+export const workspaceCreditLedgerEventType = pgEnum(
+  "workspace_credit_ledger_event_type",
+  ["grant", "consume", "revoke", "adjustment"],
+);
 
 export type ProviderActor = {
   id: string;
@@ -66,6 +76,8 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+  creemCustomerId: text("creem_customer_id"),
+  hadTrial: boolean("had_trial").default(false),
 });
 
 export const session = pgTable(
@@ -125,6 +137,28 @@ export const verification = pgTable(
       .notNull(),
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+export const creemSubscription = pgTable(
+  "creem_subscription",
+  {
+    id: text("id").primaryKey(),
+    productId: text("product_id").notNull(),
+    referenceId: text("reference_id").notNull(),
+    creemCustomerId: text("creem_customer_id"),
+    creemSubscriptionId: text("creem_subscription_id"),
+    creemOrderId: text("creem_order_id"),
+    status: text("status").default("pending").notNull(),
+    periodStart: timestamp("period_start"),
+    periodEnd: timestamp("period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  },
+  (table) => [
+    index("creem_subscription_reference_id_idx").on(table.referenceId),
+    uniqueIndex("creem_subscription_creem_subscription_id_idx").on(
+      table.creemSubscriptionId,
+    ),
+  ],
 );
 
 export const workspace = pgTable(
@@ -397,6 +431,65 @@ export const webhookEvent = pgTable(
   ],
 );
 
+export const workspaceBillingAccount = pgTable(
+  "workspace_billing_account",
+  {
+    workspaceId: text("workspace_id")
+      .primaryKey()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    creemCustomerId: text("creem_customer_id"),
+    creemSubscriptionId: text("creem_subscription_id"),
+    productId: text("product_id"),
+    tier: workspaceBillingTier("tier").default("free").notNull(),
+    status: text("status").default("free").notNull(),
+    periodStart: timestamp("period_start"),
+    periodEnd: timestamp("period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    monthlyAllowance: integer("monthly_allowance").default(0).notNull(),
+    creditBalance: integer("credit_balance").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("workspace_billing_account_subscription_id_idx").on(
+      table.creemSubscriptionId,
+    ),
+    index("workspace_billing_account_customer_id_idx").on(table.creemCustomerId),
+  ],
+);
+
+export const workspaceCreditLedger = pgTable(
+  "workspace_credit_ledger",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    eventType: workspaceCreditLedgerEventType("event_type").notNull(),
+    delta: integer("delta").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    reason: text("reason").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("workspace_credit_ledger_idempotency_key_idx").on(
+      table.idempotencyKey,
+    ),
+    index("workspace_credit_ledger_workspace_created_at_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -426,6 +519,8 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   members: many(workspaceMember),
   repositories: many(repository),
   webhookEvents: many(webhookEvent),
+  billingAccount: one(workspaceBillingAccount),
+  creditLedgerEntries: many(workspaceCreditLedger),
 }));
 
 export const workspaceMemberRelations = relations(workspaceMember, ({ one }) => ({
@@ -492,3 +587,23 @@ export const webhookEventRelations = relations(webhookEvent, ({ one, many }) => 
   }),
   reviewRuns: many(reviewRun),
 }));
+
+export const workspaceBillingAccountRelations = relations(
+  workspaceBillingAccount,
+  ({ one }) => ({
+    workspace: one(workspace, {
+      fields: [workspaceBillingAccount.workspaceId],
+      references: [workspace.id],
+    }),
+  }),
+);
+
+export const workspaceCreditLedgerRelations = relations(
+  workspaceCreditLedger,
+  ({ one }) => ({
+    workspace: one(workspace, {
+      fields: [workspaceCreditLedger.workspaceId],
+      references: [workspace.id],
+    }),
+  }),
+);
