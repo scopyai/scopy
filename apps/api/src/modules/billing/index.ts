@@ -7,7 +7,7 @@ import {
   createWorkspacePortal,
   getWorkspaceBilling,
   listWorkspaceCreditLedger,
-  upgradeWorkspaceSubscription,
+  changeWorkspacePlan,
 } from "../../services/billing";
 import {
   requireWorkspaceForUser,
@@ -17,6 +17,9 @@ import {
 const checkoutSchema = z.object({
   tier: z.enum(["premium", "ultra"]),
   requestId: z.uuid(),
+});
+const changePlanSchema = z.object({
+  tier: z.enum(["premium", "ultra"]),
 });
 
 const paginationSchema = z.object({
@@ -111,16 +114,20 @@ export const billingRoutes = protectedRoute("/workspaces")
       return status(billingError.statusCode, { error: billingError.error });
     }
   })
-  .post("/:workspaceId/billing/upgrade", async ({ params, user, status }) => {
+  .post("/:workspaceId/billing/change-plan", async ({ body, params, user, status }) => {
     if (!(await requireOwner(params.workspaceId, user.id))) {
       return status(404, { error: "Workspace not found" });
     }
 
+    const parsed = changePlanSchema.safeParse(body);
+    if (!parsed.success) {
+      return status(400, { error: "Invalid billing plan change" });
+    }
+
     try {
-      return await upgradeWorkspaceSubscription(params.workspaceId);
+      return await changeWorkspacePlan(params.workspaceId, parsed.data.tier);
     } catch (error) {
       const billingError = asBillingError(error);
       return status(billingError.statusCode, { error: billingError.error });
     }
   });
-

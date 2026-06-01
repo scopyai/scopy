@@ -20,3 +20,12 @@ export const retainsCreditsDuringCancellation = (
 export const shouldRevokeForSubscriptionStatus = (status: string) =>
   status === "paused" || status === "expired";
 
+export const getPlanChangeKind = (
+  currentTier: string,
+  targetTier: string,
+) => {
+  if (currentTier === targetTier) return "same";
+  if (currentTier === "premium" && targetTier === "ultra") return "upgrade";
+  if (currentTier === "ultra" && targetTier === "premium") return "downgrade";
+  return "unsupported";
+};

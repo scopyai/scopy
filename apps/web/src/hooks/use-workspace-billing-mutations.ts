@@ -3,13 +3,6 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { billingKeys } from "@/lib/billing-query-keys"
 
-function invalidateBilling(
-  queryClient: ReturnType<typeof useQueryClient>,
-  workspaceId: string,
-) {
-  queryClient.invalidateQueries({ queryKey: billingKeys.all(workspaceId) })
-}
-
 export function useCheckoutBilling(workspaceId: string) {
   return useMutation({
     mutationFn: async (tier: "premium" | "ultra") => {
@@ -61,9 +54,11 @@ export function useCancelBilling(workspaceId: string) {
       if (error) throw error
       return data
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       toast.success(data?.message ?? "Subscription cancellation scheduled")
-      invalidateBilling(queryClient, workspaceId)
+      await queryClient.refetchQueries({
+        queryKey: billingKeys.all(workspaceId),
+      })
     },
     onError: () => {
       toast.error("Failed to cancel subscription")
@@ -71,23 +66,23 @@ export function useCancelBilling(workspaceId: string) {
   })
 }
 
-export function useUpgradeBilling(workspaceId: string) {
+export function useChangeBillingPlan(workspaceId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (tier: "premium" | "ultra") => {
       const { data, error } = await api
         .workspaces({ workspaceId })
-        .billing.upgrade.post()
+        .billing["change-plan"].post({ tier })
       if (error) throw error
       return data
     },
-    onSuccess: () => {
-      toast.success("Upgraded to Ultra")
-      invalidateBilling(queryClient, workspaceId)
+    onSuccess: (data) => {
+      queryClient.setQueryData(billingKeys.all(workspaceId), data)
+      toast.success("Billing plan updated")
     },
     onError: () => {
-      toast.error("Failed to upgrade subscription")
+      toast.error("Failed to update billing plan")
     },
   })
 }

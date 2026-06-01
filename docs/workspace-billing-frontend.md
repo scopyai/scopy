@@ -25,8 +25,10 @@ Only the workspace owner may use these endpoints:
   payment-method management. Redirect the browser to the returned `url`.
 - `billing.cancel.post()` schedules cancellation at the end of the current
   monthly period.
-- `billing.upgrade.post()` immediately upgrades Premium to Ultra with Creem
-  proration and refreshes the workspace credit balance.
+- `billing["change-plan"].post({ tier })` changes the recurring tier. Premium
+  to Ultra applies immediately with Creem proration and refreshes credits.
+  Ultra to Premium is scheduled for the next renewal and preserves the current
+  Ultra credits until then.
 
 Invalidate the workspace billing and credit-ledger queries after a completed
 mutation. Checkout returns to `/billing/success?workspaceId=...`; that route
@@ -34,3 +36,7 @@ should invalidate and refetch billing state before navigating onward.
 
 Enterprise is a contact-sales placeholder. Render the call to action from
 `contactSales: true`; it has no checkout endpoint or product ID.
+
+The billing query also exposes `cancelAtPeriodEnd`, `pendingTier`, and
+`pendingChangeAt`. Scheduled cancellation may originate from the app or the
+Creem portal. Resume is intentionally handled through the portal.

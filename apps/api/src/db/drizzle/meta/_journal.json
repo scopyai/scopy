@@ -43,6 +43,13 @@
       "when": 1780323502805,
       "tag": "0005_messy_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780327778016,
+      "tag": "0006_whole_mentallo",
+      "breakpoints": true
     }
   ]
 }

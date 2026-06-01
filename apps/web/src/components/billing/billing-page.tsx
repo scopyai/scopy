@@ -82,6 +82,8 @@ export function BillingPage() {
         <PlanCards
           plans={billing.plans}
           accountTier={billing.account.tier}
+          pendingTier={billing.account.pendingTier}
+          planChangesDisabled={billing.account.cancelAtPeriodEnd}
           isOwner={isOwner ?? false}
           workspaceId={selectedWorkspaceId}
         />

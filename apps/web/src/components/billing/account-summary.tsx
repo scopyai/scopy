@@ -14,6 +14,8 @@ type Account = {
   status: string
   periodEnd: Date | string | null
   cancelAtPeriodEnd: boolean
+  pendingTier: Tier | null
+  pendingChangeAt: Date | string | null
   monthlyAllowance: number
   creditBalance: number
 }
@@ -64,6 +66,17 @@ export function AccountSummary({
             </span>
           </div>
         )}
+
+        {!account.cancelAtPeriodEnd &&
+          account.pendingTier &&
+          account.pendingChangeAt && (
+            <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-700 dark:text-blue-400">
+              Downgrade to {tierLabel[account.pendingTier]} scheduled for{" "}
+              <span className="font-medium">
+                {formatPeriodEnd(account.pendingChangeAt)}
+              </span>
+            </div>
+          )}
 
         {isPaid && account.monthlyAllowance > 0 && (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">

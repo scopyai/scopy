@@ -27,8 +27,8 @@ import {
 import {
   calculateResetDelta,
   canConsumeCredits,
+  getPlanChangeKind,
   periodGrantKey,
-  retainsCreditsDuringCancellation,
   shouldRevokeForSubscriptionStatus,
 } from "../billing/policy"
 
@@ -69,6 +69,9 @@ const defaultBillingState = (workspaceId: string) => ({
   periodStart: null,
   periodEnd: null,
   cancelAtPeriodEnd: false,
+  pendingTier: null,
+  pendingProductId: null,
+  pendingChangeAt: null,
   monthlyAllowance: 0,
   creditBalance: 0,
 })
@@ -160,6 +163,9 @@ const upsertAccountProjection = async (
     periodStart?: Date | null
     periodEnd?: Date | null
     cancelAtPeriodEnd?: boolean
+    pendingTier?: PurchasableBillingTier | null
+    pendingProductId?: string | null
+    pendingChangeAt?: Date | null
     monthlyAllowance?: number
   }
 ) => {
@@ -282,6 +288,9 @@ const resetCreditsForSubscription = async (
       periodStart: values.periodStart,
       periodEnd: values.periodEnd,
       cancelAtPeriodEnd: false,
+      pendingTier: null,
+      pendingProductId: null,
+      pendingChangeAt: null,
       monthlyAllowance: plan.monthlyCredits,
     })
     await upsertCreemSubscription(tx, {
@@ -372,7 +381,13 @@ const revokeCredits = async (
 
 const updateSubscriptionProjection = async (
   data: SubscriptionWebhook,
-  overrides: { cancelAtPeriodEnd?: boolean } = {}
+  overrides: {
+    cancelAtPeriodEnd?: boolean
+    pendingTier?: PurchasableBillingTier | null
+    pendingProductId?: string | null
+    pendingChangeAt?: Date | null
+    preserveEffectiveTier?: boolean
+  } = {}
 ) => {
   const customerId = getCustomerId(data.customer)
   const workspaceId = await resolveWorkspaceId({
@@ -411,11 +426,14 @@ const updateSubscriptionProjection = async (
       creemCustomerId: customerId,
       creemSubscriptionId: data.id,
       productId,
-      tier: plan?.slug,
+      tier: overrides.preserveEffectiveTier ? undefined : plan?.slug,
       status: data.status,
       periodStart,
       periodEnd,
-      ...overrides,
+      cancelAtPeriodEnd: overrides.cancelAtPeriodEnd,
+      pendingTier: overrides.pendingTier,
+      pendingProductId: overrides.pendingProductId,
+      pendingChangeAt: overrides.pendingChangeAt,
     })
     await upsertCreemSubscription(tx, {
       productId,
@@ -425,7 +443,7 @@ const updateSubscriptionProjection = async (
       status: data.status,
       periodStart,
       periodEnd,
-      ...overrides,
+      cancelAtPeriodEnd: overrides.cancelAtPeriodEnd,
     })
   })
 }
@@ -514,7 +532,13 @@ export const cancelWorkspaceSubscription = async (workspaceId: string) => {
   })
   await db
     .update(workspaceBillingAccount)
-    .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
+    .set({
+      cancelAtPeriodEnd: true,
+      pendingTier: null,
+      pendingProductId: null,
+      pendingChangeAt: null,
+      updatedAt: new Date(),
+    })
     .where(eq(workspaceBillingAccount.workspaceId, workspaceId))
   await db
     .update(creemSubscription)
@@ -526,33 +550,66 @@ export const cancelWorkspaceSubscription = async (workspaceId: string) => {
   return { success: true, message: "Subscription will cancel at period end" }
 }
 
-export const upgradeWorkspaceSubscription = async (workspaceId: string) => {
+export const changeWorkspacePlan = async (
+  workspaceId: string,
+  tier: PurchasableBillingTier
+) => {
   const account = await getAccount(workspaceId)
-  if (!account?.creemSubscriptionId || account.tier !== "premium") {
-    throw new BillingError("Only Premium workspaces can upgrade to Ultra", 409)
+  if (!account?.creemSubscriptionId) {
+    throw new BillingError("Workspace does not have an active subscription", 404)
+  }
+  if (account.cancelAtPeriodEnd) {
+    throw new BillingError("Resume the subscription before changing plans", 409)
+  }
+  if (account.tier === tier) {
+    throw new BillingError("Workspace is already on this billing plan", 409)
   }
 
-  const ultra = getPurchasablePlan("ultra")
-  if (!ultra) throw new Error("Ultra billing plan is not configured")
+  const plan = getPurchasablePlan(tier)
+  if (!plan) throw new BillingError("Unknown purchasable billing tier")
+  const planChangeKind = getPlanChangeKind(account.tier, tier)
+  if (planChangeKind === "unsupported") {
+    throw new BillingError("Unsupported billing plan change", 409)
+  }
 
   const subscription = await creemClient.subscriptions.upgrade(
     account.creemSubscriptionId,
     {
-      productId: ultra.productId,
-      updateBehavior: "proration-charge-immediately",
+      productId: plan.productId,
+      updateBehavior: planChangeKind === "upgrade"
+        ? "proration-charge-immediately"
+        : "proration-none",
     }
   )
+
+  if (planChangeKind === "downgrade") {
+    await db
+      .update(workspaceBillingAccount)
+      .set({
+        pendingTier: "premium",
+        pendingProductId: plan.productId,
+        pendingChangeAt: account.periodEnd,
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceBillingAccount.workspaceId, workspaceId))
+    billingLog("info", "Scheduled workspace plan downgrade", {
+      workspaceId,
+      subscriptionId: account.creemSubscriptionId,
+      tier,
+      effectiveAt: account.periodEnd,
+    })
+    return getWorkspaceBilling(workspaceId)
+  }
 
   if (!subscription.currentPeriodStartDate) {
     throw new Error("Upgraded subscription did not include a billing period")
   }
-
   await resetCreditsForSubscription(
     {
       workspaceId,
       subscriptionId: subscription.id,
       customerId: getCustomerId(subscription.customer),
-      productId: ultra.productId,
+      productId: plan.productId,
       status: subscription.status,
       periodStart: subscription.currentPeriodStartDate,
       periodEnd: subscription.currentPeriodEndDate,
@@ -747,7 +804,26 @@ export const handleSubscriptionStatus = async (data: SubscriptionWebhook) => {
   })
   if (!workspaceId) return
 
-  await updateSubscriptionProjection(data)
+  const account = await getAccount(workspaceId)
+  const eventPlan = getPlanByProductId(getProductId(data.product))
+  const isPendingDowngrade =
+    data.webhookEventType === "subscription.update" &&
+    account?.tier === "ultra" &&
+    eventPlan?.slug === "premium"
+  await updateSubscriptionProjection(data, isPendingDowngrade
+    ? {
+        preserveEffectiveTier: true,
+        pendingTier: "premium",
+        pendingProductId: eventPlan.productId,
+        pendingChangeAt: account.periodEnd,
+      }
+    : {
+        cancelAtPeriodEnd: data.status === "scheduled_cancel"
+          ? true
+          : data.status === "active"
+            ? false
+            : undefined,
+      })
   if (shouldRevokeForSubscriptionStatus(data.status)) {
     await revokeCredits(
       workspaceId,
@@ -777,25 +853,36 @@ export const handleSubscriptionCanceled = async (
   })
   if (!workspaceId) return
 
-  const retainsCurrentPeriod = retainsCreditsDuringCancellation(
-    toDate(data.current_period_end_date) ??
-      (() => {
-        throw new BillingError(
-          "Canceled subscription did not include period end"
-        )
-      })()
-  )
   await updateSubscriptionProjection(data, {
-    cancelAtPeriodEnd: retainsCurrentPeriod,
+    cancelAtPeriodEnd: false,
+    pendingTier: null,
+    pendingProductId: null,
+    pendingChangeAt: null,
   })
-  if (!retainsCurrentPeriod) {
-    await revokeCredits(
-      workspaceId,
-      data.id,
-      "subscription_canceled",
-      "canceled"
-    )
-  }
+  await revokeCredits(
+    workspaceId,
+    data.id,
+    "subscription_canceled",
+    "canceled"
+  )
+}
+
+export const handleSubscriptionScheduledCancel = async (
+  data: SubscriptionWebhook
+) => {
+  billingLog("info", "Received subscription.scheduled_cancel", {
+    webhookId: data.webhookId,
+    subscriptionId: data.id,
+    customerId: getCustomerId(data.customer),
+    status: data.status,
+  })
+  await updateSubscriptionProjection(data, {
+    cancelAtPeriodEnd: true,
+    pendingTier: null,
+    pendingProductId: null,
+    pendingChangeAt: null,
+    preserveEffectiveTier: true,
+  })
 }
 
 const revokeFromFinancialEvent = async (

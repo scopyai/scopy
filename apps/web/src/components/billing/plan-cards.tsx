@@ -17,7 +17,7 @@ import { formatCredits, formatPlanPrice } from "@/lib/billing-format"
 import { contactSalesHref } from "@/lib/billing-contact"
 import {
   useCheckoutBilling,
-  useUpgradeBilling,
+  useChangeBillingPlan,
 } from "@/hooks/use-workspace-billing-mutations"
 
 type Plan = {
@@ -33,28 +33,47 @@ type Plan = {
 
 type Tier = "free" | "premium" | "ultra" | "enterprise"
 
-function getPlanAction(plan: Plan, accountTier: Tier) {
+function getPlanAction(
+  plan: Plan,
+  accountTier: Tier,
+  pendingTier: Tier | null,
+  planChangesDisabled: boolean,
+) {
   if (plan.slug === accountTier) return "current"
+  if (plan.slug === pendingTier) return "pending"
   if (plan.contactSales) return "contact"
+  if (planChangesDisabled) return "none"
   if (accountTier === "free" && !plan.contactSales) return "subscribe"
   if (accountTier === "premium" && plan.slug === "ultra") return "upgrade"
+  if (accountTier === "ultra" && plan.slug === "premium") return "downgrade"
   return "none"
 }
 
 function PlanCard({
   plan,
   accountTier,
+  pendingTier,
+  planChangesDisabled,
   isOwner,
   workspaceId,
   onUpgradeRequest,
+  onDowngradeRequest,
 }: {
   plan: Plan
   accountTier: Tier
+  pendingTier: Tier | null
+  planChangesDisabled: boolean
   isOwner: boolean
   workspaceId: string
   onUpgradeRequest: () => void
+  onDowngradeRequest: () => void
 }) {
-  const action = getPlanAction(plan, accountTier)
+  const action = getPlanAction(
+    plan,
+    accountTier,
+    pendingTier,
+    planChangesDisabled,
+  )
   const isCurrent = action === "current"
   const checkout = useCheckoutBilling(workspaceId)
 
@@ -109,6 +128,13 @@ function PlanCard({
           </div>
         )}
 
+        {action === "pending" && (
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <CheckIcon className="size-4 text-primary" />
+            Scheduled plan
+          </div>
+        )}
+
         {action === "subscribe" && (
           <Button
             size="sm"
@@ -133,6 +159,18 @@ function PlanCard({
           </Button>
         )}
 
+        {action === "downgrade" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={!isOwner}
+            onClick={onDowngradeRequest}
+          >
+            {isOwner ? "Downgrade to Premium" : "Owner only"}
+          </Button>
+        )}
+
         {action === "none" && <div className="h-9" />}
       </div>
     </div>
@@ -142,16 +180,21 @@ function PlanCard({
 export function PlanCards({
   plans,
   accountTier,
+  pendingTier,
+  planChangesDisabled,
   isOwner,
   workspaceId,
 }: {
   plans: ReadonlyArray<Plan>
   accountTier: Tier
+  pendingTier: Tier | null
+  planChangesDisabled: boolean
   isOwner: boolean
   workspaceId: string
 }) {
   const [upgradeOpen, setUpgradeOpen] = useState(false)
-  const upgrade = useUpgradeBilling(workspaceId)
+  const [downgradeOpen, setDowngradeOpen] = useState(false)
+  const changePlan = useChangeBillingPlan(workspaceId)
 
   return (
     <>
@@ -161,9 +204,12 @@ export function PlanCards({
             key={plan.slug}
             plan={plan}
             accountTier={accountTier}
+            pendingTier={pendingTier}
+            planChangesDisabled={planChangesDisabled}
             isOwner={isOwner}
             workspaceId={workspaceId}
             onUpgradeRequest={() => setUpgradeOpen(true)}
+            onDowngradeRequest={() => setDowngradeOpen(true)}
           />
         ))}
       </div>
@@ -179,18 +225,46 @@ export function PlanCards({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={upgrade.isPending}>
+            <AlertDialogCancel disabled={changePlan.isPending}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              disabled={upgrade.isPending}
+              disabled={changePlan.isPending}
               onClick={() =>
-                upgrade.mutate(undefined, {
+                changePlan.mutate("ultra", {
                   onSuccess: () => setUpgradeOpen(false),
                 })
               }
             >
-              {upgrade.isPending ? "Upgrading…" : "Upgrade to Ultra"}
+              {changePlan.isPending ? "Upgrading…" : "Upgrade to Ultra"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={downgradeOpen} onOpenChange={setDowngradeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Downgrade to Premium?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your Ultra plan and remaining credits will stay active until the
+              end of the current billing period. Premium pricing and credits
+              will apply at the next renewal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changePlan.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={changePlan.isPending}
+              onClick={() =>
+                changePlan.mutate("premium", {
+                  onSuccess: () => setDowngradeOpen(false),
+                })
+              }
+            >
+              {changePlan.isPending ? "Scheduling…" : "Downgrade to Premium"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
