@@ -57,6 +57,13 @@
       "when": 1780341656877,
       "tag": "0007_simplify_workspace_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780428997703,
+      "tag": "0008_skinny_lester",
+      "breakpoints": true
     }
   ]
 }

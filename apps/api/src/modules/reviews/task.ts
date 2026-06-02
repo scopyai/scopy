@@ -1,6 +1,4 @@
 import { eq } from "drizzle-orm"
-import type { Task } from "graphile-worker"
-import { z } from "zod"
 import { db } from "../../db/client"
 import { reviewRun } from "../../db/schema"
 import {
@@ -9,12 +7,19 @@ import {
   runReviewAgent,
 } from "."
 
-const payloadSchema = z.object({
-  reviewRunId: z.uuid(),
-})
+type JobContext = {
+  logger: {
+    info: (message: string, details?: Record<string, unknown>) => void
+    error: (message: string, details?: Record<string, unknown>) => void
+  }
+  attempt: number
+  maxAttempts: number
+}
 
-export const reviewPullRequest: Task = async (payload, helpers) => {
-  const { reviewRunId } = payloadSchema.parse(payload)
+export const executeReviewPullRequest = async (
+  { reviewRunId }: { reviewRunId: string },
+  { logger, attempt, maxAttempts }: JobContext,
+) => {
   const run = await db.query.reviewRun.findFirst({
     where: eq(reviewRun.id, reviewRunId),
     with: {
@@ -35,13 +40,13 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
     return
   }
 
-  helpers.logger.info("Starting pull request review job", {
+  logger.info("Starting pull request review job", {
     reviewRunId: run.id,
     pullRequestId: run.pullRequestId,
     repository: run.pullRequest.repository.fullName,
     headSha: run.headSha,
-    attempt: helpers.job.attempts,
-    maxAttempts: helpers.job.max_attempts,
+    attempt,
+    maxAttempts,
   })
 
   if (run.pullRequest.headSha !== run.headSha) {
@@ -53,7 +58,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
         updatedAt: new Date(),
       })
       .where(eq(reviewRun.id, run.id))
-    helpers.logger.info("Superseded pull request review job", {
+    logger.info("Superseded pull request review job", {
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
       expectedHeadSha: run.headSha,
@@ -84,7 +89,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
       installationId:
         run.pullRequest.repository.workspace.providerInstallationId,
       triggerSource,
-      logger: helpers.logger,
+      logger,
     })
 
     await db
@@ -96,7 +101,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
         updatedAt: new Date(),
       })
       .where(eq(reviewRun.id, run.id))
-    helpers.logger.info("Completed pull request review job", {
+    logger.info("Completed pull request review job", {
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
       headSha: run.headSha,
@@ -106,7 +111,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown review workflow error"
-    const isFinalAttempt = helpers.job.attempts >= helpers.job.max_attempts
+    const isFinalAttempt = attempt >= maxAttempts
     const triggerSource =
       typeof run.result?.triggerSource === "string"
         ? run.result.triggerSource
@@ -122,7 +127,7 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
             run.pullRequest.repository.workspace.providerInstallationId,
         })
       } catch (publishError) {
-        helpers.logger.error("Failed to publish review failure notice", {
+        logger.error("Failed to publish review failure notice", {
           reviewRunId: run.id,
           pullRequestId: run.pullRequestId,
           headSha: run.headSha,
@@ -150,12 +155,12 @@ export const reviewPullRequest: Task = async (payload, helpers) => {
       })
       .where(eq(reviewRun.id, run.id))
 
-    helpers.logger.error("Failed to review pull request", {
+    logger.error("Failed to review pull request", {
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
       headSha: run.headSha,
-      attempt: helpers.job.attempts,
-      maxAttempts: helpers.job.max_attempts,
+      attempt,
+      maxAttempts,
       isFinalAttempt,
       error,
     })

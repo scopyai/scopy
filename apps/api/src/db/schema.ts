@@ -412,6 +412,7 @@ export const webhookEvent = pgTable(
     }),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     receivedAt: timestamp("received_at").defaultNow().notNull(),
+    processingStartedAt: timestamp("processing_started_at"),
     processedAt: timestamp("processed_at"),
     processingError: text("processing_error"),
   },
