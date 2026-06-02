@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { GitForkIcon, RefreshCwIcon, SearchIcon } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
+import { z } from "zod"
 import { Button } from "@workspace/ui/components/button"
 import { Switch } from "@workspace/ui/components/switch"
 import { Skeleton } from "@workspace/ui/components/skeleton"
@@ -14,12 +15,32 @@ import { useUpdateRepository } from "@/hooks/use-update-repository"
 import { useSyncWorkspace } from "@/hooks/use-sync-workspace"
 import { cn } from "@workspace/ui/lib/utils"
 
-export const Route = createFileRoute("/_app/repositories/")({
+const searchSchema = z.object({
+  connected: z.union([z.literal("1"), z.literal(1)]).optional(),
+})
+
+export const Route = createFileRoute("/_app/$workspaceSlug/repositories/")({
+  validateSearch: searchSchema,
   component: RepositoriesIndexRoute,
 })
 
 function RepositoriesIndexRoute() {
+  const { workspaceSlug } = Route.useParams()
+  const { connected } = Route.useSearch()
+  const navigate = useNavigate()
   const { selectedWorkspaceId } = useWorkspaceContext()
+
+  useEffect(() => {
+    if (!connected) return
+
+    toast.success("Organization connected successfully")
+    navigate({
+      to: "/$workspaceSlug/repositories",
+      params: { workspaceSlug },
+      search: {},
+      replace: true,
+    })
+  }, [connected, navigate, workspaceSlug])
 
   if (!selectedWorkspaceId) {
     return (
@@ -36,13 +57,22 @@ function RepositoriesIndexRoute() {
       <PageHeader icon={GitForkIcon} title="Repositories" />
 
       <div className="flex-1 overflow-auto p-6">
-        <RepositoriesList workspaceId={selectedWorkspaceId} />
+        <RepositoriesList
+          workspaceId={selectedWorkspaceId}
+          workspaceSlug={workspaceSlug}
+        />
       </div>
     </div>
   )
 }
 
-function RepositoriesList({ workspaceId }: { workspaceId: string }) {
+function RepositoriesList({
+  workspaceId,
+  workspaceSlug,
+}: {
+  workspaceId: string
+  workspaceSlug: string
+}) {
   const { data: repos, isPending } = useRepositories(workspaceId)
   const updateRepo = useUpdateRepository(workspaceId)
   const syncWorkspace = useSyncWorkspace(workspaceId)
@@ -85,8 +115,8 @@ function RepositoriesList({ workspaceId }: { workspaceId: string }) {
 
   const handleOpenRepo = (repositoryId: string) => {
     navigate({
-      to: "/repositories/$repositoryId",
-      params: { repositoryId },
+      to: "/$workspaceSlug/repositories/$repositoryId",
+      params: { workspaceSlug, repositoryId },
     })
   }
 

@@ -12,7 +12,7 @@ const searchSchema = z.object({
   pullRequestId: z.string().optional(),
 })
 
-export const Route = createFileRoute("/_app/repositories/$repositoryId")({
+export const Route = createFileRoute("/_app/$workspaceSlug/repositories/$repositoryId")({
   validateSearch: searchSchema,
   component: RepositoryPage,
 })

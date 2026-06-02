@@ -397,7 +397,7 @@ export const createWorkspaceCheckout = async (
     requestId,
     customer: { email },
     successUrl: new URL(
-      `/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
+      `/${encodeURIComponent(currentWorkspace.providerAccountLogin)}/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
       env.FRONTEND_URL,
     ).toString(),
     metadata: { referenceId: workspaceId },

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { BarChart3Icon } from "lucide-react"
 import { PageHeader } from "@/components/page-header"
 
-export const Route = createFileRoute("/_app/analytics")({
+export const Route = createFileRoute("/_app/$workspaceSlug/analytics")({
   component: AnalyticsRoute,
 })
 

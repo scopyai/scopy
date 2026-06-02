@@ -21,7 +21,7 @@ function GitHubAuthorizationPage() {
 
   useEffect(() => {
     if (search.error) {
-      const url = new URL("/dashboard", env.VITE_WEB_BASE_URL)
+      const url = new URL("/connect", env.VITE_WEB_BASE_URL)
       url.searchParams.set(
         "githubError",
         githubConnectionErrorCodes.authorization_denied

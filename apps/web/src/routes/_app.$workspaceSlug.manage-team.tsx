@@ -34,11 +34,14 @@ import { useInstallUrl } from "@/hooks/use-install-url"
 import { useLeaveWorkspace } from "@/hooks/use-leave-workspace"
 import { useWorkspaceGithubLinks } from "@/hooks/use-workspace-github-links"
 
-export const Route = createFileRoute("/_app/manage-team")({
+import { getWorkspaceSlug } from "@/lib/workspace-slug"
+
+export const Route = createFileRoute("/_app/$workspaceSlug/manage-team")({
   component: ManageTeamRoute,
 })
 
 function ManageTeamRoute() {
+  const { workspaceSlug } = Route.useParams()
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces } = useWorkspaces()
   const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
@@ -84,7 +87,13 @@ function ManageTeamRoute() {
         (w) => w.workspace.id !== selectedEntry.workspace.id
       )
       setSelectedWorkspaceId(remaining?.[0]?.workspace.id ?? null)
-      navigate({ to: "/dashboard" })
+      const next = remaining?.[0]
+      navigate({
+        to: next ? "/$workspaceSlug/repositories" : "/connect",
+        params: next
+          ? { workspaceSlug: getWorkspaceSlug(next.workspace) }
+          : undefined,
+      })
     } catch {
       toast.error("Failed to leave workspace")
     } finally {
@@ -126,7 +135,12 @@ function ManageTeamRoute() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate({ to: "/billing" })}
+                onClick={() =>
+                  navigate({
+                    to: "/$workspaceSlug/billing",
+                    params: { workspaceSlug },
+                  })
+                }
               >
                 Go to Billing
               </Button>

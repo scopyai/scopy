@@ -1,6 +1,7 @@
 "use client"
 
 import { ChevronsUpDown, Plus } from "lucide-react"
+import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import {
   Avatar,
@@ -18,6 +19,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
+import { getWorkspaceSlug } from "@/lib/workspace-slug"
 import { cn } from "@workspace/ui/lib/utils"
 
 const statusVariant = {
@@ -27,13 +29,24 @@ const statusVariant = {
 } as const
 
 export function WorkspaceSwitcher() {
-  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext()
+  const { selectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces, isPending: workspacesPending } = useWorkspaces()
   const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
+  const navigate = useNavigate()
 
   const selectedEntry = workspaces?.find(
     (w) => w.workspace.id === selectedWorkspaceId
   )
+
+  const handleSelectWorkspace = (workspaceId: string) => {
+    const entry = workspaces?.find((w) => w.workspace.id === workspaceId)
+    if (!entry) return
+
+    navigate({
+      to: "/$workspaceSlug/repositories",
+      params: { workspaceSlug: getWorkspaceSlug(entry.workspace) },
+    })
+  }
 
   const handleAddOrg = async () => {
     const result = await fetchInstallUrl()
@@ -94,7 +107,7 @@ export function WorkspaceSwitcher() {
         {workspaces?.map(({ workspace, role }) => (
           <DropdownMenuItem
             key={workspace.id}
-            onClick={() => setSelectedWorkspaceId(workspace.id)}
+            onClick={() => handleSelectWorkspace(workspace.id)}
             className={cn(
               "flex items-center gap-2",
               workspace.id === selectedWorkspaceId && "bg-accent"

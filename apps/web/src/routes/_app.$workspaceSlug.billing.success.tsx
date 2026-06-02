@@ -10,12 +10,13 @@ const searchSchema = z.object({
   workspaceId: z.string(),
 })
 
-export const Route = createFileRoute("/_app/billing/success")({
+export const Route = createFileRoute("/_app/$workspaceSlug/billing/success")({
   validateSearch: searchSchema,
   component: BillingSuccessPage,
 })
 
 function BillingSuccessPage() {
+  const { workspaceSlug } = Route.useParams()
   const { workspaceId } = Route.useSearch()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -29,11 +30,15 @@ function BillingSuccessPage() {
         queryKey: billingKeys.all(workspaceId),
       })
       toast.success("Subscription activated")
-      navigate({ to: "/billing", replace: true })
+      navigate({
+        to: "/$workspaceSlug/billing",
+        params: { workspaceSlug },
+        replace: true,
+      })
     }
 
     handleSuccess()
-  }, [workspaceId, queryClient, setSelectedWorkspaceId, navigate])
+  }, [workspaceId, workspaceSlug, queryClient, setSelectedWorkspaceId, navigate])
 
   return null
 }

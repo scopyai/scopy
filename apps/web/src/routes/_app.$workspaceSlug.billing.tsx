@@ -3,7 +3,7 @@ import { CreditCardIcon } from "lucide-react"
 import { PageHeader } from "@/components/page-header"
 import { BillingPage } from "@/components/billing/billing-page"
 
-export const Route = createFileRoute("/_app/billing")({
+export const Route = createFileRoute("/_app/$workspaceSlug/billing")({
   component: BillingRoute,
 })
 

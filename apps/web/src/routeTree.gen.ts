@@ -14,15 +14,16 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GithubInstallationRouteImport } from './routes/github.installation'
 import { Route as GithubAuthorizationRouteImport } from './routes/github.authorization'
-import { Route as AppSettingsRouteImport } from './routes/_app.settings'
-import { Route as AppRepositoriesRouteImport } from './routes/_app.repositories'
-import { Route as AppManageTeamRouteImport } from './routes/_app.manage-team'
-import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
-import { Route as AppBillingRouteImport } from './routes/_app.billing'
-import { Route as AppAnalyticsRouteImport } from './routes/_app.analytics'
-import { Route as AppRepositoriesIndexRouteImport } from './routes/_app.repositories.index'
-import { Route as AppRepositoriesRepositoryIdRouteImport } from './routes/_app.repositories.$repositoryId'
-import { Route as AppBillingSuccessRouteImport } from './routes/_app.billing.success'
+import { Route as AppConnectRouteImport } from './routes/_app.connect'
+import { Route as AppWorkspaceSlugRouteImport } from './routes/_app.$workspaceSlug'
+import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
+import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
+import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
+import { Route as AppWorkspaceSlugBillingRouteImport } from './routes/_app.$workspaceSlug.billing'
+import { Route as AppWorkspaceSlugAnalyticsRouteImport } from './routes/_app.$workspaceSlug.analytics'
+import { Route as AppWorkspaceSlugRepositoriesIndexRouteImport } from './routes/_app.$workspaceSlug.repositories.index'
+import { Route as AppWorkspaceSlugRepositoriesRepositoryIdRouteImport } from './routes/_app.$workspaceSlug.repositories.$repositoryId'
+import { Route as AppWorkspaceSlugBillingSuccessRouteImport } from './routes/_app.$workspaceSlug.billing.success'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -48,145 +49,162 @@ const GithubAuthorizationRoute = GithubAuthorizationRouteImport.update({
   path: '/github/authorization',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AppConnectRoute = AppConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => AppRoute,
 } as any)
-const AppRepositoriesRoute = AppRepositoriesRouteImport.update({
-  id: '/repositories',
-  path: '/repositories',
+const AppWorkspaceSlugRoute = AppWorkspaceSlugRouteImport.update({
+  id: '/$workspaceSlug',
+  path: '/$workspaceSlug',
   getParentRoute: () => AppRoute,
 } as any)
-const AppManageTeamRoute = AppManageTeamRouteImport.update({
-  id: '/manage-team',
-  path: '/manage-team',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppDashboardRoute = AppDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppBillingRoute = AppBillingRouteImport.update({
+const AppWorkspaceSlugSettingsRoute =
+  AppWorkspaceSlugSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AppWorkspaceSlugRoute,
+  } as any)
+const AppWorkspaceSlugRepositoriesRoute =
+  AppWorkspaceSlugRepositoriesRouteImport.update({
+    id: '/repositories',
+    path: '/repositories',
+    getParentRoute: () => AppWorkspaceSlugRoute,
+  } as any)
+const AppWorkspaceSlugManageTeamRoute =
+  AppWorkspaceSlugManageTeamRouteImport.update({
+    id: '/manage-team',
+    path: '/manage-team',
+    getParentRoute: () => AppWorkspaceSlugRoute,
+  } as any)
+const AppWorkspaceSlugBillingRoute = AppWorkspaceSlugBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppWorkspaceSlugRoute,
 } as any)
-const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppRepositoriesIndexRoute = AppRepositoriesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppRepositoriesRoute,
-} as any)
-const AppRepositoriesRepositoryIdRoute =
-  AppRepositoriesRepositoryIdRouteImport.update({
+const AppWorkspaceSlugAnalyticsRoute =
+  AppWorkspaceSlugAnalyticsRouteImport.update({
+    id: '/analytics',
+    path: '/analytics',
+    getParentRoute: () => AppWorkspaceSlugRoute,
+  } as any)
+const AppWorkspaceSlugRepositoriesIndexRoute =
+  AppWorkspaceSlugRepositoriesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppWorkspaceSlugRepositoriesRoute,
+  } as any)
+const AppWorkspaceSlugRepositoriesRepositoryIdRoute =
+  AppWorkspaceSlugRepositoriesRepositoryIdRouteImport.update({
     id: '/$repositoryId',
     path: '/$repositoryId',
-    getParentRoute: () => AppRepositoriesRoute,
+    getParentRoute: () => AppWorkspaceSlugRepositoriesRoute,
   } as any)
-const AppBillingSuccessRoute = AppBillingSuccessRouteImport.update({
-  id: '/success',
-  path: '/success',
-  getParentRoute: () => AppBillingRoute,
-} as any)
+const AppWorkspaceSlugBillingSuccessRoute =
+  AppWorkspaceSlugBillingSuccessRouteImport.update({
+    id: '/success',
+    path: '/success',
+    getParentRoute: () => AppWorkspaceSlugBillingRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/analytics': typeof AppAnalyticsRoute
-  '/billing': typeof AppBillingRouteWithChildren
-  '/dashboard': typeof AppDashboardRoute
-  '/manage-team': typeof AppManageTeamRoute
-  '/repositories': typeof AppRepositoriesRouteWithChildren
-  '/settings': typeof AppSettingsRoute
+  '/$workspaceSlug': typeof AppWorkspaceSlugRouteWithChildren
+  '/connect': typeof AppConnectRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
-  '/billing/success': typeof AppBillingSuccessRoute
-  '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
-  '/repositories/': typeof AppRepositoriesIndexRoute
+  '/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
+  '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
+  '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
+  '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
+  '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
+  '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
+  '/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/analytics': typeof AppAnalyticsRoute
-  '/billing': typeof AppBillingRouteWithChildren
-  '/dashboard': typeof AppDashboardRoute
-  '/manage-team': typeof AppManageTeamRoute
-  '/settings': typeof AppSettingsRoute
+  '/$workspaceSlug': typeof AppWorkspaceSlugRouteWithChildren
+  '/connect': typeof AppConnectRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
-  '/billing/success': typeof AppBillingSuccessRoute
-  '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
-  '/repositories': typeof AppRepositoriesIndexRoute
+  '/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
+  '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
+  '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
+  '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
+  '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
+  '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/_app/analytics': typeof AppAnalyticsRoute
-  '/_app/billing': typeof AppBillingRouteWithChildren
-  '/_app/dashboard': typeof AppDashboardRoute
-  '/_app/manage-team': typeof AppManageTeamRoute
-  '/_app/repositories': typeof AppRepositoriesRouteWithChildren
-  '/_app/settings': typeof AppSettingsRoute
+  '/_app/$workspaceSlug': typeof AppWorkspaceSlugRouteWithChildren
+  '/_app/connect': typeof AppConnectRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
-  '/_app/billing/success': typeof AppBillingSuccessRoute
-  '/_app/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
-  '/_app/repositories/': typeof AppRepositoriesIndexRoute
+  '/_app/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
+  '/_app/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
+  '/_app/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
+  '/_app/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
+  '/_app/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/_app/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
+  '/_app/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
+  '/_app/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
-    | '/analytics'
-    | '/billing'
-    | '/dashboard'
-    | '/manage-team'
-    | '/repositories'
-    | '/settings'
+    | '/$workspaceSlug'
+    | '/connect'
     | '/github/authorization'
     | '/github/installation'
-    | '/billing/success'
-    | '/repositories/$repositoryId'
-    | '/repositories/'
+    | '/$workspaceSlug/analytics'
+    | '/$workspaceSlug/billing'
+    | '/$workspaceSlug/manage-team'
+    | '/$workspaceSlug/repositories'
+    | '/$workspaceSlug/settings'
+    | '/$workspaceSlug/billing/success'
+    | '/$workspaceSlug/repositories/$repositoryId'
+    | '/$workspaceSlug/repositories/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
-    | '/analytics'
-    | '/billing'
-    | '/dashboard'
-    | '/manage-team'
-    | '/settings'
+    | '/$workspaceSlug'
+    | '/connect'
     | '/github/authorization'
     | '/github/installation'
-    | '/billing/success'
-    | '/repositories/$repositoryId'
-    | '/repositories'
+    | '/$workspaceSlug/analytics'
+    | '/$workspaceSlug/billing'
+    | '/$workspaceSlug/manage-team'
+    | '/$workspaceSlug/settings'
+    | '/$workspaceSlug/billing/success'
+    | '/$workspaceSlug/repositories/$repositoryId'
+    | '/$workspaceSlug/repositories'
   id:
     | '__root__'
     | '/'
     | '/_app'
     | '/login'
-    | '/_app/analytics'
-    | '/_app/billing'
-    | '/_app/dashboard'
-    | '/_app/manage-team'
-    | '/_app/repositories'
-    | '/_app/settings'
+    | '/_app/$workspaceSlug'
+    | '/_app/connect'
     | '/github/authorization'
     | '/github/installation'
-    | '/_app/billing/success'
-    | '/_app/repositories/$repositoryId'
-    | '/_app/repositories/'
+    | '/_app/$workspaceSlug/analytics'
+    | '/_app/$workspaceSlug/billing'
+    | '/_app/$workspaceSlug/manage-team'
+    | '/_app/$workspaceSlug/repositories'
+    | '/_app/$workspaceSlug/settings'
+    | '/_app/$workspaceSlug/billing/success'
+    | '/_app/$workspaceSlug/repositories/$repositoryId'
+    | '/_app/$workspaceSlug/repositories/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -234,114 +252,139 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GithubAuthorizationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/settings': {
-      id: '/_app/settings'
+    '/_app/connect': {
+      id: '/_app/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof AppConnectRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/$workspaceSlug': {
+      id: '/_app/$workspaceSlug'
+      path: '/$workspaceSlug'
+      fullPath: '/$workspaceSlug'
+      preLoaderRoute: typeof AppWorkspaceSlugRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/$workspaceSlug/settings': {
+      id: '/_app/$workspaceSlug/settings'
       path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
+      fullPath: '/$workspaceSlug/settings'
+      preLoaderRoute: typeof AppWorkspaceSlugSettingsRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
     }
-    '/_app/repositories': {
-      id: '/_app/repositories'
+    '/_app/$workspaceSlug/repositories': {
+      id: '/_app/$workspaceSlug/repositories'
       path: '/repositories'
-      fullPath: '/repositories'
-      preLoaderRoute: typeof AppRepositoriesRouteImport
-      parentRoute: typeof AppRoute
+      fullPath: '/$workspaceSlug/repositories'
+      preLoaderRoute: typeof AppWorkspaceSlugRepositoriesRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
     }
-    '/_app/manage-team': {
-      id: '/_app/manage-team'
+    '/_app/$workspaceSlug/manage-team': {
+      id: '/_app/$workspaceSlug/manage-team'
       path: '/manage-team'
-      fullPath: '/manage-team'
-      preLoaderRoute: typeof AppManageTeamRouteImport
-      parentRoute: typeof AppRoute
+      fullPath: '/$workspaceSlug/manage-team'
+      preLoaderRoute: typeof AppWorkspaceSlugManageTeamRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
     }
-    '/_app/dashboard': {
-      id: '/_app/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AppDashboardRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/billing': {
-      id: '/_app/billing'
+    '/_app/$workspaceSlug/billing': {
+      id: '/_app/$workspaceSlug/billing'
       path: '/billing'
-      fullPath: '/billing'
-      preLoaderRoute: typeof AppBillingRouteImport
-      parentRoute: typeof AppRoute
+      fullPath: '/$workspaceSlug/billing'
+      preLoaderRoute: typeof AppWorkspaceSlugBillingRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
     }
-    '/_app/analytics': {
-      id: '/_app/analytics'
+    '/_app/$workspaceSlug/analytics': {
+      id: '/_app/$workspaceSlug/analytics'
       path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AppAnalyticsRouteImport
-      parentRoute: typeof AppRoute
+      fullPath: '/$workspaceSlug/analytics'
+      preLoaderRoute: typeof AppWorkspaceSlugAnalyticsRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
     }
-    '/_app/repositories/': {
-      id: '/_app/repositories/'
+    '/_app/$workspaceSlug/repositories/': {
+      id: '/_app/$workspaceSlug/repositories/'
       path: '/'
-      fullPath: '/repositories/'
-      preLoaderRoute: typeof AppRepositoriesIndexRouteImport
-      parentRoute: typeof AppRepositoriesRoute
+      fullPath: '/$workspaceSlug/repositories/'
+      preLoaderRoute: typeof AppWorkspaceSlugRepositoriesIndexRouteImport
+      parentRoute: typeof AppWorkspaceSlugRepositoriesRoute
     }
-    '/_app/repositories/$repositoryId': {
-      id: '/_app/repositories/$repositoryId'
+    '/_app/$workspaceSlug/repositories/$repositoryId': {
+      id: '/_app/$workspaceSlug/repositories/$repositoryId'
       path: '/$repositoryId'
-      fullPath: '/repositories/$repositoryId'
-      preLoaderRoute: typeof AppRepositoriesRepositoryIdRouteImport
-      parentRoute: typeof AppRepositoriesRoute
+      fullPath: '/$workspaceSlug/repositories/$repositoryId'
+      preLoaderRoute: typeof AppWorkspaceSlugRepositoriesRepositoryIdRouteImport
+      parentRoute: typeof AppWorkspaceSlugRepositoriesRoute
     }
-    '/_app/billing/success': {
-      id: '/_app/billing/success'
+    '/_app/$workspaceSlug/billing/success': {
+      id: '/_app/$workspaceSlug/billing/success'
       path: '/success'
-      fullPath: '/billing/success'
-      preLoaderRoute: typeof AppBillingSuccessRouteImport
-      parentRoute: typeof AppBillingRoute
+      fullPath: '/$workspaceSlug/billing/success'
+      preLoaderRoute: typeof AppWorkspaceSlugBillingSuccessRouteImport
+      parentRoute: typeof AppWorkspaceSlugBillingRoute
     }
   }
 }
 
-interface AppBillingRouteChildren {
-  AppBillingSuccessRoute: typeof AppBillingSuccessRoute
+interface AppWorkspaceSlugBillingRouteChildren {
+  AppWorkspaceSlugBillingSuccessRoute: typeof AppWorkspaceSlugBillingSuccessRoute
 }
 
-const AppBillingRouteChildren: AppBillingRouteChildren = {
-  AppBillingSuccessRoute: AppBillingSuccessRoute,
+const AppWorkspaceSlugBillingRouteChildren: AppWorkspaceSlugBillingRouteChildren =
+  {
+    AppWorkspaceSlugBillingSuccessRoute: AppWorkspaceSlugBillingSuccessRoute,
+  }
+
+const AppWorkspaceSlugBillingRouteWithChildren =
+  AppWorkspaceSlugBillingRoute._addFileChildren(
+    AppWorkspaceSlugBillingRouteChildren,
+  )
+
+interface AppWorkspaceSlugRepositoriesRouteChildren {
+  AppWorkspaceSlugRepositoriesRepositoryIdRoute: typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
+  AppWorkspaceSlugRepositoriesIndexRoute: typeof AppWorkspaceSlugRepositoriesIndexRoute
 }
 
-const AppBillingRouteWithChildren = AppBillingRoute._addFileChildren(
-  AppBillingRouteChildren,
-)
+const AppWorkspaceSlugRepositoriesRouteChildren: AppWorkspaceSlugRepositoriesRouteChildren =
+  {
+    AppWorkspaceSlugRepositoriesRepositoryIdRoute:
+      AppWorkspaceSlugRepositoriesRepositoryIdRoute,
+    AppWorkspaceSlugRepositoriesIndexRoute:
+      AppWorkspaceSlugRepositoriesIndexRoute,
+  }
 
-interface AppRepositoriesRouteChildren {
-  AppRepositoriesRepositoryIdRoute: typeof AppRepositoriesRepositoryIdRoute
-  AppRepositoriesIndexRoute: typeof AppRepositoriesIndexRoute
+const AppWorkspaceSlugRepositoriesRouteWithChildren =
+  AppWorkspaceSlugRepositoriesRoute._addFileChildren(
+    AppWorkspaceSlugRepositoriesRouteChildren,
+  )
+
+interface AppWorkspaceSlugRouteChildren {
+  AppWorkspaceSlugAnalyticsRoute: typeof AppWorkspaceSlugAnalyticsRoute
+  AppWorkspaceSlugBillingRoute: typeof AppWorkspaceSlugBillingRouteWithChildren
+  AppWorkspaceSlugManageTeamRoute: typeof AppWorkspaceSlugManageTeamRoute
+  AppWorkspaceSlugRepositoriesRoute: typeof AppWorkspaceSlugRepositoriesRouteWithChildren
+  AppWorkspaceSlugSettingsRoute: typeof AppWorkspaceSlugSettingsRoute
 }
 
-const AppRepositoriesRouteChildren: AppRepositoriesRouteChildren = {
-  AppRepositoriesRepositoryIdRoute: AppRepositoriesRepositoryIdRoute,
-  AppRepositoriesIndexRoute: AppRepositoriesIndexRoute,
+const AppWorkspaceSlugRouteChildren: AppWorkspaceSlugRouteChildren = {
+  AppWorkspaceSlugAnalyticsRoute: AppWorkspaceSlugAnalyticsRoute,
+  AppWorkspaceSlugBillingRoute: AppWorkspaceSlugBillingRouteWithChildren,
+  AppWorkspaceSlugManageTeamRoute: AppWorkspaceSlugManageTeamRoute,
+  AppWorkspaceSlugRepositoriesRoute:
+    AppWorkspaceSlugRepositoriesRouteWithChildren,
+  AppWorkspaceSlugSettingsRoute: AppWorkspaceSlugSettingsRoute,
 }
 
-const AppRepositoriesRouteWithChildren = AppRepositoriesRoute._addFileChildren(
-  AppRepositoriesRouteChildren,
-)
+const AppWorkspaceSlugRouteWithChildren =
+  AppWorkspaceSlugRoute._addFileChildren(AppWorkspaceSlugRouteChildren)
 
 interface AppRouteChildren {
-  AppAnalyticsRoute: typeof AppAnalyticsRoute
-  AppBillingRoute: typeof AppBillingRouteWithChildren
-  AppDashboardRoute: typeof AppDashboardRoute
-  AppManageTeamRoute: typeof AppManageTeamRoute
-  AppRepositoriesRoute: typeof AppRepositoriesRouteWithChildren
-  AppSettingsRoute: typeof AppSettingsRoute
+  AppWorkspaceSlugRoute: typeof AppWorkspaceSlugRouteWithChildren
+  AppConnectRoute: typeof AppConnectRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAnalyticsRoute: AppAnalyticsRoute,
-  AppBillingRoute: AppBillingRouteWithChildren,
-  AppDashboardRoute: AppDashboardRoute,
-  AppManageTeamRoute: AppManageTeamRoute,
-  AppRepositoriesRoute: AppRepositoriesRouteWithChildren,
-  AppSettingsRoute: AppSettingsRoute,
+  AppWorkspaceSlugRoute: AppWorkspaceSlugRouteWithChildren,
+  AppConnectRoute: AppConnectRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

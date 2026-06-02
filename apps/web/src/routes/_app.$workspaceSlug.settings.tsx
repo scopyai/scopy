@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { Settings2Icon } from "lucide-react"
 import { PageHeader } from "@/components/page-header"
 
-export const Route = createFileRoute("/_app/settings")({
+export const Route = createFileRoute("/_app/$workspaceSlug/settings")({
   component: SettingsRoute,
 })
 

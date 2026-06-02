@@ -1,4 +1,4 @@
-import { Navigate, createFileRoute } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -10,6 +10,7 @@ import {
 } from "@workspace/ui/components/card"
 import { authClient } from "@/lib/auth-client"
 import { env } from "@/env"
+import { WorkspaceHomeRedirect } from "@/components/workspace-home-redirect"
 export const Route = createFileRoute("/login")({ component: LoginPage })
 
 function GoogleIcon() {
@@ -47,7 +48,7 @@ function LoginPage() {
     mutationFn: async () => {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: `${env.VITE_WEB_BASE_URL}/dashboard`,
+        callbackURL: `${env.VITE_WEB_BASE_URL}/`,
       })
 
       if (error) {
@@ -58,7 +59,7 @@ function LoginPage() {
 
   if (isPending) return null
 
-  if (session) return <Navigate to="/dashboard" />
+  if (session) return <WorkspaceHomeRedirect />
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-background px-4">

@@ -87,20 +87,26 @@ const verifyInstallState = (
   }
 }
 
-const redirectToDashboard = (workspaceId?: string) => {
-  const url = new URL("/dashboard", env.FRONTEND_URL)
+const redirectAfterConnect = async (workspaceId: string) => {
+  const ws = await db.query.workspace.findFirst({
+    where: eq(workspace.id, workspaceId),
+  })
 
-  if (workspaceId) {
-    url.searchParams.set("workspaceId", workspaceId)
+  if (!ws) {
+    return Response.redirect(new URL("/connect", env.FRONTEND_URL), 302)
   }
 
+  const url = new URL(
+    `/${encodeURIComponent(ws.providerAccountLogin)}/repositories`,
+    env.FRONTEND_URL
+  )
+  url.searchParams.set("connected", "1")
   return Response.redirect(url, 302)
 }
 
-const redirectToDashboardWithError = (error: string) => {
-  const url = new URL("/dashboard", env.FRONTEND_URL)
+const redirectWithGitHubError = (error: string) => {
+  const url = new URL("/connect", env.FRONTEND_URL)
   url.searchParams.set("githubError", error)
-
   return Response.redirect(url, 302)
 }
 
@@ -118,7 +124,7 @@ const connectGitHubInstallation = async (
     installation.repository_selection
   )
 
-  return redirectToDashboard(savedWorkspace.id)
+  return redirectAfterConnect(savedWorkspace.id)
 }
 
 const handleInstallationCallback = async ({
@@ -139,7 +145,7 @@ const handleInstallationCallback = async ({
       : null
 
     if (!verifiedState?.installationId) {
-      return redirectToDashboardWithError("invalid_authorization_callback")
+      return redirectWithGitHubError("invalid_authorization_callback")
     }
 
     try {
@@ -153,12 +159,12 @@ const handleInstallationCallback = async ({
       console.error("Failed to verify GitHub installation ownership", error)
 
       if (error instanceof PersonalGitHubWorkspaceAlreadyConnectedError) {
-        return redirectToDashboardWithError(
+        return redirectWithGitHubError(
           "personal_account_already_connected"
         )
       }
 
-      return redirectToDashboardWithError("installation_not_accessible")
+      return redirectWithGitHubError("installation_not_accessible")
     }
   }
 
@@ -167,7 +173,7 @@ const handleInstallationCallback = async ({
     : null
 
   if (!installationId || (!isInstallationUpdate && !verifiedInstallState)) {
-    return redirectToDashboardWithError("invalid_installation_callback")
+    return redirectWithGitHubError("invalid_installation_callback")
   }
 
   try {
@@ -200,7 +206,7 @@ const handleInstallationCallback = async ({
         .limit(1)
 
       if (!existingWorkspace) {
-        return redirectToDashboardWithError("workspace_not_found")
+        return redirectWithGitHubError("workspace_not_found")
       }
 
       const installation = await getGitHubInstallation(installationId)
@@ -213,18 +219,18 @@ const handleInstallationCallback = async ({
         installation.repository_selection
       )
 
-      return redirectToDashboard(existingWorkspace.workspace.id)
+      return redirectAfterConnect(existingWorkspace.workspace.id)
     }
 
-    return redirectToDashboardWithError("invalid_installation_callback")
+    return redirectWithGitHubError("invalid_installation_callback")
   } catch (error) {
     console.error("Failed to connect GitHub installation", error)
 
     if (error instanceof PersonalGitHubWorkspaceAlreadyConnectedError) {
-      return redirectToDashboardWithError("personal_account_already_connected")
+      return redirectWithGitHubError("personal_account_already_connected")
     }
 
-    return redirectToDashboardWithError("connect_failed")
+    return redirectWithGitHubError("connect_failed")
   }
 }
 
