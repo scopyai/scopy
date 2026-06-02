@@ -20,6 +20,7 @@ import { Route as AppManageTeamRouteImport } from './routes/_app.manage-team'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppBillingRouteImport } from './routes/_app.billing'
 import { Route as AppAnalyticsRouteImport } from './routes/_app.analytics'
+import { Route as AppRepositoriesIndexRouteImport } from './routes/_app.repositories.index'
 import { Route as AppRepositoriesRepositoryIdRouteImport } from './routes/_app.repositories.$repositoryId'
 import { Route as AppBillingSuccessRouteImport } from './routes/_app.billing.success'
 
@@ -77,6 +78,11 @@ const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRepositoriesIndexRoute = AppRepositoriesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRepositoriesRoute,
+} as any)
 const AppRepositoriesRepositoryIdRoute =
   AppRepositoriesRepositoryIdRouteImport.update({
     id: '/$repositoryId',
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/github/installation': typeof GithubInstallationRoute
   '/billing/success': typeof AppBillingSuccessRoute
   '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
+  '/repositories/': typeof AppRepositoriesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,12 +117,12 @@ export interface FileRoutesByTo {
   '/billing': typeof AppBillingRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/manage-team': typeof AppManageTeamRoute
-  '/repositories': typeof AppRepositoriesRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
   '/billing/success': typeof AppBillingSuccessRoute
   '/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
+  '/repositories': typeof AppRepositoriesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -132,6 +139,7 @@ export interface FileRoutesById {
   '/github/installation': typeof GithubInstallationRoute
   '/_app/billing/success': typeof AppBillingSuccessRoute
   '/_app/repositories/$repositoryId': typeof AppRepositoriesRepositoryIdRoute
+  '/_app/repositories/': typeof AppRepositoriesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -148,6 +156,7 @@ export interface FileRouteTypes {
     | '/github/installation'
     | '/billing/success'
     | '/repositories/$repositoryId'
+    | '/repositories/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -156,12 +165,12 @@ export interface FileRouteTypes {
     | '/billing'
     | '/dashboard'
     | '/manage-team'
-    | '/repositories'
     | '/settings'
     | '/github/authorization'
     | '/github/installation'
     | '/billing/success'
     | '/repositories/$repositoryId'
+    | '/repositories'
   id:
     | '__root__'
     | '/'
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/github/installation'
     | '/_app/billing/success'
     | '/_app/repositories/$repositoryId'
+    | '/_app/repositories/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -266,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAnalyticsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/repositories/': {
+      id: '/_app/repositories/'
+      path: '/'
+      fullPath: '/repositories/'
+      preLoaderRoute: typeof AppRepositoriesIndexRouteImport
+      parentRoute: typeof AppRepositoriesRoute
+    }
     '/_app/repositories/$repositoryId': {
       id: '/_app/repositories/$repositoryId'
       path: '/$repositoryId'
@@ -297,10 +314,12 @@ const AppBillingRouteWithChildren = AppBillingRoute._addFileChildren(
 
 interface AppRepositoriesRouteChildren {
   AppRepositoriesRepositoryIdRoute: typeof AppRepositoriesRepositoryIdRoute
+  AppRepositoriesIndexRoute: typeof AppRepositoriesIndexRoute
 }
 
 const AppRepositoriesRouteChildren: AppRepositoriesRouteChildren = {
   AppRepositoriesRepositoryIdRoute: AppRepositoriesRepositoryIdRoute,
+  AppRepositoriesIndexRoute: AppRepositoriesIndexRoute,
 }
 
 const AppRepositoriesRouteWithChildren = AppRepositoriesRoute._addFileChildren(

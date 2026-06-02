@@ -18,7 +18,6 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>
   href: string
   external?: boolean
-  showExternalIndicator?: boolean
   disabled?: boolean
 }
 
@@ -47,7 +46,7 @@ const managementItems: NavItem[] = [
     href: "/billing",
   },
   {
-    label: "Manage Team",
+    label: "Team",
     icon: UsersIcon,
     href: "/manage-team",
   },
@@ -65,7 +64,6 @@ const resourceItems: NavItem[] = [
     icon: BookOpenIcon,
     href: "https://docs.example.com",
     external: true,
-    showExternalIndicator: true,
   },
 ]
 
@@ -111,9 +109,7 @@ function NavSection({
               >
                 <Icon className="size-4 shrink-0" />
                 <span className="flex-1">{item.label}</span>
-                {item.showExternalIndicator && (
-                  <ArrowUpRight className="size-4 shrink-0 opacity-60" />
-                )}
+                <ArrowUpRight className="size-4 shrink-0 opacity-60" />
               </a>
             )
           }
