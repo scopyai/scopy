@@ -38,25 +38,18 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex w-full items-center gap-2 rounded-md p-2 text-left text-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+        <button className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-base transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
           <Avatar size="sm">
             <AvatarImage src={avatarUrl} alt={displayName} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <span className="truncate text-sm leading-none font-medium">
-              {user?.name ?? displayName}
-            </span>
-            {/* {user?.name && (
-              <span className="truncate text-xs text-muted-foreground">
-                {user.email}
-              </span>
-            )} */}
-          </div>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {user?.name ?? displayName}
+          </span>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground/60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-56">
+      <DropdownMenuContent side="top" align="start" sideOffset={6}>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">

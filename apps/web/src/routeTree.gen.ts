@@ -14,8 +14,12 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GithubInstallationRouteImport } from './routes/github.installation'
 import { Route as GithubAuthorizationRouteImport } from './routes/github.authorization'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppRepositoriesRouteImport } from './routes/_app.repositories'
+import { Route as AppManageTeamRouteImport } from './routes/_app.manage-team'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppBillingRouteImport } from './routes/_app.billing'
+import { Route as AppAnalyticsRouteImport } from './routes/_app.analytics'
 import { Route as AppRepositoriesRepositoryIdRouteImport } from './routes/_app.repositories.$repositoryId'
 import { Route as AppBillingSuccessRouteImport } from './routes/_app.billing.success'
 
@@ -43,6 +47,21 @@ const GithubAuthorizationRoute = GithubAuthorizationRouteImport.update({
   path: '/github/authorization',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRepositoriesRoute = AppRepositoriesRouteImport.update({
+  id: '/repositories',
+  path: '/repositories',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppManageTeamRoute = AppManageTeamRouteImport.update({
+  id: '/manage-team',
+  path: '/manage-team',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -53,11 +72,16 @@ const AppBillingRoute = AppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRepositoriesRepositoryIdRoute =
   AppRepositoriesRepositoryIdRouteImport.update({
-    id: '/repositories/$repositoryId',
-    path: '/repositories/$repositoryId',
-    getParentRoute: () => AppRoute,
+    id: '/$repositoryId',
+    path: '/$repositoryId',
+    getParentRoute: () => AppRepositoriesRoute,
   } as any)
 const AppBillingSuccessRoute = AppBillingSuccessRouteImport.update({
   id: '/success',
@@ -68,8 +92,12 @@ const AppBillingSuccessRoute = AppBillingSuccessRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
+  '/manage-team': typeof AppManageTeamRoute
+  '/repositories': typeof AppRepositoriesRouteWithChildren
+  '/settings': typeof AppSettingsRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
   '/billing/success': typeof AppBillingSuccessRoute
@@ -78,8 +106,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
+  '/manage-team': typeof AppManageTeamRoute
+  '/repositories': typeof AppRepositoriesRouteWithChildren
+  '/settings': typeof AppSettingsRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
   '/billing/success': typeof AppBillingSuccessRoute
@@ -90,8 +122,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/billing': typeof AppBillingRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/manage-team': typeof AppManageTeamRoute
+  '/_app/repositories': typeof AppRepositoriesRouteWithChildren
+  '/_app/settings': typeof AppSettingsRoute
   '/github/authorization': typeof GithubAuthorizationRoute
   '/github/installation': typeof GithubInstallationRoute
   '/_app/billing/success': typeof AppBillingSuccessRoute
@@ -102,8 +138,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/analytics'
     | '/billing'
     | '/dashboard'
+    | '/manage-team'
+    | '/repositories'
+    | '/settings'
     | '/github/authorization'
     | '/github/installation'
     | '/billing/success'
@@ -112,8 +152,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/analytics'
     | '/billing'
     | '/dashboard'
+    | '/manage-team'
+    | '/repositories'
+    | '/settings'
     | '/github/authorization'
     | '/github/installation'
     | '/billing/success'
@@ -123,8 +167,12 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/login'
+    | '/_app/analytics'
     | '/_app/billing'
     | '/_app/dashboard'
+    | '/_app/manage-team'
+    | '/_app/repositories'
+    | '/_app/settings'
     | '/github/authorization'
     | '/github/installation'
     | '/_app/billing/success'
@@ -176,6 +224,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GithubAuthorizationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/repositories': {
+      id: '/_app/repositories'
+      path: '/repositories'
+      fullPath: '/repositories'
+      preLoaderRoute: typeof AppRepositoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/manage-team': {
+      id: '/_app/manage-team'
+      path: '/manage-team'
+      fullPath: '/manage-team'
+      preLoaderRoute: typeof AppManageTeamRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -190,12 +259,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBillingRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/analytics': {
+      id: '/_app/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/repositories/$repositoryId': {
       id: '/_app/repositories/$repositoryId'
-      path: '/repositories/$repositoryId'
+      path: '/$repositoryId'
       fullPath: '/repositories/$repositoryId'
       preLoaderRoute: typeof AppRepositoriesRepositoryIdRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRepositoriesRoute
     }
     '/_app/billing/success': {
       id: '/_app/billing/success'
@@ -219,16 +295,34 @@ const AppBillingRouteWithChildren = AppBillingRoute._addFileChildren(
   AppBillingRouteChildren,
 )
 
-interface AppRouteChildren {
-  AppBillingRoute: typeof AppBillingRouteWithChildren
-  AppDashboardRoute: typeof AppDashboardRoute
+interface AppRepositoriesRouteChildren {
   AppRepositoriesRepositoryIdRoute: typeof AppRepositoriesRepositoryIdRoute
 }
 
+const AppRepositoriesRouteChildren: AppRepositoriesRouteChildren = {
+  AppRepositoriesRepositoryIdRoute: AppRepositoriesRepositoryIdRoute,
+}
+
+const AppRepositoriesRouteWithChildren = AppRepositoriesRoute._addFileChildren(
+  AppRepositoriesRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppAnalyticsRoute: typeof AppAnalyticsRoute
+  AppBillingRoute: typeof AppBillingRouteWithChildren
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppManageTeamRoute: typeof AppManageTeamRoute
+  AppRepositoriesRoute: typeof AppRepositoriesRouteWithChildren
+  AppSettingsRoute: typeof AppSettingsRoute
+}
+
 const AppRouteChildren: AppRouteChildren = {
+  AppAnalyticsRoute: AppAnalyticsRoute,
   AppBillingRoute: AppBillingRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
-  AppRepositoriesRepositoryIdRoute: AppRepositoriesRepositoryIdRoute,
+  AppManageTeamRoute: AppManageTeamRoute,
+  AppRepositoriesRoute: AppRepositoriesRouteWithChildren,
+  AppSettingsRoute: AppSettingsRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

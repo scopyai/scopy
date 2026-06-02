@@ -81,7 +81,7 @@ export function CreditHistory({
                       </TableCell>
                       <TableCell
                         className={cn(
-                          "text-right font-mono tabular-nums",
+                          "text-right tabular-nums",
                           amount > 0
                             ? "text-green-600 dark:text-green-400"
                             : "text-red-600 dark:text-red-400",
@@ -89,7 +89,7 @@ export function CreditHistory({
                       >
                         {formatCreditTransactionAmount(amount)}
                       </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
+                      <TableCell className="text-right tabular-nums">
                         {Number(item.balanceAfter)}
                       </TableCell>
                       <TableCell className="max-w-56 truncate text-muted-foreground">

@@ -66,7 +66,7 @@ export function PullRequestList({
         {open.length > 0 && closed.length > 0 && (
           <div className="px-3 py-2">
             <Separator />
-            <p className="mt-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+            <p className="mt-2 text-xs font-medium text-muted-foreground/60">
               Closed / Merged
             </p>
           </div>
