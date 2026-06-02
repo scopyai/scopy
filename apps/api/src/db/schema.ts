@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations } from "drizzle-orm"
 import {
   boolean,
   index,
@@ -9,36 +9,36 @@ import {
   text,
   timestamp,
   uniqueIndex,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/pg-core"
 
-export const workspaceProvider = pgEnum("workspace_provider", ["github"]);
+export const workspaceProvider = pgEnum("workspace_provider", ["github"])
 export const providerAccountType = pgEnum("provider_account_type", [
   "user",
   "organization",
-]);
+])
 export const repositorySelection = pgEnum("repository_selection", [
   "all",
   "selected",
-]);
+])
 export const workspaceConnectionStatus = pgEnum("workspace_connection_status", [
   "active",
   "suspended",
   "deleted",
-]);
+])
 export const workspaceMemberRole = pgEnum("workspace_member_role", [
   "owner",
   "admin",
   "member",
-]);
+])
 export const pullRequestState = pgEnum("pull_request_state", [
   "open",
   "closed",
   "merged",
-]);
+])
 export const pullRequestTimelineEventType = pgEnum(
   "pull_request_timeline_event_type",
-  ["lifecycle", "issue_comment", "review", "review_comment"],
-);
+  ["lifecycle", "issue_comment", "review", "review_comment"]
+)
 export const reviewRunStatus = pgEnum("review_run_status", [
   "queued",
   "running",
@@ -46,24 +46,24 @@ export const reviewRunStatus = pgEnum("review_run_status", [
   "skipped",
   "failed",
   "superseded",
-]);
+])
 export const workspaceBillingTier = pgEnum("workspace_billing_tier", [
   "free",
   "premium",
   "ultra",
   "enterprise",
-]);
+])
 export const workspaceCreditTransactionType = pgEnum(
   "workspace_credit_transaction_type",
-  ["reset", "revoke"],
-);
+  ["reset", "revoke"]
+)
 
 export type ProviderActor = {
-  id: string;
-  login: string;
-  avatarUrl: string | null;
-  htmlUrl: string | null;
-};
+  id: string
+  login: string
+  avatarUrl: string | null
+  htmlUrl: string | null
+}
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -76,7 +76,7 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
-});
+})
 
 export const session = pgTable(
   "session",
@@ -94,8 +94,8 @@ export const session = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  (table) => [index("session_userId_idx").on(table.userId)],
-);
+  (table) => [index("session_userId_idx").on(table.userId)]
+)
 
 export const account = pgTable(
   "account",
@@ -118,8 +118,8 @@ export const account = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("account_userId_idx").on(table.userId)],
-);
+  (table) => [index("account_userId_idx").on(table.userId)]
+)
 
 export const verification = pgTable(
   "verification",
@@ -134,8 +134,8 @@ export const verification = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
-);
+  (table) => [index("verification_identifier_idx").on(table.identifier)]
+)
 
 export const workspace = pgTable(
   "workspace",
@@ -176,18 +176,18 @@ export const workspace = pgTable(
   (table) => [
     uniqueIndex("workspace_provider_installation_idx").on(
       table.provider,
-      table.providerInstallationId,
+      table.providerInstallationId
     ),
     uniqueIndex("workspace_provider_account_idx").on(
       table.provider,
-      table.providerAccountId,
+      table.providerAccountId
     ),
     index("workspace_installed_by_user_id_idx").on(table.installedByUserId),
     uniqueIndex("workspace_creem_subscription_id_idx").on(
-      table.creemSubscriptionId,
+      table.creemSubscriptionId
     ),
-  ],
-);
+  ]
+)
 
 export const workspaceMember = pgTable(
   "workspace_member",
@@ -209,11 +209,11 @@ export const workspaceMember = pgTable(
   (table) => [
     uniqueIndex("workspace_member_workspace_user_idx").on(
       table.workspaceId,
-      table.userId,
+      table.userId
     ),
     index("workspace_member_user_id_idx").on(table.userId),
-  ],
-);
+  ]
+)
 
 export const repository = pgTable(
   "repository",
@@ -242,11 +242,11 @@ export const repository = pgTable(
   (table) => [
     uniqueIndex("repository_workspace_provider_id_idx").on(
       table.workspaceId,
-      table.providerRepositoryId,
+      table.providerRepositoryId
     ),
     index("repository_workspace_id_idx").on(table.workspaceId),
-  ],
-);
+  ]
+)
 
 export const pullRequest = pgTable(
   "pull_request",
@@ -267,7 +267,10 @@ export const pullRequest = pgTable(
     headRef: text("head_ref").notNull(),
     headSha: text("head_sha").notNull(),
     labels: jsonb("labels").$type<string[]>().default([]).notNull(),
-    assignees: jsonb("assignees").$type<ProviderActor[]>().default([]).notNull(),
+    assignees: jsonb("assignees")
+      .$type<ProviderActor[]>()
+      .default([])
+      .notNull(),
     openedAt: timestamp("opened_at").notNull(),
     closedAt: timestamp("closed_at"),
     mergedAt: timestamp("merged_at"),
@@ -283,15 +286,15 @@ export const pullRequest = pgTable(
   (table) => [
     uniqueIndex("pull_request_repository_provider_id_idx").on(
       table.repositoryId,
-      table.providerPullRequestId,
+      table.providerPullRequestId
     ),
     uniqueIndex("pull_request_repository_number_idx").on(
       table.repositoryId,
-      table.number,
+      table.number
     ),
     index("pull_request_repository_id_idx").on(table.repositoryId),
-  ],
-);
+  ]
+)
 
 export const pullRequestTimelineEvent = pgTable(
   "pull_request_timeline_event",
@@ -322,11 +325,11 @@ export const pullRequestTimelineEvent = pgTable(
   (table) => [
     uniqueIndex("pull_request_timeline_external_key_idx").on(
       table.pullRequestId,
-      table.externalKey,
+      table.externalKey
     ),
     index("pull_request_timeline_pull_request_id_idx").on(table.pullRequestId),
-  ],
-);
+  ]
+)
 
 export const reviewConfig = pgTable(
   "review_config",
@@ -356,8 +359,10 @@ export const reviewConfig = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [uniqueIndex("review_config_repository_id_idx").on(table.repositoryId)],
-);
+  (table) => [
+    uniqueIndex("review_config_repository_id_idx").on(table.repositoryId),
+  ]
+)
 
 export const reviewRun = pgTable(
   "review_run",
@@ -368,7 +373,7 @@ export const reviewRun = pgTable(
       .references(() => pullRequest.id, { onDelete: "cascade" }),
     triggerWebhookEventId: text("trigger_webhook_event_id").references(
       () => webhookEvent.id,
-      { onDelete: "set null" },
+      { onDelete: "set null" }
     ),
     headSha: text("head_sha").notNull(),
     status: reviewRunStatus("status").default("queued").notNull(),
@@ -385,14 +390,14 @@ export const reviewRun = pgTable(
   (table) => [
     index("review_run_pull_request_head_sha_idx").on(
       table.pullRequestId,
-      table.headSha,
+      table.headSha
     ),
     index("review_run_pull_request_id_idx").on(table.pullRequestId),
     index("review_run_trigger_webhook_event_id_idx").on(
-      table.triggerWebhookEventId,
+      table.triggerWebhookEventId
     ),
-  ],
-);
+  ]
+)
 
 export const webhookEvent = pgTable(
   "webhook_event",
@@ -413,11 +418,11 @@ export const webhookEvent = pgTable(
   (table) => [
     uniqueIndex("webhook_event_provider_delivery_idx").on(
       table.provider,
-      table.deliveryId,
+      table.deliveryId
     ),
     index("webhook_event_workspace_id_idx").on(table.workspaceId),
-  ],
-);
+  ]
+)
 
 export const workspaceCreditTransaction = pgTable(
   "workspace_credit_transaction",
@@ -439,35 +444,35 @@ export const workspaceCreditTransaction = pgTable(
   },
   (table) => [
     uniqueIndex("workspace_credit_transaction_idempotency_key_idx").on(
-      table.idempotencyKey,
+      table.idempotencyKey
     ),
     index("workspace_credit_transaction_workspace_created_at_idx").on(
       table.workspaceId,
-      table.createdAt,
+      table.createdAt
     ),
-  ],
-);
+  ]
+)
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
   installedWorkspaces: many(workspace),
   workspaceMemberships: many(workspaceMember),
-}));
+}))
 
 export const sessionRelations = relations(session, ({ one }) => ({
   user: one(user, {
     fields: [session.userId],
     references: [user.id],
   }),
-}));
+}))
 
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, {
     fields: [account.userId],
     references: [user.id],
   }),
-}));
+}))
 
 export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   installedByUser: one(user, {
@@ -478,18 +483,21 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   repositories: many(repository),
   webhookEvents: many(webhookEvent),
   creditTransactions: many(workspaceCreditTransaction),
-}));
+}))
 
-export const workspaceMemberRelations = relations(workspaceMember, ({ one }) => ({
-  workspace: one(workspace, {
-    fields: [workspaceMember.workspaceId],
-    references: [workspace.id],
-  }),
-  user: one(user, {
-    fields: [workspaceMember.userId],
-    references: [user.id],
-  }),
-}));
+export const workspaceMemberRelations = relations(
+  workspaceMember,
+  ({ one }) => ({
+    workspace: one(workspace, {
+      fields: [workspaceMember.workspaceId],
+      references: [workspace.id],
+    }),
+    user: one(user, {
+      fields: [workspaceMember.userId],
+      references: [user.id],
+    }),
+  })
+)
 
 export const repositoryRelations = relations(repository, ({ one, many }) => ({
   workspace: one(workspace, {
@@ -498,7 +506,7 @@ export const repositoryRelations = relations(repository, ({ one, many }) => ({
   }),
   reviewConfig: one(reviewConfig),
   pullRequests: many(pullRequest),
-}));
+}))
 
 export const pullRequestRelations = relations(pullRequest, ({ one, many }) => ({
   repository: one(repository, {
@@ -507,7 +515,7 @@ export const pullRequestRelations = relations(pullRequest, ({ one, many }) => ({
   }),
   timelineEvents: many(pullRequestTimelineEvent),
   reviewRuns: many(reviewRun),
-}));
+}))
 
 export const pullRequestTimelineEventRelations = relations(
   pullRequestTimelineEvent,
@@ -516,15 +524,15 @@ export const pullRequestTimelineEventRelations = relations(
       fields: [pullRequestTimelineEvent.pullRequestId],
       references: [pullRequest.id],
     }),
-  }),
-);
+  })
+)
 
 export const reviewConfigRelations = relations(reviewConfig, ({ one }) => ({
   repository: one(repository, {
     fields: [reviewConfig.repositoryId],
     references: [repository.id],
   }),
-}));
+}))
 
 export const reviewRunRelations = relations(reviewRun, ({ one }) => ({
   pullRequest: one(pullRequest, {
@@ -535,15 +543,18 @@ export const reviewRunRelations = relations(reviewRun, ({ one }) => ({
     fields: [reviewRun.triggerWebhookEventId],
     references: [webhookEvent.id],
   }),
-}));
+}))
 
-export const webhookEventRelations = relations(webhookEvent, ({ one, many }) => ({
-  workspace: one(workspace, {
-    fields: [webhookEvent.workspaceId],
-    references: [workspace.id],
-  }),
-  reviewRuns: many(reviewRun),
-}));
+export const webhookEventRelations = relations(
+  webhookEvent,
+  ({ one, many }) => ({
+    workspace: one(workspace, {
+      fields: [webhookEvent.workspaceId],
+      references: [workspace.id],
+    }),
+    reviewRuns: many(reviewRun),
+  })
+)
 
 export const workspaceCreditTransactionRelations = relations(
   workspaceCreditTransaction,
@@ -552,5 +563,5 @@ export const workspaceCreditTransactionRelations = relations(
       fields: [workspaceCreditTransaction.workspaceId],
       references: [workspace.id],
     }),
-  }),
-);
+  })
+)
