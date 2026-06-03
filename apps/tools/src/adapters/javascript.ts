@@ -8,6 +8,7 @@ import type {
   Diagnostic,
   ImportBinding,
   ImportRecord,
+  ScopeDefinition,
   SourceLocation,
   SymbolDefinition,
   SymbolKind,
@@ -108,6 +109,48 @@ const symbolFromNode = (
     containerName,
     exported: isExport,
     defaultExport: Boolean(isExport && exportNode.text.startsWith("export default")),
+  }
+}
+
+const scopeFromNode = (
+  file: string,
+  node: SyntaxNode,
+): ScopeDefinition | undefined => {
+  let name = ""
+  let kind: ScopeDefinition["kind"] = "function"
+  if (
+    node.type === "function_declaration" ||
+    node.type === "generator_function_declaration"
+  ) {
+    name = text(node.childForFieldName("name"))
+  } else if (node.type === "variable_declarator") {
+    if (!isFunctionValue(node.childForFieldName("value"))) return undefined
+    name = text(node.childForFieldName("name"))
+  } else if (node.type === "method_definition") {
+    name = propertyName(node.childForFieldName("name"))
+    kind = node.parent?.type === "class_body" ? "method" : "object-method"
+  } else if (node.type === "pair") {
+    if (!isFunctionValue(node.childForFieldName("value"))) return undefined
+    name = propertyName(node.childForFieldName("key"))
+    kind = "object-method"
+  } else if (node.type === "class_declaration" || node.type === "class") {
+    name = text(node.childForFieldName("name")) || "(anonymous class)"
+    kind = "class"
+  } else {
+    return undefined
+  }
+  if (!name) return undefined
+  return {
+    id: `${file}:${node.startPosition.row + 1}:${node.startPosition.column + 1}:${name}:${kind}`,
+    file,
+    line: node.startPosition.row + 1,
+    column: node.startPosition.column + 1,
+    name,
+    kind,
+    startLine: node.startPosition.row + 1,
+    endLine: node.endPosition.row + 1,
+    startIndex: node.startIndex,
+    endIndex: node.endIndex,
   }
 }
 
@@ -220,6 +263,7 @@ const extract = (
   tree: Parser.Tree,
 ) => {
   const symbolNodes: Array<{ node: SyntaxNode; symbol: SymbolDefinition }> = []
+  const scopeNodes: Array<{ node: SyntaxNode; scope: ScopeDefinition }> = []
   const calls: Array<{ node: SyntaxNode; call: CallSite }> = []
   const imports: ImportRecord[] = []
   const diagnostics: Diagnostic[] = []
@@ -227,6 +271,8 @@ const extract = (
   walk(tree.rootNode, (node) => {
     const symbol = symbolFromNode(file, node)
     if (symbol) symbolNodes.push({ node, symbol })
+    const scope = scopeFromNode(file, node)
+    if (scope) scopeNodes.push({ node, scope })
     const call = callFromNode(file, node)
     if (call) calls.push({ node, call })
     const importRecord = importsFromNode(node)
@@ -238,6 +284,12 @@ const extract = (
       .filter((candidate) => candidate !== item && contains(candidate.node, item.node))
       .sort((a, b) => a.node.endIndex - a.node.startIndex - (b.node.endIndex - b.node.startIndex))[0]
     item.symbol.enclosingSymbolId = owner?.symbol.id
+  }
+  for (const item of scopeNodes) {
+    const owner = scopeNodes
+      .filter((candidate) => candidate !== item && contains(candidate.node, item.node))
+      .sort((a, b) => a.node.endIndex - a.node.startIndex - (b.node.endIndex - b.node.startIndex))[0]
+    item.scope.parentScopeId = owner?.scope.id
   }
 
   for (const item of calls) {
@@ -260,6 +312,7 @@ const extract = (
   return {
     path: file,
     language: adapterId,
+    scopes: scopeNodes.map(({ scope }) => scope),
     symbols: symbolNodes.map(({ symbol }) => symbol),
     calls: calls.map(({ call }) => call),
     imports,

@@ -8,6 +8,19 @@ export type SourceLocation = {
   column: number
 }
 
+export type ScopeKind = SymbolKind | "class" | "top-level"
+
+export type ScopeDefinition = SourceLocation & {
+  id: string
+  name: string
+  kind: ScopeKind
+  startLine: number
+  endLine: number
+  startIndex: number
+  endIndex: number
+  parentScopeId?: string
+}
+
 export type SymbolDefinition = SourceLocation & {
   id: string
   name: string
@@ -107,6 +120,7 @@ export type ImportRecord = {
 
 export type ExtractedFile = FileNode & {
   localScope?: string
+  scopes: ScopeDefinition[]
   symbols: SymbolDefinition[]
   calls: CallSite[]
   imports: ImportRecord[]

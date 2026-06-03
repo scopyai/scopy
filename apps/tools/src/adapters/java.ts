@@ -1,7 +1,7 @@
 import type Parser from "tree-sitter"
 import Java from "tree-sitter-java"
 import type { ImportRecord } from "../types"
-import { ancestor, call, createAdapter, symbol, text, type SyntaxNode } from "./common"
+import { ancestor, call, createAdapter, scope, symbol, text, type SyntaxNode } from "./common"
 
 const javaImport = (node: SyntaxNode): ImportRecord | undefined => {
   if (node.type !== "import_declaration") return undefined
@@ -39,6 +39,25 @@ export const javaAdapter = createAdapter({
       name: text(node.childForFieldName("name")),
       kind: "method",
       containerName: text(classNode?.childForFieldName("name")) || undefined,
+    })
+  },
+  scopeFromNode: (file, node) => {
+    if (node.type === "class_declaration") {
+      return scope({
+        file,
+        node,
+        name: text(node.childForFieldName("name")),
+        kind: "class",
+      })
+    }
+    if (node.type !== "method_declaration" && node.type !== "constructor_declaration") {
+      return undefined
+    }
+    return scope({
+      file,
+      node,
+      name: text(node.childForFieldName("name")),
+      kind: "method",
     })
   },
   callFromNode: (file, node) => {

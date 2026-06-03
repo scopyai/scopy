@@ -1,7 +1,7 @@
 import type Parser from "tree-sitter"
 import Rust from "tree-sitter-rust"
 import type { ImportRecord } from "../types"
-import { ancestor, call, createAdapter, symbol, text, type SyntaxNode } from "./common"
+import { ancestor, call, createAdapter, scope, symbol, text, type SyntaxNode } from "./common"
 
 const rustImport = (node: SyntaxNode): ImportRecord | undefined => {
   if (node.type === "mod_item") {
@@ -76,6 +76,16 @@ export const rustAdapter = createAdapter({
       name: text(node.childForFieldName("name")),
       kind: implNode ? "method" : "function",
       containerName: text(implNode?.childForFieldName("type")) || undefined,
+    })
+  },
+  scopeFromNode: (file, node) => {
+    if (node.type !== "function_item") return undefined
+    const implNode = ancestor(node.parent, (candidate) => candidate.type === "impl_item")
+    return scope({
+      file,
+      node,
+      name: text(node.childForFieldName("name")),
+      kind: implNode ? "method" : "function",
     })
   },
   callFromNode: (file, node) => {

@@ -4,6 +4,7 @@ import type {
   Diagnostic,
   ExtractedFile,
   ImportRecord,
+  ScopeDefinition,
   SymbolDefinition,
 } from "../types"
 import type { LanguageAdapter } from "./types"
@@ -58,6 +59,29 @@ export const symbol = ({
   defaultExport: false,
 })
 
+export const scope = ({
+  file,
+  node,
+  name,
+  kind,
+}: {
+  file: string
+  node: SyntaxNode
+  name: string
+  kind: ScopeDefinition["kind"]
+}): ScopeDefinition => ({
+  id: `${file}:${node.startPosition.row + 1}:${node.startPosition.column + 1}:${name}:${kind}`,
+  file,
+  line: node.startPosition.row + 1,
+  column: node.startPosition.column + 1,
+  name,
+  kind,
+  startLine: node.startPosition.row + 1,
+  endLine: node.endPosition.row + 1,
+  startIndex: node.startIndex,
+  endIndex: node.endIndex,
+})
+
 export const call = ({
   file,
   node,
@@ -89,6 +113,7 @@ export const createAdapter = ({
   extensions,
   language,
   symbolFromNode,
+  scopeFromNode,
   callFromNode,
   importFromNode,
   localScope,
@@ -97,6 +122,7 @@ export const createAdapter = ({
   extensions: string[]
   language: Parser.Language
   symbolFromNode: (file: string, node: SyntaxNode) => SymbolDefinition | undefined
+  scopeFromNode?: (file: string, node: SyntaxNode) => ScopeDefinition | undefined
   callFromNode: (file: string, node: SyntaxNode) => CallSite | undefined
   importFromNode?: (node: SyntaxNode) => ImportRecord | undefined
   localScope?: (file: string, tree: Parser.Tree) => string | undefined
@@ -106,12 +132,15 @@ export const createAdapter = ({
   language,
   extract: (file, _source, tree) => {
     const symbolNodes: Array<{ node: SyntaxNode; symbol: SymbolDefinition }> = []
+    const scopeNodes: Array<{ node: SyntaxNode; scope: ScopeDefinition }> = []
     const callNodes: Array<{ node: SyntaxNode; call: CallSite }> = []
     const imports: ImportRecord[] = []
     const diagnostics: Diagnostic[] = []
     walk(tree.rootNode, (node) => {
       const foundSymbol = symbolFromNode(file, node)
       if (foundSymbol) symbolNodes.push({ node, symbol: foundSymbol })
+      const foundScope = scopeFromNode?.(file, node)
+      if (foundScope) scopeNodes.push({ node, scope: foundScope })
       const foundCall = callFromNode(file, node)
       if (foundCall) callNodes.push({ node, call: foundCall })
       const foundImport = importFromNode?.(node)
@@ -122,6 +151,12 @@ export const createAdapter = ({
         .filter((candidate) => candidate !== item && contains(candidate.node, item.node))
         .sort((a, b) => a.node.endIndex - a.node.startIndex - (b.node.endIndex - b.node.startIndex))[0]
       item.symbol.enclosingSymbolId = owner?.symbol.id
+    }
+    for (const item of scopeNodes) {
+      const owner = scopeNodes
+        .filter((candidate) => candidate !== item && contains(candidate.node, item.node))
+        .sort((a, b) => a.node.endIndex - a.node.startIndex - (b.node.endIndex - b.node.startIndex))[0]
+      item.scope.parentScopeId = owner?.scope.id
     }
     for (const item of callNodes) {
       const owner = symbolNodes
@@ -142,6 +177,7 @@ export const createAdapter = ({
       path: file,
       language: id,
       localScope: localScope?.(file, tree),
+      scopes: scopeNodes.map(({ scope: found }) => found),
       symbols: symbolNodes.map(({ symbol: found }) => found),
       calls: callNodes.map(({ call: found }) => found),
       imports,

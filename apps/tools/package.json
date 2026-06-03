@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "analyze": "tsx src/cli.ts",
-    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean",
+    "diff-context": "tsx src/diff-cli.ts",
+    "build": "tsup src/cli.ts src/diff-cli.ts --format esm --platform node --target node20 --out-dir dist --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

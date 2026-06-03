@@ -1,7 +1,7 @@
 import type Parser from "tree-sitter"
 import Python from "tree-sitter-python"
 import type { ImportRecord } from "../types"
-import { ancestor, call, createAdapter, symbol, text, type SyntaxNode } from "./common"
+import { ancestor, call, createAdapter, scope, symbol, text, type SyntaxNode } from "./common"
 
 const pythonImport = (node: SyntaxNode): ImportRecord | undefined => {
   if (node.type === "import_from_statement") {
@@ -57,6 +57,24 @@ export const pythonAdapter = createAdapter({
       name: text(node.childForFieldName("name")),
       kind: classNode ? "method" : "function",
       containerName: text(classNode?.childForFieldName("name")) || undefined,
+    })
+  },
+  scopeFromNode: (file, node) => {
+    if (node.type === "class_definition") {
+      return scope({
+        file,
+        node,
+        name: text(node.childForFieldName("name")),
+        kind: "class",
+      })
+    }
+    if (node.type !== "function_definition") return undefined
+    const classNode = ancestor(node.parent, (candidate) => candidate.type === "class_definition")
+    return scope({
+      file,
+      node,
+      name: text(node.childForFieldName("name")),
+      kind: classNode ? "method" : "function",
     })
   },
   callFromNode: (file, node) => {

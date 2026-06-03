@@ -2,7 +2,7 @@ import type Parser from "tree-sitter"
 import path from "node:path"
 import Go from "tree-sitter-go"
 import type { ImportRecord } from "../types"
-import { ancestor, call, createAdapter, symbol, text, walk, type SyntaxNode } from "./common"
+import { ancestor, call, createAdapter, scope, symbol, text, walk, type SyntaxNode } from "./common"
 
 const goImport = (node: SyntaxNode): ImportRecord | undefined => {
   if (node.type !== "import_spec") return undefined
@@ -48,6 +48,23 @@ export const goAdapter = createAdapter({
       name: text(node.childForFieldName("name")),
       kind: "method",
       containerName: text(typeNode) || undefined,
+    })
+  },
+  scopeFromNode: (file, node) => {
+    if (node.type === "function_declaration") {
+      return scope({
+        file,
+        node,
+        name: text(node.childForFieldName("name")),
+        kind: "function",
+      })
+    }
+    if (node.type !== "method_declaration") return undefined
+    return scope({
+      file,
+      node,
+      name: text(node.childForFieldName("name")),
+      kind: "method",
     })
   },
   callFromNode: (file, node) => {

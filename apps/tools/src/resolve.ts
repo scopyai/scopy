@@ -481,30 +481,28 @@ export const resolveGraphs = async ({
       let candidates: SymbolDefinition[] = []
 
       if (call.kind === "identifier") {
-        const binding = imported?.find(
-          ({ binding }) => binding.local === call.name || binding.local === "*",
-        )
-        if (binding?.context.dependency.toScope) {
-          candidates = (symbolsByLocalScope.get(binding.context.dependency.toScope) ?? []).filter(
-            (symbol) => symbol.name === call.name,
-          )
-        } else if (binding?.context.dependency.to) {
-          candidates =
-            binding.binding.kind === "default"
-              ? resolveExportedSymbols(binding.context.dependency.to, "default")
+        const importCandidates = (imported ?? [])
+          .filter(({ binding }) => binding.local === call.name || binding.local === "*")
+          .flatMap(({ binding, context }) => {
+            if (context.dependency.toScope) {
+              return (symbolsByLocalScope.get(context.dependency.toScope) ?? []).filter(
+                (symbol) => symbol.name === call.name,
+              )
+            }
+            if (!context.dependency.to) return []
+            return binding.kind === "default"
+              ? resolveExportedSymbols(context.dependency.to, "default")
               : resolveExportedSymbols(
-                  binding.context.dependency.to,
-                  binding.binding.imported === "*" ? call.name : binding.binding.imported,
+                  context.dependency.to,
+                  binding.imported === "*" ? call.name : binding.imported,
                 )
-        } else {
-          candidates = (
-            file.localScope
-              ? (symbolsByLocalScope.get(file.localScope) ?? [])
-              : (symbolsByFile.get(file.path) ?? [])
-          ).filter(
-            (symbol) => symbol.name === call.name,
-          )
-        }
+          })
+        const localCandidates = (
+          file.localScope
+            ? (symbolsByLocalScope.get(file.localScope) ?? [])
+            : (symbolsByFile.get(file.path) ?? [])
+        ).filter((symbol) => symbol.name === call.name)
+        candidates = [...importCandidates, ...localCandidates]
       } else if (call.kind === "member" && call.receiver) {
         const namespace = imported?.find(
           ({ binding }) =>
