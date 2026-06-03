@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { generateText } from "ai"
+import { ToolLoopAgent } from "ai"
 import { env } from "../../env"
 import type { pullRequest, repository, reviewConfig } from "../../db/schema"
 import {
@@ -139,8 +139,11 @@ export const runReviewAgent = async ({
 
   logger.info("Review agent stage started", { ...context, stage: "generation" })
   const openrouter = createOpenRouter({ apiKey: requireOpenRouterApiKey() })
-  const generation = await generateText({
+  const reviewAgent = new ToolLoopAgent({
     model: openrouter.chat(REVIEW_MODEL),
+    maxRetries: 2,
+  })
+  const generation = await reviewAgent.generate({
     prompt: buildPullRequestSummaryPrompt({
       title: pullRequest.title,
       body: pullRequest.body,
@@ -148,7 +151,6 @@ export const runReviewAgent = async ({
       headRef: pullRequest.headRef,
       diff,
     }),
-    maxRetries: 2,
   })
   logger.info("Review agent stage completed", {
     ...context,
