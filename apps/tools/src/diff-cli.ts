@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises"
 import { stdin } from "node:process"
-import { buildDiffContext } from "./diff/context"
-import { parseUnifiedDiff } from "./diff/parse"
-import { renderReadableDiffContext } from "./diff/render-readable"
+import { buildReviewDiffContext } from "./review-context"
 
 const getArgument = (name: string) => {
   const index = process.argv.indexOf(name)
@@ -19,9 +17,11 @@ const readStdin = async () => {
 }
 
 const repository = getArgument("--repo")
+const ref = getArgument("--ref")
 const diffFile = getArgument("--diff-file")
 const useStdin = process.argv.includes("--stdin")
 const readable = process.argv.includes("--readable")
+const keepTemp = process.argv.includes("--keep-temp")
 
 if (!repository || (!diffFile && !useStdin)) {
   console.error(
@@ -31,11 +31,13 @@ if (!repository || (!diffFile && !useStdin)) {
 } else {
   try {
     const diff = useStdin ? await readStdin() : await readFile(diffFile!, "utf8")
-    const result = await buildDiffContext({
+    const result = await buildReviewDiffContext({
       repository,
-      diffFiles: parseUnifiedDiff(diff),
+      ref,
+      diff,
+      keepTemporaryRepository: keepTemp,
     })
-    console.log(readable ? renderReadableDiffContext(result) : JSON.stringify(result, null, 2))
+    console.log(readable ? result.markdown : JSON.stringify(result, null, 2))
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
