@@ -32,6 +32,19 @@ const recursivelyListFiles = async (root: string, directory = root) => {
   return files
 }
 
+const existingFiles = async (repository: string, files: string[]) => {
+  const existing: string[] = []
+  for (const file of files) {
+    try {
+      const fileStats = await stat(path.join(repository, file))
+      if (fileStats.isFile()) existing.push(file)
+    } catch {
+      // Git can report tracked files deleted in the working tree; skip them.
+    }
+  }
+  return existing
+}
+
 export const discoverRepositoryFiles = async (repository: string) => {
   const repositoryStats = await stat(repository)
   if (!repositoryStats.isDirectory()) {
@@ -44,11 +57,12 @@ export const discoverRepositoryFiles = async (repository: string) => {
       ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
       { cwd: repository, encoding: "buffer", maxBuffer: 20 * 1024 * 1024 },
     )
-    return stdout
+    const files = stdout
       .toString("utf8")
       .split("\0")
       .filter(Boolean)
       .sort()
+    return existingFiles(repository, files)
   } catch {
     return (await recursivelyListFiles(repository)).sort()
   }

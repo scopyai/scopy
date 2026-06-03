@@ -445,6 +445,16 @@ export const resolveGraphs = async ({
 
   const edges: CallEdge[] = []
   const unresolvedCalls: CallSite[] = []
+  const ownerWithContainer = (symbolId: string | undefined) => {
+    let current = symbolId ? symbols.find((symbol) => symbol.id === symbolId) : undefined
+    const visited = new Set<string>()
+    while (current && !current.containerName && current.enclosingSymbolId) {
+      if (visited.has(current.id)) break
+      visited.add(current.id)
+      current = symbols.find((symbol) => symbol.id === current?.enclosingSymbolId)
+    }
+    return current
+  }
   const resolveExportedSymbols = (
     file: string,
     name: string,
@@ -514,6 +524,18 @@ export const resolveGraphs = async ({
           )
         } else if (namespace?.context.dependency.to) {
           candidates = resolveExportedSymbols(namespace.context.dependency.to, call.name)
+        } else if (file.language === "go") {
+          const localMethods = (
+            file.localScope
+              ? (symbolsByLocalScope.get(file.localScope) ?? [])
+              : (symbolsByFile.get(file.path) ?? [])
+          ).filter((symbol) => symbol.kind === "method" && symbol.name === call.name)
+          candidates = localMethods.length === 1 ? localMethods : []
+        } else if (file.language === "python") {
+          const localMethods = symbols.filter(
+            (symbol) => symbol.kind === "method" && symbol.name === call.name,
+          )
+          candidates = localMethods.length === 1 ? localMethods : []
         } else if (file.language === "java") {
           candidates = symbols.filter(
             (symbol) =>
@@ -523,7 +545,7 @@ export const resolveGraphs = async ({
           )
         }
       } else if (call.kind === "this-method" && call.enclosingSymbolId) {
-        const owner = symbols.find((symbol) => symbol.id === call.enclosingSymbolId)
+        const owner = ownerWithContainer(call.enclosingSymbolId)
         const binding = imported?.find(({ binding }) => binding.local === call.name)
         candidates =
           binding?.context.dependency.to

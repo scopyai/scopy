@@ -13,7 +13,8 @@
   "scripts": {
     "analyze": "tsx src/cli.ts",
     "diff-context": "tsx src/diff-cli.ts",
-    "build": "tsup src/index.ts src/cli.ts src/diff-cli.ts --format esm --platform node --target node20 --out-dir dist --clean",
+    "inspect-symbol": "tsx src/symbol-cli.ts",
+    "build": "tsup src/index.ts src/cli.ts src/diff-cli.ts src/symbol-cli.ts --format esm --platform node --target node20 --out-dir dist --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
