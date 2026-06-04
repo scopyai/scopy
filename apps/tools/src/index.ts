@@ -13,6 +13,10 @@ export {
   getSymbolCallers,
   getSymbolDefinition,
 } from "./review-symbol-context"
+export {
+  getSemanticContext,
+  indexCodebase,
+} from "./semantic-context"
 export { inspectSymbol } from "./symbol-inspect"
 export { renderReadableSymbolInspection } from "./symbol-readable"
 export type {
@@ -27,6 +31,15 @@ export type {
   SymbolCallersContext,
   SymbolDefinitionContext,
 } from "./review-symbol-context"
+export type {
+  CodeChunk,
+  EmbedTexts,
+  GetSemanticContextInput,
+  IndexCodebaseInput,
+  IndexCodebaseOutput,
+  QdrantConfig,
+  SemanticContextResult,
+} from "./semantic-context"
 export type {
   DefinitionCallers,
   InspectedCallSite,
