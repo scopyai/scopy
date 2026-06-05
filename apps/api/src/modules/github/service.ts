@@ -186,6 +186,20 @@ export const getGitHubInstallation = async (installationId: string) => {
   return response.data as GitHubInstallation;
 };
 
+export const createGitHubInstallationAccessToken = async (
+  installationId: string,
+) => {
+  const app = createGitHubApp();
+  const response = await app.octokit.request(
+    "POST /app/installations/{installation_id}/access_tokens",
+    {
+      installation_id: Number(installationId),
+    },
+  );
+
+  return response.data.token;
+};
+
 export const listGitHubInstallationRepositories = async (
   installationId: string,
 ) => {

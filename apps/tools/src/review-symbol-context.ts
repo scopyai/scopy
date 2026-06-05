@@ -1,4 +1,9 @@
-import { inspectSymbol, type InspectSymbolResult } from "./symbol-inspect"
+import type { RepositoryCodeIndex } from "./code-index"
+import {
+  inspectSymbol,
+  inspectSymbolInIndex,
+  type InspectSymbolResult,
+} from "./symbol-inspect"
 import { renderReadableSymbolInspection } from "./symbol-readable"
 
 export type GetSymbolDefinitionInput = {
@@ -6,6 +11,7 @@ export type GetSymbolDefinitionInput = {
   symbol: string
   ref?: string
   keepTemporaryRepository?: boolean
+  index?: RepositoryCodeIndex
 }
 
 export type GetSymbolCallersInput =
@@ -53,15 +59,23 @@ export const getSymbolDefinition = async ({
   symbol,
   ref,
   keepTemporaryRepository = false,
+  index,
 }: GetSymbolDefinitionInput): Promise<GetSymbolDefinitionOutput> => {
-  const result = await inspectSymbol({
-    repository,
-    symbol,
-    ref,
-    includeCallers: false,
-    includeUnresolved: false,
-    keepTemporaryRepository,
-  })
+  const result = index
+    ? inspectSymbolInIndex({
+        index,
+        symbol,
+        includeCallers: false,
+        includeUnresolved: false,
+      })
+    : await inspectSymbol({
+        repository,
+        symbol,
+        ref,
+        includeCallers: false,
+        includeUnresolved: false,
+        keepTemporaryRepository,
+      })
   const json: SymbolDefinitionContext = {
     repositoryPath: result.repositoryPath,
     detectedLanguages: result.detectedLanguages,
@@ -90,16 +104,25 @@ export const getSymbolCallers = async ({
   includeCallerDefinitions = false,
   includeUnresolved = true,
   keepTemporaryRepository = false,
+  index,
 }: GetSymbolCallersInput): Promise<GetSymbolCallersOutput> => {
-  const result = await inspectSymbol({
-    repository,
-    symbol,
-    ref,
-    includeCallers: true,
-    includeCallerDefinitions,
-    includeUnresolved,
-    keepTemporaryRepository,
-  })
+  const result = index
+    ? inspectSymbolInIndex({
+        index,
+        symbol,
+        includeCallers: true,
+        includeCallerDefinitions,
+        includeUnresolved,
+      })
+    : await inspectSymbol({
+        repository,
+        symbol,
+        ref,
+        includeCallers: true,
+        includeCallerDefinitions,
+        includeUnresolved,
+        keepTemporaryRepository,
+      })
   const json: SymbolCallersContext = {
     ...result,
     callers: result.callers ?? [],

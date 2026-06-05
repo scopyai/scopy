@@ -6,6 +6,7 @@ import {
   REVIEW_MODEL,
   runReviewAgent,
 } from "."
+import { createReviewRunRecorder } from "./debug-run"
 
 type JobContext = {
   logger: {
@@ -83,6 +84,7 @@ export const executeReviewPullRequest = async (
         ? run.result.triggerSource
         : "automatic"
     const result = await runReviewAgent({
+      reviewRunId: run.id,
       pullRequest: run.pullRequest,
       repository: run.pullRequest.repository,
       reviewConfig: run.pullRequest.repository.reviewConfig,
@@ -117,6 +119,34 @@ export const executeReviewPullRequest = async (
         ? run.result.triggerSource
         : "automatic"
     let commentId: number | undefined
+    try {
+      const recorder = await createReviewRunRecorder({
+        reviewRunId: run.id,
+        repo: run.pullRequest.repository,
+        pullRequest: run.pullRequest,
+        triggerSource,
+        modelId: REVIEW_MODEL,
+      })
+      await recorder.writeJson("error.json", {
+        message,
+        attempt,
+        maxAttempts,
+        isFinalAttempt,
+        error,
+      })
+      await recorder.appendEvent("review.failed", {
+        message,
+        attempt,
+        maxAttempts,
+        isFinalAttempt,
+      })
+    } catch (recordError) {
+      logger.error("Failed to write review debug error artifacts", {
+        reviewRunId: run.id,
+        pullRequestId: run.pullRequestId,
+        error: recordError,
+      })
+    }
 
     if (isFinalAttempt) {
       try {

@@ -33,3 +33,5 @@ npm-debug.log*
 .DS_Store
 *.pem
 .tmp
+.data
+.runs

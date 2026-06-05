@@ -1,5 +1,6 @@
 export { analyzeRepository } from "./analyze"
 export { buildRepositoryCodeIndex } from "./code-index"
+export { readRepositoryFile } from "./file-read"
 export { buildDiffContext } from "./diff/context"
 export type {
   AffectedSymbol,
@@ -14,10 +15,13 @@ export {
   getSymbolDefinition,
 } from "./review-symbol-context"
 export {
+  chunksForRepositoryIndex,
   getSemanticContext,
   indexCodebase,
+  indexReviewCodebase,
+  searchReviewCode,
 } from "./semantic-context"
-export { inspectSymbol } from "./symbol-inspect"
+export { inspectSymbol, inspectSymbolInIndex } from "./symbol-inspect"
 export { renderReadableSymbolInspection } from "./symbol-readable"
 export type {
   BuildReviewDiffContextInput,
@@ -38,8 +42,16 @@ export type {
   IndexCodebaseInput,
   IndexCodebaseOutput,
   QdrantConfig,
+  QdrantInferenceConfig,
+  ReviewCodeChunk,
+  SearchReviewCodeInput,
+  SearchReviewCodeOutput,
   SemanticContextResult,
 } from "./semantic-context"
+export type {
+  ReadRepositoryFileInput,
+  ReadRepositoryFileOutput,
+} from "./file-read"
 export type {
   DefinitionCallers,
   InspectedCallSite,

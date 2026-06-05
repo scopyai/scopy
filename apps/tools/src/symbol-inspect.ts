@@ -192,17 +192,19 @@ const inspectCallSite = (
   }
 }
 
-const buildSymbolInspection = async ({
-  repository,
+export const inspectSymbolInIndex = ({
+  index,
   symbol,
   includeCallers = false,
   includeCallerDefinitions = false,
   includeUnresolved = true,
-}: Omit<
-  InspectSymbolInput,
-  "ref" | "keepTemporaryRepository"
->): Promise<InspectSymbolResult> => {
-  const index = await buildRepositoryCodeIndex({ repository })
+}: {
+  index: RepositoryCodeIndex
+  symbol: string
+  includeCallers?: boolean
+  includeCallerDefinitions?: boolean
+  includeUnresolved?: boolean
+}): InspectSymbolResult => {
   const diagnostics = index.diagnostics.filter(
     (diagnostic) =>
       diagnostic.kind !== "ambiguous-call" ||
@@ -242,6 +244,26 @@ const buildSymbolInspection = async ({
   }
 
   return result
+}
+
+const buildSymbolInspection = async ({
+  repository,
+  symbol,
+  includeCallers = false,
+  includeCallerDefinitions = false,
+  includeUnresolved = true,
+}: Omit<
+  InspectSymbolInput,
+  "ref" | "keepTemporaryRepository"
+>): Promise<InspectSymbolResult> => {
+  const index = await buildRepositoryCodeIndex({ repository })
+  return inspectSymbolInIndex({
+    index,
+    symbol,
+    includeCallers,
+    includeCallerDefinitions,
+    includeUnresolved,
+  })
 }
 
 export const inspectSymbol = async ({

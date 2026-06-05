@@ -5,3 +5,5 @@ first, which is relatively easy to give is full scope context around diff chunks
 second, we need to provide agent with tools that would allow it to get definition and callers of each symbol it wants. we can create a functions that will be based on AST analysis where the agent can input the symbol name (e.g. function name) and get either full definition of the symbol or a list of call sites with mentions of who calls where.
 
 third, we will need to chunk the code by flies, classes and then functions and then embed them into vector db. before agent starts doing the review we query for top closes chunks similar to the diffs (which we also should've indexed by this moment) and give them to the agent as well.
+
+and finally - agent needs a tool for just reading a file by filename. it should be equipped with sensible defaults to prevent accidental context flooding.

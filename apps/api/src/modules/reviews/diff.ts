@@ -47,6 +47,19 @@ export const serializePullRequestFiles = (files: PullRequestFile[]) =>
     )
     .join("\n\n")
 
+export const serializePullRequestFilesAsUnifiedDiff = (files: PullRequestFile[]) =>
+  files
+    .filter((file) => file.patch)
+    .map((file) =>
+      [
+        `diff --git a/${file.filename} b/${file.filename}`,
+        `--- ${file.status === "added" ? "/dev/null" : `a/${file.filename}`}`,
+        `+++ ${file.status === "removed" ? "/dev/null" : `b/${file.filename}`}`,
+        file.patch,
+      ].join("\n")
+    )
+    .join("\n")
+
 export const getDiffSkipReason = (
   fileCount: number,
   characterCount: number

@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto"
 import { QdrantClient } from "@qdrant/js-client-rest"
-import { buildRepositoryCodeIndex, lineSlice } from "./code-index"
+import {
+  buildRepositoryCodeIndex,
+  lineSlice,
+  type RepositoryCodeIndex,
+} from "./code-index"
 import { buildDiffContext, type DiffContextResult } from "./diff/context"
 import { parseUnifiedDiff } from "./diff/parse"
 import { prepareRepository } from "./repository"
@@ -18,6 +22,12 @@ export type CodeChunk = {
   content: string
 }
 
+export type ReviewCodeChunk = CodeChunk & {
+  repositoryId: string
+  headSha: string
+  reviewRunId: string
+}
+
 export type EmbedTexts = (texts: string[]) => Promise<number[][]>
 
 export type QdrantConfig = {
@@ -26,6 +36,10 @@ export type QdrantConfig = {
   apiKey?: string
   collection: string
   vectorSize: number
+}
+
+export type QdrantInferenceConfig = QdrantConfig & {
+  model: string
 }
 
 export type IndexCodebaseInput = {
@@ -72,6 +86,33 @@ export type SemanticContextResult = {
   }
 }
 
+export type IndexReviewCodebaseInput = {
+  index: RepositoryCodeIndex
+  repositoryId: string
+  repositoryKey: string
+  headSha: string
+  reviewRunId: string
+  qdrant: QdrantInferenceConfig
+}
+
+export type SearchReviewCodeInput = {
+  repositoryId: string
+  headSha: string
+  reviewRunId: string
+  query: string
+  qdrant: QdrantInferenceConfig
+  limit?: number
+}
+
+export type SearchReviewCodeOutput = {
+  chunks: Array<ReviewCodeChunk & { score: number }>
+  markdown: string
+  stats: {
+    chunks: number
+    bytes: number
+  }
+}
+
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 
 const pointId = (chunk: Omit<CodeChunk, "id">) => {
@@ -111,6 +152,55 @@ const ensureCollection = async (client: QdrantClient, config: QdrantConfig) => {
     })
   }
 }
+
+const ensurePayloadIndex = async (
+  client: QdrantClient,
+  collection: string,
+  field: string,
+) => {
+  try {
+    await client.createPayloadIndex(collection, {
+      wait: true,
+      field_name: field,
+      field_schema: "keyword",
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /already exists|same params|already has/i.test(error.message)
+    ) {
+      return
+    }
+    throw error
+  }
+}
+
+const ensureReviewPayloadIndexes = async (
+  client: QdrantClient,
+  collection: string,
+) => {
+  await Promise.all(
+    ["repositoryId", "headSha", "reviewRunId"].map((field) =>
+      ensurePayloadIndex(client, collection, field),
+    ),
+  )
+}
+
+const filterByRun = ({
+  repositoryId,
+  headSha,
+  reviewRunId,
+}: {
+  repositoryId: string
+  headSha: string
+  reviewRunId: string
+}) => ({
+  must: [
+    { key: "repositoryId", match: { value: repositoryId } },
+    { key: "headSha", match: { value: headSha } },
+    { key: "reviewRunId", match: { value: reviewRunId } },
+  ],
+})
 
 const chunksForRepository = async ({
   repository,
@@ -154,6 +244,49 @@ const chunksForRepository = async ({
   }
 
   return { index, chunks }
+}
+
+export const chunksForRepositoryIndex = ({
+  index,
+  repositoryKey,
+}: {
+  index: RepositoryCodeIndex
+  repositoryKey: string
+}) => {
+  const chunks: CodeChunk[] = []
+
+  for (const file of index.files) {
+    const source = index.sourceByFile.get(file.path)
+    if (!source) continue
+    const fileChunk = {
+      repositoryKey,
+      file: file.path,
+      language: file.language,
+      kind: "file" as const,
+      name: file.path,
+      startLine: 1,
+      endLine: source.split(/\r?\n/).length,
+      content: source,
+    }
+    chunks.push({ ...fileChunk, id: pointId(fileChunk) })
+
+    for (const scope of file.scopes) {
+      if (scope.kind === "top-level") continue
+      const scopeChunk = {
+        repositoryKey,
+        file: file.path,
+        language: file.language,
+        kind: scope.kind as CodeChunk["kind"],
+        name: scope.name,
+        startLine: scope.startLine,
+        endLine: scope.endLine,
+        content: lineSlice(source, scope.startLine, scope.endLine),
+      }
+      chunks.push({ ...scopeChunk, id: pointId(scopeChunk) })
+    }
+  }
+
+  return chunks
 }
 
 const chunkText = (chunk: CodeChunk) =>
@@ -261,10 +394,114 @@ const renderSemanticMarkdown = ({
   ]),
 ].join("\n")
 
+const renderSearchMarkdown = (chunks: Array<ReviewCodeChunk & { score: number }>) =>
+  [
+    "# Code Search Results",
+    "",
+    `Chunks: ${chunks.length}`,
+    "",
+    ...chunks.flatMap((chunk) => [
+      `## ${chunk.kind} ${chunk.name}`,
+      "",
+      `Score: ${chunk.score.toFixed(4)}`,
+      `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
+      "",
+      "```text",
+      chunk.content,
+      "```",
+      "",
+    ]),
+  ].join("\n")
+
 const isCodeChunk = (payload: unknown): payload is CodeChunk => {
   if (!payload || typeof payload !== "object") return false
   const chunk = payload as Partial<CodeChunk>
   return Boolean(chunk.id && chunk.repositoryKey && chunk.file && chunk.content)
+}
+
+const isReviewCodeChunk = (payload: unknown): payload is ReviewCodeChunk => {
+  if (!isCodeChunk(payload)) return false
+  const chunk = payload as Partial<ReviewCodeChunk>
+  return Boolean(chunk.repositoryId && chunk.headSha && chunk.reviewRunId)
+}
+
+export const indexReviewCodebase = async ({
+  index,
+  repositoryId,
+  repositoryKey,
+  headSha,
+  reviewRunId,
+  qdrant,
+}: IndexReviewCodebaseInput) => {
+  const client = qdrantClient(qdrant)
+  await ensureCollection(client, qdrant)
+  await ensureReviewPayloadIndexes(client, qdrant.collection)
+
+  const chunks = chunksForRepositoryIndex({ index, repositoryKey }).map(
+    (chunk): ReviewCodeChunk => ({
+      ...chunk,
+      id: pointId({
+        ...chunk,
+        repositoryKey: `${repositoryKey}:${reviewRunId}`,
+      }),
+      repositoryId,
+      headSha,
+      reviewRunId,
+    }),
+  )
+
+  await client.upsert(qdrant.collection, {
+    wait: true,
+    points: chunks.map((chunk) => ({
+      id: chunk.id,
+      vector: {
+        text: chunkText(chunk),
+        model: qdrant.model,
+      },
+      payload: chunk,
+    })),
+  } as Parameters<typeof client.upsert>[1])
+
+  return {
+    collection: qdrant.collection,
+    chunks: chunks.length,
+  }
+}
+
+export const searchReviewCode = async ({
+  repositoryId,
+  headSha,
+  reviewRunId,
+  query,
+  qdrant,
+  limit = 10,
+}: SearchReviewCodeInput): Promise<SearchReviewCodeOutput> => {
+  const client = qdrantClient(qdrant)
+  const result = await client.query(qdrant.collection, {
+    query: {
+      text: query,
+      model: qdrant.model,
+    },
+    limit,
+    with_payload: true,
+    filter: filterByRun({ repositoryId, headSha, reviewRunId }),
+  } as Parameters<typeof client.query>[1])
+  const chunks = result.points
+    .filter((point) => isReviewCodeChunk(point.payload))
+    .map((point) => ({
+      ...(point.payload as ReviewCodeChunk),
+      score: point.score,
+    }))
+  const markdown = renderSearchMarkdown(chunks)
+
+  return {
+    chunks,
+    markdown,
+    stats: {
+      chunks: chunks.length,
+      bytes: Buffer.byteLength(markdown, "utf8"),
+    },
+  }
 }
 
 export const getSemanticContext = async ({
