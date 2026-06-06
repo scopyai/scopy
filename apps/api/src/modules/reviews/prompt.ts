@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { DiffContextResult } from "tools"
 
 export const reviewFindingSchema = z.object({
   severity: z.enum(["critical", "high", "medium", "low"]),
@@ -24,28 +25,80 @@ export const reviewReportSchema = z.object({
 
 export type ReviewReport = z.infer<typeof reviewReportSchema>
 
+export const renderAffectedSymbols = (context: DiffContextResult) => {
+  const lines = [
+    "# Changed Symbol Index",
+    "",
+    `Files: ${context.files.length}`,
+    `Affected symbols: ${context.files.reduce((total, file) => total + file.affectedSymbols.length, 0)}`,
+    "",
+  ]
+
+  if (context.diagnostics.length > 0) {
+    lines.push("Diagnostics:")
+    for (const diagnostic of context.diagnostics) {
+      const location = diagnostic.file
+        ? `${diagnostic.file}${diagnostic.line ? `:${diagnostic.line}` : ""}`
+        : "repository"
+      lines.push(`- ${diagnostic.kind} ${location}: ${diagnostic.message}`)
+    }
+    lines.push("")
+  }
+
+  for (const file of context.files) {
+    lines.push(`## ${file.file}`)
+    lines.push(`- status: ${file.status}`)
+    if (file.language) lines.push(`- language: ${file.language}`)
+
+    if (file.affectedSymbols.length > 0) {
+      lines.push("- symbols:")
+      for (const symbol of file.affectedSymbols) {
+        lines.push(
+          `  - ${symbol.kind} ${symbol.name} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`,
+        )
+      }
+    } else {
+      lines.push("- symbols: none detected")
+    }
+
+    if (file.topLevelChangedLines.length > 0) {
+      lines.push(
+        `- top-level changed lines: ${file.topLevelChangedLines.join(", ")}`,
+      )
+    }
+    lines.push("")
+  }
+
+  return lines.join("\n").trim()
+}
+
 export const buildReviewAgentPrompt = ({
   title,
   body,
   baseRef,
   headRef,
   diff,
-  diffContext,
-  semanticContext,
+  affectedSymbols,
 }: {
   title: string
   body: string | null
   baseRef: string
   headRef: string
   diff: string
-  diffContext: string
-  semanticContext?: string | null
+  affectedSymbols: string
 }) => `Review this pull request for bugs, regressions, security issues, and production risks.
 
 Focus on changed behavior and directly related context. Do not report style-only feedback.
-Use the available tools when you need more file context, symbol definitions, callers, or semantic code search.
 Every finding must point to a changed file and a concrete line that the author can act on.
 If there are no actionable issues, return an empty findings array.
+
+Review strategy:
+- Use the full diff as the primary source of truth.
+- Use the changed symbol index to choose focused follow-up tool calls.
+- Inspect symbol definitions before reasoning about implementation details not visible in the diff.
+- Inspect callers before claiming a changed symbol breaks its call sites.
+- Use semantic code search for related behavior that is not discoverable from symbol names.
+- Use file reads for specific line ranges or files without usable symbol context.
 
 Merge safety score:
 1 = extremely unsafe to merge; critical issues can cause real production damage.
@@ -62,11 +115,8 @@ Head branch: ${headRef}
 Changed files:
 ${diff}
 
-Affected function/class context:
-${diffContext}
-
-Initial semantic context:
-${semanticContext ?? "(semantic context unavailable)"}`
+Changed symbol index:
+${affectedSymbols}`
 
 const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 1) return "1/5 - extremely unsafe"

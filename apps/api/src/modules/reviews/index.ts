@@ -6,7 +6,6 @@ import {
   getSymbolDefinition,
   indexReviewCodebase,
   readRepositoryFile,
-  renderReadableDiffContext,
   searchReviewCode,
   parseUnifiedDiff,
 } from "tools"
@@ -27,6 +26,7 @@ import {
 } from "./github"
 import {
   buildReviewAgentPrompt,
+  renderAffectedSymbols,
   renderReviewReport,
   reviewReportSchema,
 } from "./prompt"
@@ -83,6 +83,8 @@ const toolText = (text: string, maxBytes = 90_000) => {
   }
   return `${output}\n\n[truncated]`
 }
+
+const textBytes = (text: string) => Buffer.byteLength(text, "utf8")
 
 export const runReviewAgent = async ({
   pullRequest,
@@ -208,7 +210,7 @@ export const runReviewAgent = async ({
     repository: runtime.paths.repositoryPath,
     diffFiles: parseUnifiedDiff(unifiedDiff),
   })
-  const diffContextMarkdown = renderReadableDiffContext(diffContext)
+  const affectedSymbols = renderAffectedSymbols(diffContext)
   await recorder.writeJson("runtime.json", {
     paths: runtime.paths,
     qdrant: runtime.qdrant
@@ -222,8 +224,7 @@ export const runReviewAgent = async ({
   })
   await recorder.writeJson("context/code-index.json", runtime.codeIndex)
   await recorder.writeJson("context/diff-context.json", diffContext)
-  await recorder.writeText("context/diff-context.md", diffContextMarkdown)
-  let semanticContextMarkdown: string | null = null
+  await recorder.writeText("context/affected-symbols.md", affectedSymbols)
   let qdrantChunks = 0
   if (runtime.qdrant) {
     const indexResult = await indexReviewCodebase({
@@ -235,33 +236,6 @@ export const runReviewAgent = async ({
       qdrant: runtime.qdrant,
     })
     qdrantChunks = indexResult.chunks
-    const semanticContext = await searchReviewCode({
-      repositoryId: repository.id,
-      headSha: pullRequest.headSha,
-      reviewRunId,
-      qdrant: runtime.qdrant,
-      query: [
-        pullRequest.title,
-        pullRequest.body ?? "",
-        diffContext.files
-          .flatMap((file) =>
-            file.affectedSymbols
-              .map((symbol) => symbol.source)
-              .concat(file.patch)
-          )
-          .join("\n"),
-      ].join("\n"),
-      limit: 10,
-    })
-    semanticContextMarkdown = semanticContext.markdown
-    await recorder.writeJson("context/semantic-context.json", {
-      chunks: semanticContext.chunks,
-      stats: semanticContext.stats,
-    })
-    await recorder.writeText(
-      "context/semantic-context.md",
-      semanticContextMarkdown
-    )
   }
   logger.info("Review agent stage completed", {
     ...context,
@@ -285,7 +259,7 @@ export const runReviewAgent = async ({
   const tools = {
     read_file: tool({
       description:
-        "Read a repository file by repo-relative path. Use startLine and maxLines for focused context.",
+        "Returns numbered lines from a repository file by repo-relative path.",
       inputSchema: z.object({
         file: z.string().min(1),
         startLine: z.number().int().positive().optional(),
@@ -415,10 +389,15 @@ export const runReviewAgent = async ({
     baseRef: pullRequest.baseRef,
     headRef: pullRequest.headRef,
     diff,
-    diffContext: diffContextMarkdown,
-    semanticContext: semanticContextMarkdown,
+    affectedSymbols,
   })
   await recorder.writeText("context/prompt.txt", prompt)
+  await recorder.writeJson("context/prompt-stats.json", {
+    diffBytes: textBytes(diff),
+    affectedSymbolsBytes: textBytes(affectedSymbols),
+    promptBytes: textBytes(prompt),
+    semanticContextPreloaded: false,
+  })
   const generation = await reviewAgent.generate({
     prompt,
   })
