@@ -1,4 +1,4 @@
-export type SymbolKind = "function" | "method" | "object-method"
+export type SymbolKind = "function" | "method" | "object-method" | "value"
 export type CallKind = "identifier" | "member" | "this-method" | "namespace"
 export type Confidence = "resolved" | "ambiguous" | "unresolved"
 

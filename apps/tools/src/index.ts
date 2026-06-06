@@ -1,5 +1,6 @@
 export { analyzeRepository } from "./analyze"
 export { buildRepositoryCodeIndex } from "./code-index"
+export type { RepositoryCodeIndex } from "./code-index"
 export { readRepositoryFile } from "./file-read"
 export { reviewIndexDecision, shouldReviewIndexFile } from "./review-file-policy"
 export { buildDiffContext } from "./diff/context"
@@ -22,6 +23,7 @@ export {
   indexReviewCodebase,
   searchReviewCode,
 } from "./semantic-context"
+export { searchRepositoryText } from "./text-search"
 export { inspectSymbol, inspectSymbolInIndex } from "./symbol-inspect"
 export { renderReadableSymbolInspection } from "./symbol-readable"
 export type {
@@ -49,6 +51,11 @@ export type {
   SearchReviewCodeOutput,
   SemanticContextResult,
 } from "./semantic-context"
+export type {
+  SearchRepositoryTextInput,
+  SearchRepositoryTextOutput,
+  TextSearchMatch,
+} from "./text-search"
 export type {
   ReadRepositoryFileInput,
   ReadRepositoryFileOutput,

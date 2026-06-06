@@ -2,7 +2,6 @@ import { createHash } from "node:crypto"
 import { QdrantClient } from "@qdrant/js-client-rest"
 import {
   buildRepositoryCodeIndex,
-  lineSlice,
   type RepositoryCodeIndex,
 } from "./code-index"
 import { buildDiffContext, type DiffContextResult } from "./diff/context"
@@ -20,6 +19,11 @@ export type CodeChunk = {
   startLine: number
   endLine: number
   content: string
+  strategy: "scope" | "scope-window" | "file-fallback"
+  parentName?: string
+  parentKind?: Exclude<ScopeDefinition["kind"], "top-level">
+  parentStartLine?: number
+  parentEndLine?: number
 }
 
 export type ReviewCodeChunk = CodeChunk & {
@@ -118,6 +122,8 @@ export type SearchReviewCodeOutput = {
 
 const MAX_CHUNK_BYTES = 60 * 1024
 const MAX_CHUNK_LINES = 400
+const SCOPE_WINDOW_LINES = 220
+const SCOPE_WINDOW_OVERLAP_LINES = 40
 const MAX_SEARCH_QUERY_CHARS = 1_500
 
 const normalizeSearchQuery = (query: string) => {
@@ -139,15 +145,22 @@ const normalizeSearchQuery = (query: string) => {
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 
 const pointId = (chunk: Omit<CodeChunk, "id">) => {
-  const idHash = hash([
-    chunk.repositoryKey,
-    chunk.file,
-    chunk.kind,
-    chunk.name,
-    chunk.startLine,
-    chunk.endLine,
-    hash(chunk.content),
-  ].join("\0"))
+  const idHash = hash(
+    [
+      chunk.repositoryKey,
+      chunk.file,
+      chunk.kind,
+      chunk.name,
+      chunk.startLine,
+      chunk.endLine,
+      chunk.strategy,
+      chunk.parentName ?? "",
+      chunk.parentKind ?? "",
+      chunk.parentStartLine ?? "",
+      chunk.parentEndLine ?? "",
+      hash(chunk.content),
+    ].join("\0")
+  )
   return [
     idHash.slice(0, 8),
     idHash.slice(8, 12),
@@ -157,9 +170,132 @@ const pointId = (chunk: Omit<CodeChunk, "id">) => {
   ].join("-")
 }
 
+const fileChunkFor = ({
+  repositoryKey,
+  file,
+  language,
+  source,
+}: {
+  repositoryKey: string
+  file: string
+  language: string
+  source: string
+}): CodeChunk | undefined => {
+  const lines = source.split(/\r?\n/)
+  const content = lines.slice(0, MAX_CHUNK_LINES).join("\n")
+  if (Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES) return undefined
+  const chunk = {
+    repositoryKey,
+    file,
+    language,
+    kind: "file" as const,
+    name: file,
+    startLine: 1,
+    endLine: Math.min(lines.length, MAX_CHUNK_LINES),
+    content,
+    strategy: "file-fallback" as const,
+  }
+  return { ...chunk, id: pointId(chunk) }
+}
+
+const boundedLineSlice = (
+  source: string,
+  startLine: number,
+  endLine: number,
+) => {
+  const lines = source.split(/\r?\n/)
+  const selected = lines.slice(startLine - 1, endLine)
+  let content = selected.join("\n")
+  let safeEndLine = endLine
+  while (
+    Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES &&
+    selected.length > 1
+  ) {
+    selected.pop()
+    safeEndLine -= 1
+    content = selected.join("\n")
+  }
+  if (Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES) return undefined
+  return { content, endLine: safeEndLine }
+}
+
+const scopeChunksFor = ({
+  repositoryKey,
+  file,
+  language,
+  source,
+  scope,
+}: {
+  repositoryKey: string
+  file: string
+  language: string
+  source: string
+  scope: ScopeDefinition
+}): CodeChunk[] => {
+  if (scope.kind === "top-level") return []
+  const scopeKind = scope.kind as Exclude<ScopeDefinition["kind"], "top-level">
+  const lines = scope.endLine - scope.startLine + 1
+  const wholeScope = boundedLineSlice(source, scope.startLine, scope.endLine)
+
+  if (
+    wholeScope &&
+    lines <= MAX_CHUNK_LINES &&
+    wholeScope.endLine === scope.endLine
+  ) {
+    const chunk = {
+      repositoryKey,
+      file,
+      language,
+      kind: scopeKind,
+      name: scope.name,
+      startLine: scope.startLine,
+      endLine: scope.endLine,
+      content: wholeScope.content,
+      strategy: "scope" as const,
+    }
+    return [{ ...chunk, id: pointId(chunk) }]
+  }
+
+  const chunks: CodeChunk[] = []
+  const step = SCOPE_WINDOW_LINES - SCOPE_WINDOW_OVERLAP_LINES
+  let startLine = scope.startLine
+  let part = 1
+
+  while (startLine <= scope.endLine) {
+    const requestedEndLine = Math.min(
+      scope.endLine,
+      startLine + SCOPE_WINDOW_LINES - 1,
+    )
+    const window = boundedLineSlice(source, startLine, requestedEndLine)
+    if (!window) break
+    const chunk = {
+      repositoryKey,
+      file,
+      language,
+      kind: scopeKind,
+      name: `${scope.name} part ${part}`,
+      startLine,
+      endLine: window.endLine,
+      content: window.content,
+      strategy: "scope-window" as const,
+      parentName: scope.name,
+      parentKind: scopeKind,
+      parentStartLine: scope.startLine,
+      parentEndLine: scope.endLine,
+    }
+    chunks.push({ ...chunk, id: pointId(chunk) })
+    if (requestedEndLine >= scope.endLine) break
+    startLine = Math.max(window.endLine + 1, startLine + step)
+    part += 1
+  }
+
+  return chunks
+}
+
 const qdrantClient = ({ client, url, apiKey }: QdrantConfig) => {
   if (client) return client
-  if (!url) throw new Error("Qdrant url is required when client is not provided")
+  if (!url)
+    throw new Error("Qdrant url is required when client is not provided")
   return new QdrantClient({ url, apiKey })
 }
 
@@ -179,7 +315,7 @@ const ensureCollection = async (client: QdrantClient, config: QdrantConfig) => {
 const ensurePayloadIndex = async (
   client: QdrantClient,
   collection: string,
-  field: string,
+  field: string
 ) => {
   try {
     await client.createPayloadIndex(collection, {
@@ -200,12 +336,12 @@ const ensurePayloadIndex = async (
 
 const ensureReviewPayloadIndexes = async (
   client: QdrantClient,
-  collection: string,
+  collection: string
 ) => {
   await Promise.all(
     ["repositoryId", "headSha", "reviewRunId"].map((field) =>
-      ensurePayloadIndex(client, collection, field),
-    ),
+      ensurePayloadIndex(client, collection, field)
+    )
   )
 }
 
@@ -238,28 +374,29 @@ const chunksForRepository = async ({
   for (const file of index.files) {
     const source = index.sourceByFile.get(file.path)
     if (!source) continue
+    const scopedChunks: CodeChunk[] = []
 
     for (const scope of file.scopes) {
-      if (scope.kind === "top-level") continue
-      const content = lineSlice(source, scope.startLine, scope.endLine)
-      const lines = scope.endLine - scope.startLine + 1
-      if (
-        lines > MAX_CHUNK_LINES ||
-        Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES
-      ) {
-        continue
-      }
-      const scopeChunk = {
+      scopedChunks.push(
+        ...scopeChunksFor({
+          repositoryKey,
+          file: file.path,
+          language: file.language,
+          source,
+          scope,
+        }),
+      )
+    }
+    if (scopedChunks.length > 0) {
+      chunks.push(...scopedChunks)
+    } else {
+      const fileChunk = fileChunkFor({
         repositoryKey,
         file: file.path,
         language: file.language,
-        kind: scope.kind as CodeChunk["kind"],
-        name: scope.name,
-        startLine: scope.startLine,
-        endLine: scope.endLine,
-        content,
-      }
-      chunks.push({ ...scopeChunk, id: pointId(scopeChunk) })
+        source,
+      })
+      if (fileChunk) chunks.push(fileChunk)
     }
   }
 
@@ -278,28 +415,29 @@ export const chunksForRepositoryIndex = ({
   for (const file of index.files) {
     const source = index.sourceByFile.get(file.path)
     if (!source) continue
+    const scopedChunks: CodeChunk[] = []
 
     for (const scope of file.scopes) {
-      if (scope.kind === "top-level") continue
-      const content = lineSlice(source, scope.startLine, scope.endLine)
-      const lines = scope.endLine - scope.startLine + 1
-      if (
-        lines > MAX_CHUNK_LINES ||
-        Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES
-      ) {
-        continue
-      }
-      const scopeChunk = {
+      scopedChunks.push(
+        ...scopeChunksFor({
+          repositoryKey,
+          file: file.path,
+          language: file.language,
+          source,
+          scope,
+        }),
+      )
+    }
+    if (scopedChunks.length > 0) {
+      chunks.push(...scopedChunks)
+    } else {
+      const fileChunk = fileChunkFor({
         repositoryKey,
         file: file.path,
         language: file.language,
-        kind: scope.kind as CodeChunk["kind"],
-        name: scope.name,
-        startLine: scope.startLine,
-        endLine: scope.endLine,
-        content,
-      }
-      chunks.push({ ...scopeChunk, id: pointId(scopeChunk) })
+        source,
+      })
+      if (fileChunk) chunks.push(fileChunk)
     }
   }
 
@@ -309,10 +447,14 @@ export const chunksForRepositoryIndex = ({
 const chunkText = (chunk: CodeChunk) =>
   [
     `${chunk.kind} ${chunk.name}`,
+    `chunk strategy ${chunk.strategy}`,
+    chunk.parentName
+      ? `parent ${chunk.parentKind} ${chunk.parentName} ${chunk.parentStartLine}-${chunk.parentEndLine}`
+      : "",
     `file ${chunk.file}`,
     `language ${chunk.language}`,
     chunk.content,
-  ].join("\n")
+  ].filter(Boolean).join("\n")
 
 export const indexCodebase = async ({
   repository,
@@ -328,7 +470,9 @@ export const indexCodebase = async ({
     await ensureCollection(client, qdrant)
     await client.delete(qdrant.collection, {
       wait: true,
-      filter: { must: [{ key: "repositoryKey", match: { value: repositoryKey } }] },
+      filter: {
+        must: [{ key: "repositoryKey", match: { value: repositoryKey } }],
+      },
     })
 
     const { index, chunks } = await chunksForRepository({
@@ -370,17 +514,22 @@ const queriesForDiff = (diffContext: DiffContextResult) =>
             file.patch,
           ].join("\n"),
         }))
-      : [{ file: file.file, text: [`file ${file.file}`, file.patch].join("\n") }],
+      : [
+          {
+            file: file.file,
+            text: [`file ${file.file}`, file.patch].join("\n"),
+          },
+        ]
   )
 
 const affectedKeys = (diffContext: DiffContextResult) =>
   new Set(
     diffContext.files.flatMap((file) => [
       `${file.file}:file`,
-      ...file.affectedSymbols.map((symbol) =>
-        `${symbol.file}:${symbol.startLine}:${symbol.endLine}`,
+      ...file.affectedSymbols.map(
+        (symbol) => `${symbol.file}:${symbol.startLine}:${symbol.endLine}`
       ),
-    ]),
+    ])
   )
 
 const renderSemanticMarkdown = ({
@@ -391,37 +540,90 @@ const renderSemanticMarkdown = ({
   repositoryKey: string
   collection: string
   chunks: Array<CodeChunk & { score: number }>
-}) => [
-  "# Semantic Context",
-  "",
-  `Repository key: ${repositoryKey}`,
-  `Collection: ${collection}`,
-  `Chunks: ${chunks.length}`,
-  "",
-  ...chunks.flatMap((chunk) => [
-    `## ${chunk.kind} ${chunk.name}`,
-    "",
-    `Score: ${chunk.score.toFixed(4)}`,
-    `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
-    "",
-    "```text",
-    chunk.content,
-    "```",
-    "",
-  ]),
-].join("\n")
-
-const renderSearchMarkdown = (chunks: Array<ReviewCodeChunk & { score: number }>) =>
+}) =>
   [
-    "# Code Search Results",
+    "# Semantic Context",
     "",
+    `Repository key: ${repositoryKey}`,
+    `Collection: ${collection}`,
     `Chunks: ${chunks.length}`,
     "",
     ...chunks.flatMap((chunk) => [
-      `- ${chunk.kind} ${chunk.name} at ${chunk.file}:${chunk.startLine}-${chunk.endLine} (score ${chunk.score.toFixed(4)})`,
+      `## ${chunk.kind} ${chunk.name}`,
+      "",
+      `Score: ${chunk.score.toFixed(4)}`,
+      `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
+      chunk.parentName
+        ? `Parent: ${chunk.parentKind} ${chunk.parentName} ${chunk.parentStartLine}-${chunk.parentEndLine}`
+        : "",
+      "",
+      "```text",
+      chunk.content,
+      "```",
       "",
     ]),
   ].join("\n")
+
+const MAX_SEARCH_RESULT_PREVIEW_LINES = 40
+const MAX_SEARCH_RESULT_PREVIEW_BYTES = 8 * 1024
+const MAX_SEARCH_MARKDOWN_BYTES = 50 * 1024
+
+const previewContent = (content: string) => {
+  const lines = content.split(/\r?\n/)
+  let preview = lines.slice(0, MAX_SEARCH_RESULT_PREVIEW_LINES).join("\n")
+  let truncated = lines.length > MAX_SEARCH_RESULT_PREVIEW_LINES
+
+  while (
+    Buffer.byteLength(preview, "utf8") > MAX_SEARCH_RESULT_PREVIEW_BYTES &&
+    preview.length > 0
+  ) {
+    preview = preview.slice(0, Math.floor(preview.length * 0.9))
+    truncated = true
+  }
+
+  return { preview, truncated }
+}
+
+const renderSearchMarkdown = (
+  chunks: Array<ReviewCodeChunk & { score: number }>
+) => {
+  const render = (selectedChunks: Array<ReviewCodeChunk & { score: number }>) =>
+    [
+      "# Code Search Results",
+      "",
+      `Chunks: ${selectedChunks.length}`,
+      "",
+      ...selectedChunks.flatMap((chunk, index) => {
+        const { preview, truncated } = previewContent(chunk.content)
+        return [
+          `## ${index + 1}. ${chunk.kind} ${chunk.name}`,
+          "",
+          `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
+          chunk.parentName
+            ? `Parent: ${chunk.parentKind} ${chunk.parentName} ${chunk.parentStartLine}-${chunk.parentEndLine}`
+            : "",
+          `Score: ${chunk.score.toFixed(4)}`,
+          "",
+          "```text",
+          preview,
+          truncated ? "[preview truncated]" : "",
+          "```",
+          "",
+        ]
+      }),
+    ].join("\n")
+
+  let selectedChunks = chunks
+  let markdown = render(selectedChunks)
+  while (
+    Buffer.byteLength(markdown, "utf8") > MAX_SEARCH_MARKDOWN_BYTES &&
+    selectedChunks.length > 1
+  ) {
+    selectedChunks = selectedChunks.slice(0, selectedChunks.length - 1)
+    markdown = render(selectedChunks)
+  }
+  return markdown
+}
 
 const isCodeChunk = (payload: unknown): payload is CodeChunk => {
   if (!payload || typeof payload !== "object") return false
@@ -461,7 +663,7 @@ export const indexReviewCodebase = async ({
       repositoryId,
       headSha,
       reviewRunId,
-    }),
+    })
   )
 
   await client.upsert(qdrant.collection, {
@@ -490,7 +692,7 @@ export const searchReviewCode = async ({
   reviewRunId,
   query,
   qdrant,
-  limit = 10,
+  limit = 5,
 }: SearchReviewCodeInput): Promise<SearchReviewCodeOutput> => {
   const client = qdrantClient(qdrant)
   const normalizedQuery = normalizeSearchQuery(query)
@@ -531,7 +733,7 @@ export const getSemanticContext = async ({
   diff,
   qdrant,
   embed,
-  limit = 10,
+  limit = 5,
   keepTemporaryRepository = false,
 }: GetSemanticContextInput): Promise<SemanticContextResult> => {
   const prepared = await prepareRepository({ repository, ref })
@@ -559,8 +761,10 @@ export const getSemanticContext = async ({
         if (!isCodeChunk(point.payload)) continue
         const chunk = point.payload
         if (skip.has(`${chunk.file}:file`)) continue
-        if (skip.has(`${chunk.file}:${chunk.startLine}:${chunk.endLine}`)) continue
-        if (!chunks.has(chunk.id)) chunks.set(chunk.id, { ...chunk, score: point.score })
+        if (skip.has(`${chunk.file}:${chunk.startLine}:${chunk.endLine}`))
+          continue
+        if (!chunks.has(chunk.id))
+          chunks.set(chunk.id, { ...chunk, score: point.score })
         if (chunks.size >= limit) break
       }
       if (chunks.size >= limit) break
@@ -583,7 +787,7 @@ export const getSemanticContext = async ({
       stats: {
         affectedSymbols: diffContext.files.reduce(
           (total, file) => total + file.affectedSymbols.length,
-          0,
+          0
         ),
         chunks: resultChunks.length,
         diagnostics: diffContext.diagnostics.length,

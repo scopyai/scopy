@@ -373,6 +373,9 @@ const cloneCall = (call: CallSite, confidence: CallSite["confidence"]): CallSite
 const uniqueSymbol = (symbols: SymbolDefinition[]) =>
   symbols.length === 1 ? symbols[0] : undefined
 
+const callableSymbols = (symbols: SymbolDefinition[]) =>
+  symbols.filter((symbol) => symbol.kind !== "value")
+
 export const resolveGraphs = async ({
   repository,
   files,
@@ -512,18 +515,20 @@ export const resolveGraphs = async ({
             ? (symbolsByLocalScope.get(file.localScope) ?? [])
             : (symbolsByFile.get(file.path) ?? [])
         ).filter((symbol) => symbol.name === call.name)
-        candidates = [...importCandidates, ...localCandidates]
+        candidates = callableSymbols([...importCandidates, ...localCandidates])
       } else if (call.kind === "member" && call.receiver) {
         const namespace = imported?.find(
           ({ binding }) =>
             binding.kind === "namespace" && binding.local === call.receiver,
         )
         if (namespace?.context.dependency.toScope) {
-          candidates = (symbolsByLocalScope.get(namespace.context.dependency.toScope) ?? []).filter(
-            (symbol) => symbol.name === call.name,
-          )
+          candidates = callableSymbols(
+            symbolsByLocalScope.get(namespace.context.dependency.toScope) ?? [],
+          ).filter((symbol) => symbol.name === call.name)
         } else if (namespace?.context.dependency.to) {
-          candidates = resolveExportedSymbols(namespace.context.dependency.to, call.name)
+          candidates = callableSymbols(
+            resolveExportedSymbols(namespace.context.dependency.to, call.name),
+          )
         } else if (file.language === "go") {
           const localMethods = (
             file.localScope
@@ -549,7 +554,12 @@ export const resolveGraphs = async ({
         const binding = imported?.find(({ binding }) => binding.local === call.name)
         candidates =
           binding?.context.dependency.to
-            ? resolveExportedSymbols(binding.context.dependency.to, binding.binding.imported)
+            ? callableSymbols(
+                resolveExportedSymbols(
+                  binding.context.dependency.to,
+                  binding.binding.imported,
+                ),
+              )
             : (
                 file.localScope
                   ? (symbolsByLocalScope.get(file.localScope) ?? [])

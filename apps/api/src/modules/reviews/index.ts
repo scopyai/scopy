@@ -2,11 +2,13 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { Output, ToolLoopAgent, tool } from "ai"
 import {
   buildDiffContext,
+  chunksForRepositoryIndex,
   getSymbolCallers,
   getSymbolDefinition,
   indexReviewCodebase,
   readRepositoryFile,
   searchReviewCode,
+  searchRepositoryText,
   parseUnifiedDiff,
 } from "tools"
 import { z } from "zod"
@@ -25,10 +27,17 @@ import {
   updateReviewComment,
 } from "./github"
 import {
+  filterReportToValidEvidence,
+  validateReviewReportEvidence,
+  type ReviewReportEvidenceValidation,
+} from "./evidence"
+import {
   buildReviewAgentPrompt,
+  buildReviewAgentRepairPrompt,
   buildReviewVerifierPrompt,
   renderAffectedSymbols,
   renderReviewReport,
+  renderSemanticCoverage,
   reviewReportSchema,
   reviewVerificationSchema,
   type ReviewReport,
@@ -256,11 +265,22 @@ export const runReviewAgent = async ({
     installationId,
     changedFiles: filteredFiles.map((file) => file.filename),
   })
+  const parsedDiffFiles = parseUnifiedDiff(unifiedDiff)
   const diffContext = await buildDiffContext({
     repository: runtime.paths.repositoryPath,
-    diffFiles: parseUnifiedDiff(unifiedDiff),
+    diffFiles: parsedDiffFiles,
   })
   const affectedSymbols = renderAffectedSymbols(diffContext)
+  const semanticChunks = chunksForRepositoryIndex({
+    index: runtime.codeIndex,
+    repositoryKey: `${repository.id}:${pullRequest.headSha}`,
+  })
+  const semanticCoverage = renderSemanticCoverage({
+    diffContext,
+    codeIndex: runtime.codeIndex,
+    chunks: semanticChunks,
+    qdrantEnabled: Boolean(runtime.qdrant),
+  })
   await recorder.writeJson("runtime.json", {
     paths: runtime.paths,
     qdrant: runtime.qdrant
@@ -275,6 +295,8 @@ export const runReviewAgent = async ({
   await recorder.writeJson("context/code-index.json", runtime.codeIndex)
   await recorder.writeJson("context/diff-context.json", diffContext)
   await recorder.writeText("context/affected-symbols.md", affectedSymbols)
+  await recorder.writeJson("context/semantic-chunks.json", semanticChunks)
+  await recorder.writeText("context/semantic-coverage.md", semanticCoverage)
   let qdrantChunks = 0
   let qdrantIndexedFiles = 0
   let qdrantIgnoredFiles = 0
@@ -405,7 +427,7 @@ export const runReviewAgent = async ({
     }),
     search_code: tool({
       description:
-        "Search the indexed repository code for chunks semantically related to a natural language query.",
+        "Semantic code search. Use this for behavior/concept searches when exact identifiers are unknown, such as finding related implementations, similar logic, or broader context. Do not use it for exact strings, route paths, env names, table columns, or symbol names when literal matching is needed.",
       inputSchema: z.object({
         query: z.string().min(1),
         limit: z.number().int().positive().max(20).optional(),
@@ -437,6 +459,38 @@ export const runReviewAgent = async ({
         return output
       },
     }),
+    search_text: tool({
+      description:
+        "Literal grep-style repository search. Use this for exact identifiers, route paths, config keys, env vars, table/column names, error strings, imports, filenames, and other concrete text. Returns matching lines with small surrounding context.",
+      inputSchema: z.object({
+        query: z.string().min(1),
+        caseSensitive: z.boolean().optional(),
+        maxResults: z.number().int().positive().max(100).optional(),
+        contextLines: z.number().int().min(0).max(5).optional(),
+      }),
+      execute: async ({
+        query,
+        caseSensitive = false,
+        maxResults = 50,
+        contextLines = 1,
+      }) => {
+        const input = { query, caseSensitive, maxResults, contextLines }
+        const result = await searchRepositoryText({
+          repository: runtime.paths.repositoryPath,
+          index: runtime.codeIndex,
+          query,
+          caseSensitive,
+          maxResults,
+          contextLines,
+        })
+        const output = {
+          ...result.stats,
+          markdown: toolText(result.markdown),
+        }
+        await recorder.recordToolCall({ name: "search_text", input, output })
+        return output
+      },
+    }),
   }
   const reviewAgent = new ToolLoopAgent({
     model: openrouter.chat(REVIEW_MODEL),
@@ -458,25 +512,118 @@ export const runReviewAgent = async ({
     headRef: pullRequest.headRef,
     diff,
     affectedSymbols,
+    semanticCoverage,
   })
   await recorder.writeText("context/prompt.txt", prompt)
   await recorder.writeJson("context/prompt-stats.json", {
     diffBytes: textBytes(diff),
     affectedSymbolsBytes: textBytes(affectedSymbols),
+    semanticCoverageBytes: textBytes(semanticCoverage),
     promptBytes: textBytes(prompt),
     semanticContextPreloaded: false,
   })
   const generation = await reviewAgent.generate({
     prompt,
   })
-  const report = reviewReportSchema.parse(generation.output)
+  const initialReport = reviewReportSchema.parse(generation.output)
   await recorder.writeJson("agent-output.json", {
     finishReason: generation.finishReason,
     usage: generation.totalUsage,
     output: generation.output,
     text: generation.text,
   })
-  await recorder.writeJson("candidate-review-report.json", report)
+  await recorder.writeJson("candidate-review-report.json", initialReport)
+  let report = initialReport
+  let reportValidation: ReviewReportEvidenceValidation =
+    await validateReviewReportEvidence({
+      repository: runtime.paths.repositoryPath,
+      diffFiles: parsedDiffFiles,
+      report,
+    })
+  await recorder.writeJson(
+    "candidate-review-report-validation.json",
+    reportValidation,
+  )
+  let repairUsage: unknown
+  if (!reportValidation.valid) {
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "evidence-repair",
+      invalidFindings: reportValidation.findings.filter(
+        (finding) => !finding.valid,
+      ).length,
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "evidence-repair",
+      invalidFindings: reportValidation.findings.filter(
+        (finding) => !finding.valid,
+      ).length,
+    })
+    const repairPrompt = buildReviewAgentRepairPrompt({
+      originalPrompt: prompt,
+      report,
+      validation: {
+        ...reportValidation,
+        findings: reportValidation.findings.filter(
+          (finding) => !finding.valid,
+        ),
+      },
+    })
+    await recorder.writeText("context/repair-prompt.txt", repairPrompt)
+    await recorder.writeJson("context/repair-prompt-stats.json", {
+      promptBytes: textBytes(repairPrompt),
+      invalidFindings: reportValidation.findings.filter(
+        (finding) => !finding.valid,
+      ).length,
+    })
+    const repairGeneration = await reviewAgent.generate({
+      prompt: repairPrompt,
+    })
+    repairUsage = repairGeneration.totalUsage
+    report = reviewReportSchema.parse(repairGeneration.output)
+    await recorder.writeJson("agent-repair-output.json", {
+      finishReason: repairGeneration.finishReason,
+      usage: repairGeneration.totalUsage,
+      output: repairGeneration.output,
+      text: repairGeneration.text,
+    })
+    await recorder.writeJson("repaired-candidate-review-report.json", report)
+    reportValidation = await validateReviewReportEvidence({
+      repository: runtime.paths.repositoryPath,
+      diffFiles: parsedDiffFiles,
+      report,
+    })
+    await recorder.writeJson(
+      "repaired-candidate-review-report-validation.json",
+      reportValidation,
+    )
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "evidence-repair",
+      usage: repairGeneration.totalUsage,
+      findings: report.findings.length,
+      invalidFindings: reportValidation.findings.filter(
+        (finding) => !finding.valid,
+      ).length,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "evidence-repair",
+      usage: repairGeneration.totalUsage,
+      findings: report.findings.length,
+      invalidFindings: reportValidation.findings.filter(
+        (finding) => !finding.valid,
+      ).length,
+    })
+  }
+  const invalidEvidenceFindings = report.findings.filter(
+    (_, index) => !reportValidation.findings[index]?.valid,
+  )
+  report = filterReportToValidEvidence(report, reportValidation)
+  await recorder.writeJson(
+    "evidence-filtered-findings.json",
+    invalidEvidenceFindings,
+  )
+  await recorder.writeJson("evidence-validated-review-report.json", report)
   let verification: ReviewVerification | null = null
   let verificationUsage: unknown
   if (report.findings.length > 0) {
@@ -510,11 +657,13 @@ export const runReviewAgent = async ({
       headRef: pullRequest.headRef,
       diff,
       affectedSymbols,
+      semanticCoverage,
       report,
     })
     await recorder.writeText("context/verification-prompt.txt", verificationPrompt)
     await recorder.writeJson("context/verification-prompt-stats.json", {
       promptBytes: textBytes(verificationPrompt),
+      semanticCoverageBytes: textBytes(semanticCoverage),
       findings: report.findings.length,
     })
     const verificationGeneration = await verifierAgent.generate({
@@ -569,6 +718,8 @@ export const runReviewAgent = async ({
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings.length,
     candidateFindings: report.findings.length,
+    generatedCandidateFindings: initialReport.findings.length,
+    evidenceFilteredFindings: invalidEvidenceFindings.length,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "generation",
@@ -577,6 +728,8 @@ export const runReviewAgent = async ({
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings.length,
     candidateFindings: report.findings.length,
+    generatedCandidateFindings: initialReport.findings.length,
+    evidenceFilteredFindings: invalidEvidenceFindings.length,
   })
 
   logger.info("Review agent stage started", { ...context, stage: "publish" })
@@ -601,6 +754,7 @@ export const runReviewAgent = async ({
     mergeSafetyScore: finalReport.mergeSafetyScore,
     usage: {
       review: generation.totalUsage,
+      repair: repairUsage,
       verification: verificationUsage,
     } as unknown as Record<string, unknown>,
     startedAt: startedAtIso,
@@ -623,6 +777,8 @@ export const runReviewAgent = async ({
     qdrantIndexedFiles,
     qdrantIgnoredFiles,
     candidateFindings: report.findings.length,
+    generatedCandidateFindings: initialReport.findings.length,
+    evidenceFilteredFindings: invalidEvidenceFindings.length,
     confirmedFindings: finalReport.findings.length,
     rejectedFindings: rejectedFindings.length,
     mergeSafetyScore: finalReport.mergeSafetyScore,

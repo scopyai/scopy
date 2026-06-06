@@ -46,6 +46,14 @@ const isFunctionValue = (node: SyntaxNode | null | undefined) =>
   node?.type === "function_expression" ||
   node?.type === "generator_function"
 
+const isTopLevelVariable = (node: SyntaxNode) =>
+  node.parent?.type === "lexical_declaration" &&
+  ["program", "export_statement"].includes(node.parent.parent?.type ?? "")
+
+const isExportedNode = (node: SyntaxNode) =>
+  node.parent?.type === "lexical_declaration" &&
+  node.parent.parent?.type === "export_statement"
+
 const propertyName = (node: SyntaxNode | null | undefined) => {
   if (!node) return ""
   if (
@@ -80,8 +88,14 @@ const symbolFromNode = (
   ) {
     name = text(node.childForFieldName("name"))
   } else if (node.type === "variable_declarator") {
-    if (!isFunctionValue(node.childForFieldName("value"))) return undefined
-    name = text(node.childForFieldName("name"))
+    if (isFunctionValue(node.childForFieldName("value"))) {
+      name = text(node.childForFieldName("name"))
+    } else if (isTopLevelVariable(node) || isExportedNode(node)) {
+      name = text(node.childForFieldName("name"))
+      kind = "value"
+    } else {
+      return undefined
+    }
   } else if (node.type === "method_definition") {
     name = propertyName(node.childForFieldName("name"))
     kind = node.parent?.type === "class_body" ? "method" : "object-method"
@@ -124,8 +138,14 @@ const scopeFromNode = (
   ) {
     name = text(node.childForFieldName("name"))
   } else if (node.type === "variable_declarator") {
-    if (!isFunctionValue(node.childForFieldName("value"))) return undefined
-    name = text(node.childForFieldName("name"))
+    if (isFunctionValue(node.childForFieldName("value"))) {
+      name = text(node.childForFieldName("name"))
+    } else if (isTopLevelVariable(node) || isExportedNode(node)) {
+      name = text(node.childForFieldName("name"))
+      kind = "value"
+    } else {
+      return undefined
+    }
   } else if (node.type === "method_definition") {
     name = propertyName(node.childForFieldName("name"))
     kind = node.parent?.type === "class_body" ? "method" : "object-method"
