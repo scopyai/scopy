@@ -56,6 +56,9 @@ export type InspectedCallSite = SourceLocation & {
     id: string
     name: string
     kind: SymbolKind
+    signature?: string
+    parameters?: string[]
+    returnType?: string
     file: string
     line: number
     column: number
@@ -185,6 +188,9 @@ const inspectCallSite = (
           id: enclosing.id,
           name: enclosing.name,
           kind: enclosing.kind,
+          signature: enclosing.signature,
+          parameters: enclosing.parameters,
+          returnType: enclosing.returnType,
           file: enclosing.file,
           line: enclosing.line,
           column: enclosing.column,

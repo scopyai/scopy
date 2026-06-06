@@ -11,17 +11,11 @@ export type GetSymbolDefinitionInput = {
   repository: string
   symbol: string
   ref?: string
-  includeSource?: boolean
-  includeParentSource?: boolean
   keepTemporaryRepository?: boolean
   index?: RepositoryCodeIndex
 }
 
-export type GetSymbolCallersInput = GetSymbolDefinitionInput & {
-  includeCallerDefinitions?: boolean
-  includeUnresolved?: boolean
-  maxCallers?: number
-}
+export type GetSymbolCallersInput = GetSymbolDefinitionInput
 
 export type CompactSymbolDefinition = Omit<
   InspectedDefinition,
@@ -122,6 +116,9 @@ const compactCallSite = (call: InspectedCallSite): CompactCallSite => {
             id: enclosingSymbol.id,
             name: enclosingSymbol.name,
             kind: enclosingSymbol.kind,
+            signature: enclosingSymbol.signature,
+            parameters: enclosingSymbol.parameters,
+            returnType: enclosingSymbol.returnType,
             file: enclosingSymbol.file,
             line: enclosingSymbol.line,
             column: enclosingSymbol.column,
@@ -148,6 +145,8 @@ const inspect = async ({
   keepTemporaryRepository = false,
   index,
 }: GetSymbolDefinitionInput & {
+  includeSource?: boolean
+  includeParentSource?: boolean
   includeCallers?: boolean
   includeCallerDefinitions?: boolean
   includeUnresolved?: boolean
@@ -181,8 +180,6 @@ export const getSymbolDefinition = async ({
   repository,
   symbol,
   ref,
-  includeSource = false,
-  includeParentSource = false,
   keepTemporaryRepository = false,
   index,
 }: GetSymbolDefinitionInput): Promise<GetSymbolDefinitionOutput> => {
@@ -190,8 +187,7 @@ export const getSymbolDefinition = async ({
     repository,
     symbol,
     ref,
-    includeSource,
-    includeParentSource,
+    includeSource: true,
     includeUnresolved: false,
     keepTemporaryRepository,
     index,
@@ -210,22 +206,19 @@ export const getSymbolDefinition = async ({
     stats: {
       definitions: json.definitions.length,
       diagnostics: json.diagnostics.length,
-      sourceIncluded: includeSource,
-      parentSourceIncluded: includeParentSource,
+      sourceIncluded: true,
+      parentSourceIncluded: false,
       bytes: byteLength(json),
     },
   }
 }
 
+const MAX_REVIEW_CALLERS = 50
+
 export const getSymbolCallers = async ({
   repository,
   symbol,
   ref,
-  includeSource = false,
-  includeParentSource = false,
-  includeCallerDefinitions = false,
-  includeUnresolved = true,
-  maxCallers = 50,
   keepTemporaryRepository = false,
   index,
 }: GetSymbolCallersInput): Promise<GetSymbolCallersOutput> => {
@@ -233,15 +226,15 @@ export const getSymbolCallers = async ({
     repository,
     symbol,
     ref,
-    includeSource,
-    includeParentSource,
+    includeSource: false,
+    includeParentSource: false,
     includeCallers: true,
-    includeCallerDefinitions,
-    includeUnresolved,
+    includeCallerDefinitions: false,
+    includeUnresolved: true,
     keepTemporaryRepository,
     index,
   })
-  const callerLimit = Math.max(1, Math.floor(maxCallers))
+  const callerLimit = MAX_REVIEW_CALLERS
   let truncated = false
   let remaining = callerLimit
   const callers = (result.callers ?? []).map((group) => {
@@ -253,11 +246,10 @@ export const getSymbolCallers = async ({
       directCallers: directCallers.map(compactCallSite),
     }
   })
-  const unresolvedCandidates = includeUnresolved && remaining > 0
+  const unresolvedCandidates = remaining > 0
     ? (result.unresolvedCandidates ?? []).slice(0, remaining).map(compactCallSite)
     : []
   if (
-    includeUnresolved &&
     unresolvedCandidates.length < (result.unresolvedCandidates ?? []).length
   ) {
     truncated = true
@@ -283,8 +275,7 @@ export const getSymbolCallers = async ({
       ),
       unresolvedCandidates: json.unresolvedCandidates.length,
       diagnostics: json.diagnostics.length,
-      sourceIncluded:
-        includeSource || includeParentSource || includeCallerDefinitions,
+      sourceIncluded: false,
       truncated,
       bytes: byteLength(json),
     },

@@ -40,7 +40,7 @@ export const reviewVerificationSchema = z.object({
   mergeSafetyReason: z.string().min(1),
   verifications: z.array(
     z.object({
-      findingIndex: z.number().int().nonnegative(),
+      candidateId: z.string().min(1),
       confirmed: z.boolean(),
       confidence: z.number().min(0).max(1),
       reason: z.string().min(1),
@@ -49,6 +49,25 @@ export const reviewVerificationSchema = z.object({
 })
 
 export type ReviewVerification = z.infer<typeof reviewVerificationSchema>
+
+export type CandidateFinding = ReviewFinding & {
+  candidateId: string
+}
+
+const symbolLabel = ({
+  kind,
+  name,
+  signature,
+  returnType,
+}: {
+  kind: string
+  name: string
+  signature?: string
+  returnType?: string
+}) => {
+  if (signature) return `${kind} ${signature}`
+  return returnType ? `${kind} ${name}: ${returnType}` : `${kind} ${name}`
+}
 
 export const renderSemanticCoverage = ({
   diffContext,
@@ -103,7 +122,7 @@ export const renderSemanticCoverage = ({
       warnings.push("has changed top-level lines")
     }
     if (fileChunks.length === 0) {
-      warnings.push("no semantic chunks available; use search_text/read_file")
+      warnings.push("no semantic chunks available; use locate_text/read_file")
     } else if (strategies.includes("file-fallback")) {
       warnings.push("covered by broad file fallback chunk")
     }
@@ -159,8 +178,12 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
       lines.push("- symbols:")
       for (const symbol of file.affectedSymbols) {
         lines.push(
-          `  - ${symbol.kind} ${symbol.name} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`,
+          `  - ${symbolLabel(symbol)} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`,
         )
+        if (symbol.parameters?.length) {
+          lines.push(`    params: ${symbol.parameters.join(", ")}`)
+        }
+        if (symbol.returnType) lines.push(`    returns: ${symbol.returnType}`)
       }
     } else {
       lines.push("- symbols: none detected")
@@ -177,23 +200,7 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
   return lines.join("\n").trim()
 }
 
-export const buildReviewAgentPrompt = ({
-  title,
-  body,
-  baseRef,
-  headRef,
-  diff,
-  affectedSymbols,
-  semanticCoverage,
-}: {
-  title: string
-  body: string | null
-  baseRef: string
-  headRef: string
-  diff: string
-  affectedSymbols: string
-  semanticCoverage: string
-}) => `Review this pull request for bugs, regressions, security issues, and production risks.
+export const reviewAgentInstructions = `Review pull requests for bugs, regressions, security issues, and production risks.
 
 Focus on changed behavior and directly related context. Do not report style-only feedback.
 Every finding must point to a changed file and a concrete head-side line range that the author can act on.
@@ -209,12 +216,12 @@ Finding output rules:
 
 Required review workflow:
 1. Triage the full diff first. Identify changed behavior, affected symbols, and plausible failure modes before calling tools.
-2. Use the changed symbol index to choose focused follow-up tool calls.
-3. If a possible finding depends on implementation details not visible in the diff, inspect the relevant symbol definition before reporting it.
-4. If a possible finding depends on how other code calls a changed symbol, inspect callers before reporting it.
-5. Use literal text search for exact identifiers, route paths, config keys, env vars, table or column names, imports, error strings, and other concrete code text.
-6. Use semantic code search for behavior or concept searches when exact identifiers are unknown. Use a short behavior phrase plus relevant symbol or file names. Do not paste code into semantic search queries.
-7. Use file reads only for specific line ranges or files without usable symbol, text-search, or semantic-search context.
+2. Use the changed symbol index and symbol tools first. They are the preferred way to inspect code.
+3. If a possible finding depends on implementation details not visible in the diff, call get_symbol_definition for the relevant symbol before reporting it.
+4. If a possible finding depends on how other code calls a changed symbol, call get_symbol_callers before reporting it.
+5. Use locate_text only as a literal locator for exact identifiers, route paths, config keys, env vars, table or column names, imports, or error strings when you do not know which symbol to inspect. After locate_text finds locations, prefer symbol tools for details.
+6. Use semantic code search for behavior/concept searches when exact identifiers are unknown. Use a short behavior phrase plus relevant symbol or file names. Do not paste code into semantic search queries.
+7. read_file is expensive and broad. Use it only for specific small line ranges when symbol tools, semantic search, and locate_text do not expose the needed context, or when a file has no usable AST coverage.
 8. Before returning the report, discard any finding that is not directly supported by the diff or by tool results you inspected.
 
 Merge safety score:
@@ -222,9 +229,38 @@ Merge safety score:
 2 = unsafe to merge; serious issues should block merge.
 3 = risky; merge only after review or fixes.
 4 = mostly safe; minor concerns or low-risk follow-up.
-5 = safe to merge; no actionable issues found.
+5 = safe to merge; no actionable issues found.`
 
-Pull request title: ${title}
+export const reviewVerifierInstructions = `Verify pull request review reports for false positives and duplicates.
+
+Your job is to confirm, reject, and deduplicate candidate findings. Do not add new findings.
+Each candidate finding has a candidateId. Every verification decision must copy the exact candidateId string from the candidate finding it evaluates.
+A finding is confirmed only when its file/startLine/endLine range is valid and the exact claim is directly supported by the diff or by tool results you inspect.
+If a finding is plausible but not proven, mark it unconfirmed.
+If the selected range does not support the claim, mark it unconfirmed even if a nearby issue might exist.
+If two findings describe the same underlying problem, confirm the clearest and most specific one and mark the duplicates unconfirmed.
+If a finding depends on implementation details outside the diff, inspect the relevant symbol or file range.
+If a finding depends on call-site behavior, inspect callers.
+Use locate_text only as a locator for exact identifiers, strings, route paths, config keys, env vars, table or column names, and imports. Prefer symbol tools after it returns locations.
+Use semantic code search only when the semantic search tool is available and exact text is unknown.`
+
+export const buildReviewAgentPrompt = ({
+  title,
+  body,
+  baseRef,
+  headRef,
+  diff,
+  affectedSymbols,
+  semanticCoverage,
+}: {
+  title: string
+  body: string | null
+  baseRef: string
+  headRef: string
+  diff: string
+  affectedSymbols: string
+  semanticCoverage?: string | null
+}) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
@@ -233,10 +269,14 @@ Changed files:
 ${diff}
 
 Changed symbol index:
-${affectedSymbols}
+${affectedSymbols}${
+  semanticCoverage
+    ? `
 
 Semantic search coverage:
 ${semanticCoverage}`
+    : ""
+}`
 
 export const buildReviewAgentRepairPrompt = ({
   originalPrompt,
@@ -271,7 +311,7 @@ export const buildReviewVerifierPrompt = ({
   diff,
   affectedSymbols,
   semanticCoverage,
-  report,
+  candidates,
 }: {
   title: string
   body: string | null
@@ -279,20 +319,9 @@ export const buildReviewVerifierPrompt = ({
   headRef: string
   diff: string
   affectedSymbols: string
-  semanticCoverage: string
-  report: ReviewReport
-}) => `Verify this pull request review report for false positives.
-
-Your job is to confirm or reject each candidate finding. Do not add new findings.
-A finding is confirmed only when its file/startLine/endLine range is valid and the exact claim is directly supported by the diff or by tool results you inspect.
-If a finding is plausible but not proven, mark it unconfirmed.
-If the selected range does not support the claim, mark it unconfirmed even if a nearby issue might exist.
-If a finding depends on implementation details outside the diff, inspect the relevant symbol or file range.
-If a finding depends on call-site behavior, inspect callers.
-Use literal text search for exact identifiers, strings, route paths, config keys, env vars, table or column names, and imports.
-Use semantic code search only for behavior or concept searches where exact text is unknown.
-
-Pull request title: ${title}
+  semanticCoverage?: string | null
+  candidates: CandidateFinding[]
+}) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
@@ -301,13 +330,18 @@ Changed files:
 ${diff}
 
 Changed symbol index:
-${affectedSymbols}
+${affectedSymbols}${
+  semanticCoverage
+    ? `
 
 Semantic search coverage:
 ${semanticCoverage}
+`
+    : "\n"
+}
 
-Candidate report JSON:
-${JSON.stringify(report, null, 2)}`
+Candidate findings JSON:
+${JSON.stringify({ candidates }, null, 2)}`
 
 const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 1) return "1/5 - extremely unsafe"

@@ -14,6 +14,9 @@ export type ScopeDefinition = SourceLocation & {
   id: string
   name: string
   kind: ScopeKind
+  signature?: string
+  parameters?: string[]
+  returnType?: string
   startLine: number
   endLine: number
   startIndex: number
@@ -25,6 +28,9 @@ export type SymbolDefinition = SourceLocation & {
   id: string
   name: string
   kind: SymbolKind
+  signature?: string
+  parameters?: string[]
+  returnType?: string
   enclosingSymbolId?: string
   containerName?: string
   exported: boolean

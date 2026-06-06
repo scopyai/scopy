@@ -66,6 +66,55 @@ const propertyName = (node: SyntaxNode | null | undefined) => {
   return ""
 }
 
+const splitParameters = (parameters: SyntaxNode | null | undefined) =>
+  (parameters?.namedChildren ?? [])
+    .filter((child) => child.type !== "comment")
+    .map((child) => child.text.trim())
+    .filter(Boolean)
+
+const cleanReturnType = (node: SyntaxNode | null | undefined) =>
+  node?.text.replace(/^:\s*/, "").trim() || undefined
+
+const compactSignature = ({
+  name,
+  kind,
+  parameters,
+  returnType,
+}: {
+  name: string
+  kind: SymbolKind
+  parameters?: string[]
+  returnType?: string
+}) => {
+  if (kind === "value") return returnType ? `${name}: ${returnType}` : name
+  const prefix = kind === "method" || kind === "object-method" ? name : `function ${name}`
+  return `${prefix}(${(parameters ?? []).join(", ")})${returnType ? `: ${returnType}` : ""}`
+}
+
+const functionMetadata = (node: SyntaxNode, name: string, kind: SymbolKind) => {
+  const valueNode =
+    node.type === "variable_declarator" || node.type === "pair"
+      ? node.childForFieldName("value")
+      : node
+  const parameters = splitParameters(valueNode?.childForFieldName("parameters"))
+  const returnType =
+    cleanReturnType(valueNode?.childForFieldName("return_type")) ??
+    cleanReturnType(node.childForFieldName("type"))
+  return {
+    parameters,
+    returnType,
+    signature: compactSignature({ name, kind, parameters, returnType }),
+  }
+}
+
+const valueMetadata = (node: SyntaxNode, name: string) => {
+  const returnType = cleanReturnType(node.childForFieldName("type"))
+  return {
+    returnType,
+    signature: compactSignature({ name, kind: "value", returnType }),
+  }
+}
+
 const classNameFor = (node: SyntaxNode) => {
   const classNode = ancestor(node.parent, (candidate) =>
     ["class_declaration", "class"].includes(candidate.type),
@@ -81,18 +130,25 @@ const symbolFromNode = (
   let kind: SymbolKind = "function"
   let definitionNode = node
   let containerName: string | undefined
+  let metadata: Pick<
+    SymbolDefinition,
+    "parameters" | "returnType" | "signature"
+  > = {}
 
   if (
     node.type === "function_declaration" ||
     node.type === "generator_function_declaration"
   ) {
     name = text(node.childForFieldName("name"))
+    metadata = functionMetadata(node, name, kind)
   } else if (node.type === "variable_declarator") {
     if (isFunctionValue(node.childForFieldName("value"))) {
       name = text(node.childForFieldName("name"))
+      metadata = functionMetadata(node, name, kind)
     } else if (isTopLevelVariable(node) || isExportedNode(node)) {
       name = text(node.childForFieldName("name"))
       kind = "value"
+      metadata = valueMetadata(node, name)
     } else {
       return undefined
     }
@@ -100,10 +156,12 @@ const symbolFromNode = (
     name = propertyName(node.childForFieldName("name"))
     kind = node.parent?.type === "class_body" ? "method" : "object-method"
     containerName = kind === "method" ? classNameFor(node) : undefined
+    metadata = functionMetadata(node, name, kind)
   } else if (node.type === "pair") {
     if (!isFunctionValue(node.childForFieldName("value"))) return undefined
     name = propertyName(node.childForFieldName("key"))
     kind = "object-method"
+    metadata = functionMetadata(node, name, kind)
   } else {
     return undefined
   }
@@ -119,6 +177,7 @@ const symbolFromNode = (
     id: `${prefix}:${name}`,
     name,
     kind,
+    ...metadata,
     ...location(file, definitionNode),
     containerName,
     exported: isExport,
@@ -132,27 +191,36 @@ const scopeFromNode = (
 ): ScopeDefinition | undefined => {
   let name = ""
   let kind: ScopeDefinition["kind"] = "function"
+  let metadata: Pick<
+    ScopeDefinition,
+    "parameters" | "returnType" | "signature"
+  > = {}
   if (
     node.type === "function_declaration" ||
     node.type === "generator_function_declaration"
   ) {
     name = text(node.childForFieldName("name"))
+    metadata = functionMetadata(node, name, "function")
   } else if (node.type === "variable_declarator") {
     if (isFunctionValue(node.childForFieldName("value"))) {
       name = text(node.childForFieldName("name"))
+      metadata = functionMetadata(node, name, "function")
     } else if (isTopLevelVariable(node) || isExportedNode(node)) {
       name = text(node.childForFieldName("name"))
       kind = "value"
+      metadata = valueMetadata(node, name)
     } else {
       return undefined
     }
   } else if (node.type === "method_definition") {
     name = propertyName(node.childForFieldName("name"))
     kind = node.parent?.type === "class_body" ? "method" : "object-method"
+    metadata = functionMetadata(node, name, kind)
   } else if (node.type === "pair") {
     if (!isFunctionValue(node.childForFieldName("value"))) return undefined
     name = propertyName(node.childForFieldName("key"))
     kind = "object-method"
+    metadata = functionMetadata(node, name, kind)
   } else if (node.type === "class_declaration" || node.type === "class") {
     name = text(node.childForFieldName("name")) || "(anonymous class)"
     kind = "class"
@@ -167,6 +235,7 @@ const scopeFromNode = (
     column: node.startPosition.column + 1,
     name,
     kind,
+    ...metadata,
     startLine: node.startPosition.row + 1,
     endLine: node.endPosition.row + 1,
     startIndex: node.startIndex,

@@ -16,6 +16,9 @@ export type CodeChunk = {
   language: string
   kind: "file" | Exclude<ScopeDefinition["kind"], "top-level">
   name: string
+  signature?: string
+  parameters?: string[]
+  returnType?: string
   startLine: number
   endLine: number
   content: string
@@ -248,6 +251,9 @@ const scopeChunksFor = ({
       language,
       kind: scopeKind,
       name: scope.name,
+      signature: scope.signature,
+      parameters: scope.parameters,
+      returnType: scope.returnType,
       startLine: scope.startLine,
       endLine: scope.endLine,
       content: wholeScope.content,
@@ -274,6 +280,9 @@ const scopeChunksFor = ({
       language,
       kind: scopeKind,
       name: `${scope.name} part ${part}`,
+      signature: scope.signature,
+      parameters: scope.parameters,
+      returnType: scope.returnType,
       startLine,
       endLine: window.endLine,
       content: window.content,
@@ -446,7 +455,11 @@ export const chunksForRepositoryIndex = ({
 
 const chunkText = (chunk: CodeChunk) =>
   [
-    `${chunk.kind} ${chunk.name}`,
+    chunk.signature
+      ? `${chunk.kind} ${chunk.signature}`
+      : `${chunk.kind} ${chunk.name}`,
+    chunk.parameters?.length ? `parameters ${chunk.parameters.join(", ")}` : "",
+    chunk.returnType ? `returns ${chunk.returnType}` : "",
     `chunk strategy ${chunk.strategy}`,
     chunk.parentName
       ? `parent ${chunk.parentKind} ${chunk.parentName} ${chunk.parentStartLine}-${chunk.parentEndLine}`
@@ -509,6 +522,11 @@ const queriesForDiff = (diffContext: DiffContextResult) =>
           file: file.file,
           text: [
             `${symbol.kind} ${symbol.name}`,
+            symbol.signature ? `signature ${symbol.signature}` : "",
+            symbol.parameters?.length
+              ? `parameters ${symbol.parameters.join(", ")}`
+              : "",
+            symbol.returnType ? `returns ${symbol.returnType}` : "",
             `file ${file.file}`,
             symbol.source,
             file.patch,
@@ -551,6 +569,11 @@ const renderSemanticMarkdown = ({
     ...chunks.flatMap((chunk) => [
       `## ${chunk.kind} ${chunk.name}`,
       "",
+      chunk.signature ? `Definition: ${chunk.signature}` : "",
+      chunk.parameters?.length
+        ? `Parameters: ${chunk.parameters.join(", ")}`
+        : "",
+      chunk.returnType ? `Returns: ${chunk.returnType}` : "",
       `Score: ${chunk.score.toFixed(4)}`,
       `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
       chunk.parentName
@@ -598,6 +621,11 @@ const renderSearchMarkdown = (
         return [
           `## ${index + 1}. ${chunk.kind} ${chunk.name}`,
           "",
+          chunk.signature ? `Definition: ${chunk.signature}` : "",
+          chunk.parameters?.length
+            ? `Parameters: ${chunk.parameters.join(", ")}`
+            : "",
+          chunk.returnType ? `Returns: ${chunk.returnType}` : "",
           `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
           chunk.parentName
             ? `Parent: ${chunk.parentKind} ${chunk.parentName} ${chunk.parentStartLine}-${chunk.parentEndLine}`

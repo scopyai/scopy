@@ -3,23 +3,29 @@ import path from "node:path"
 import type { RepositoryCodeIndex } from "./code-index"
 import { discoverRepositoryFiles } from "./discover"
 import { reviewIndexDecision } from "./review-file-policy"
+import type { ScopeDefinition } from "./types"
 
 export type SearchRepositoryTextInput = {
   repository: string
   query: string
   index?: RepositoryCodeIndex
-  caseSensitive?: boolean
   maxResults?: number
-  contextLines?: number
+}
+
+export type TextSearchSymbol = {
+  name: string
+  kind: ScopeDefinition["kind"]
+  startLine: number
+  endLine: number
+  signature?: string
+  returnType?: string
 }
 
 export type TextSearchMatch = {
   file: string
   line: number
   column: number
-  text: string
-  before: Array<{ line: number; text: string }>
-  after: Array<{ line: number; text: string }>
+  symbol?: TextSearchSymbol
 }
 
 export type SearchRepositoryTextOutput = {
@@ -39,8 +45,6 @@ export type SearchRepositoryTextOutput = {
 const MAX_FILE_BYTES = 1024 * 1024
 const DEFAULT_MAX_RESULTS = 50
 const HARD_MAX_RESULTS = 100
-const DEFAULT_CONTEXT_LINES = 1
-const HARD_CONTEXT_LINES = 5
 
 const isBinary = (buffer: Buffer) => {
   if (buffer.includes(0)) return true
@@ -76,15 +80,39 @@ const filesForSearch = async ({
   return discovered.filter((file) => reviewIndexDecision(file).index)
 }
 
+const symbolForLine = (
+  index: RepositoryCodeIndex | undefined,
+  file: string,
+  line: number,
+): TextSearchSymbol | undefined => {
+  const scope = index?.files
+    .find((candidate) => candidate.path === file)
+    ?.scopes.filter((candidate) => {
+      if (candidate.kind === "top-level") return false
+      return candidate.startLine <= line && candidate.endLine >= line
+    })
+    .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0]
+
+  return scope
+    ? {
+        name: scope.name,
+        kind: scope.kind,
+        startLine: scope.startLine,
+        endLine: scope.endLine,
+        signature: scope.signature,
+        returnType: scope.returnType,
+      }
+    : undefined
+}
+
 const renderMatch = (match: TextSearchMatch) => [
-  `## ${match.file}:${match.line}:${match.column}`,
-  "",
-  "```text",
-  ...match.before.map((line) => `${line.line}: ${line.text}`),
-  `${match.line}: ${match.text}`,
-  ...match.after.map((line) => `${line.line}: ${line.text}`),
-  "```",
-  "",
+  `- ${match.file}:${match.line}:${match.column}${
+    match.symbol
+      ? ` in ${match.symbol.kind} ${
+          match.symbol.signature ?? match.symbol.name
+        } ${match.symbol.startLine}-${match.symbol.endLine}`
+      : ""
+  }`,
 ]
 
 const renderMarkdown = ({
@@ -97,7 +125,7 @@ const renderMarkdown = ({
   truncated: boolean
 }) =>
   [
-    "# Text Search Results",
+    "# Text Locations",
     "",
     `Query: ${query}`,
     `Matches: ${matches.length}${truncated ? " (truncated)" : ""}`,
@@ -109,19 +137,13 @@ export const searchRepositoryText = async ({
   repository: inputRepository,
   query,
   index,
-  caseSensitive = false,
   maxResults = DEFAULT_MAX_RESULTS,
-  contextLines = DEFAULT_CONTEXT_LINES,
 }: SearchRepositoryTextInput): Promise<SearchRepositoryTextOutput> => {
   const repository = await realpath(inputRepository)
-  const needle = caseSensitive ? query : query.toLocaleLowerCase()
+  const needle = query.toLocaleLowerCase()
   const resultLimit = Math.min(
     HARD_MAX_RESULTS,
     Math.max(1, Math.floor(maxResults)),
-  )
-  const contextLimit = Math.min(
-    HARD_CONTEXT_LINES,
-    Math.max(0, Math.floor(contextLines)),
   )
   const matches: TextSearchMatch[] = []
   let filesSearched = 0
@@ -156,24 +178,14 @@ export const searchRepositoryText = async ({
     filesSearched += 1
     const lines = source.split(/\r?\n/)
     for (const [lineIndex, text] of lines.entries()) {
-      const haystack = caseSensitive ? text : text.toLocaleLowerCase()
+      const haystack = text.toLocaleLowerCase()
       const columnIndex = haystack.indexOf(needle)
       if (columnIndex === -1) continue
-      const beforeStart = Math.max(0, lineIndex - contextLimit)
-      const afterEnd = Math.min(lines.length, lineIndex + contextLimit + 1)
       matches.push({
         file,
         line: lineIndex + 1,
         column: columnIndex + 1,
-        text,
-        before: lines.slice(beforeStart, lineIndex).map((line, index) => ({
-          line: beforeStart + index + 1,
-          text: line,
-        })),
-        after: lines.slice(lineIndex + 1, afterEnd).map((line, index) => ({
-          line: lineIndex + index + 2,
-          text: line,
-        })),
+        symbol: symbolForLine(index, file, lineIndex + 1),
       })
       if (matches.length >= resultLimit) {
         truncated = true

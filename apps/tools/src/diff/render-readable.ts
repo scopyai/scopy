@@ -37,7 +37,7 @@ export const renderReadableDiffContext = (result: DiffContextResult) => {
       sections.push("### Affected Symbols", "")
       for (const symbol of file.affectedSymbols) {
         sections.push(
-          `#### ${symbol.kind} ${symbol.name} (${symbol.startLine}-${symbol.endLine})`,
+          `#### ${symbol.kind} ${symbol.signature ?? symbol.name} (${symbol.startLine}-${symbol.endLine})`,
           "",
           `Touched lines: ${symbol.touchedLines.join(", ")}`,
           "",

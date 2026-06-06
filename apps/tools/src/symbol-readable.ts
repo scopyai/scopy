@@ -29,7 +29,7 @@ export const renderReadableSymbolInspection = (result: InspectSymbolResult) => {
   for (const definition of result.definitions) {
     lines.push(
       "",
-      `### ${definition.name} (${definition.kind})`,
+      `### ${definition.signature ?? definition.name} (${definition.kind})`,
       "",
       `${definition.file}:${definition.line}:${definition.column}`,
     )
@@ -54,7 +54,7 @@ export const renderReadableSymbolInspection = (result: InspectSymbolResult) => {
       )
       lines.push(
         "",
-        `### ${definition?.name ?? group.definitionId}`,
+        `### ${definition?.signature ?? definition?.name ?? group.definitionId}`,
         "",
         `Definition: ${group.definitionId}`,
       )
@@ -67,7 +67,7 @@ export const renderReadableSymbolInspection = (result: InspectSymbolResult) => {
           "",
           `- ${caller.file}:${caller.line}:${caller.column}`,
           `  - call: ${caller.callLine.trim()}`,
-          `  - enclosing: ${caller.enclosingSymbol?.name ?? "top-level"}`,
+          `  - enclosing: ${caller.enclosingSymbol?.signature ?? caller.enclosingSymbol?.name ?? "top-level"}`,
         )
         if (caller.enclosingSymbol?.source) {
           lines.push(
@@ -86,7 +86,7 @@ export const renderReadableSymbolInspection = (result: InspectSymbolResult) => {
         "",
         `- ${candidate.file}:${candidate.line}:${candidate.column} (${candidate.confidence})`,
         `  - call: ${candidate.callLine.trim()}`,
-        `  - enclosing: ${candidate.enclosingSymbol?.name ?? "top-level"}`,
+        `  - enclosing: ${candidate.enclosingSymbol?.signature ?? candidate.enclosingSymbol?.name ?? "top-level"}`,
       )
     }
   }

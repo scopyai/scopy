@@ -9,6 +9,9 @@ export type AffectedSymbol = {
   file: string
   name: string
   kind: Exclude<ScopeDefinition["kind"], "top-level">
+  signature?: string
+  parameters?: string[]
+  returnType?: string
   startLine: number
   endLine: number
   parentScopeId?: string
@@ -178,6 +181,9 @@ export const buildDiffContext = async ({
           file,
           name: scope.name,
           kind: scope.kind as Exclude<ScopeDefinition["kind"], "top-level">,
+          signature: scope.signature,
+          parameters: scope.parameters,
+          returnType: scope.returnType,
           startLine: scope.startLine,
           endLine: scope.endLine,
           parentScopeId: scope.parentScopeId,

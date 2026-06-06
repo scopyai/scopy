@@ -38,6 +38,9 @@ export const symbol = ({
   node,
   name,
   kind = "function",
+  signature,
+  parameters,
+  returnType,
   containerName,
   exported = true,
 }: {
@@ -45,6 +48,9 @@ export const symbol = ({
   node: SyntaxNode
   name: string
   kind?: SymbolDefinition["kind"]
+  signature?: string
+  parameters?: string[]
+  returnType?: string
   containerName?: string
   exported?: boolean
 }): SymbolDefinition => ({
@@ -54,6 +60,9 @@ export const symbol = ({
   column: node.startPosition.column + 1,
   name,
   kind,
+  signature,
+  parameters,
+  returnType,
   containerName,
   exported,
   defaultExport: false,
