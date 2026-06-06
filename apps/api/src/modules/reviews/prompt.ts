@@ -25,6 +25,28 @@ export const reviewReportSchema = z.object({
 
 export type ReviewReport = z.infer<typeof reviewReportSchema>
 
+export const reviewVerificationSchema = z.object({
+  summary: z.string().min(1),
+  mergeSafetyScore: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+  ]),
+  mergeSafetyReason: z.string().min(1),
+  verifications: z.array(
+    z.object({
+      findingIndex: z.number().int().nonnegative(),
+      confirmed: z.boolean(),
+      confidence: z.number().min(0).max(1),
+      reason: z.string().min(1),
+    }),
+  ),
+})
+
+export type ReviewVerification = z.infer<typeof reviewVerificationSchema>
+
 export const renderAffectedSymbols = (context: DiffContextResult) => {
   const lines = [
     "# Changed Symbol Index",
@@ -118,6 +140,44 @@ ${diff}
 
 Changed symbol index:
 ${affectedSymbols}`
+
+export const buildReviewVerifierPrompt = ({
+  title,
+  body,
+  baseRef,
+  headRef,
+  diff,
+  affectedSymbols,
+  report,
+}: {
+  title: string
+  body: string | null
+  baseRef: string
+  headRef: string
+  diff: string
+  affectedSymbols: string
+  report: ReviewReport
+}) => `Verify this pull request review report for false positives.
+
+Your job is to confirm or reject each candidate finding. Do not add new findings.
+A finding is confirmed only when the exact claim is directly supported by the diff or by tool results you inspect.
+If a finding is plausible but not proven, mark it unconfirmed.
+If a finding depends on implementation details outside the diff, inspect the relevant symbol or file range.
+If a finding depends on call-site behavior, inspect callers.
+
+Pull request title: ${title}
+Pull request description: ${body ?? "(none)"}
+Base branch: ${baseRef}
+Head branch: ${headRef}
+
+Changed files:
+${diff}
+
+Changed symbol index:
+${affectedSymbols}
+
+Candidate report JSON:
+${JSON.stringify(report, null, 2)}`
 
 const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 1) return "1/5 - extremely unsafe"

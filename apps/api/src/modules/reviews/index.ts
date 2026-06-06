@@ -26,14 +26,20 @@ import {
 } from "./github"
 import {
   buildReviewAgentPrompt,
+  buildReviewVerifierPrompt,
   renderAffectedSymbols,
   renderReviewReport,
   reviewReportSchema,
+  reviewVerificationSchema,
+  type ReviewReport,
+  type ReviewVerification,
 } from "./prompt"
 import { createReviewRunRecorder } from "./debug-run"
 import { prepareReviewRuntime } from "./runtime"
 
-export const REVIEW_MODEL = "openai/gpt-5.5"
+export const REVIEW_MODEL = env.REVIEW_MODEL
+export const REVIEW_VERIFIER_MODEL =
+  env.REVIEW_VERIFIER_MODEL ?? env.REVIEW_MODEL
 
 type Logger = {
   info: (message: string, details?: Record<string, unknown>) => void
@@ -86,6 +92,34 @@ const toolText = (text: string, maxBytes = 90_000) => {
 
 const textBytes = (text: string) => Buffer.byteLength(text, "utf8")
 
+const applyVerification = (
+  report: ReviewReport,
+  verification: ReviewVerification | null,
+): ReviewReport => {
+  if (!verification) return report
+  const confirmed = new Set(
+    verification.verifications
+      .filter((item) => item.confirmed)
+      .map((item) => item.findingIndex),
+  )
+  const findings = report.findings.filter((_, index) => confirmed.has(index))
+  if (findings.length === 0) {
+    return {
+      summary: "No candidate findings were confirmed by verification.",
+      mergeSafetyScore: 5,
+      mergeSafetyReason:
+        "The verifier did not confirm any actionable issue in the candidate report.",
+      findings,
+    }
+  }
+  return {
+    summary: verification.summary,
+    mergeSafetyScore: verification.mergeSafetyScore,
+    mergeSafetyReason: verification.mergeSafetyReason,
+    findings,
+  }
+}
+
 export const runReviewAgent = async ({
   pullRequest,
   reviewRunId,
@@ -103,6 +137,7 @@ export const runReviewAgent = async ({
     headSha: pullRequest.headSha,
     triggerSource,
     modelId: REVIEW_MODEL,
+    verifierModelId: REVIEW_VERIFIER_MODEL,
   }
   const recorder = await createReviewRunRecorder({
     reviewRunId,
@@ -189,6 +224,20 @@ export const runReviewAgent = async ({
       durationMs: Date.now() - startedAt,
     }
     await recorder.writeJson("skip.json", result)
+    await recorder.writeJson("summary.json", {
+      status: "skipped",
+      reviewRunId,
+      repository: repository.fullName,
+      pullRequestNumber: pullRequest.number,
+      modelId: REVIEW_MODEL,
+      verifierModelId: REVIEW_VERIFIER_MODEL,
+      fetchedFileCount: files.length,
+      filteredFileCount: filteredFiles.length,
+      diffCharacterCount,
+      skipReason,
+      counts: recorder.counts(),
+      durationMs: result.durationMs,
+    })
     await recorder.writeText(
       "published-comment.md",
       `## Review summary\n\n${skipReason}`
@@ -421,29 +470,113 @@ export const runReviewAgent = async ({
     prompt,
   })
   const report = reviewReportSchema.parse(generation.output)
-  const renderedReport = renderReviewReport(report)
   await recorder.writeJson("agent-output.json", {
     finishReason: generation.finishReason,
     usage: generation.totalUsage,
     output: generation.output,
     text: generation.text,
   })
-  await recorder.writeJson("review-report.json", report)
+  await recorder.writeJson("candidate-review-report.json", report)
+  let verification: ReviewVerification | null = null
+  let verificationUsage: unknown
+  if (report.findings.length > 0) {
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "verification",
+      findings: report.findings.length,
+      verifierModelId: REVIEW_VERIFIER_MODEL,
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "verification",
+      findings: report.findings.length,
+    })
+    const verifierAgent = new ToolLoopAgent({
+      model: openrouter.chat(REVIEW_VERIFIER_MODEL),
+      tools,
+      output: Output.object({
+        schema: reviewVerificationSchema,
+        name: "review_verification",
+        description: "Verification decisions for candidate review findings",
+      }),
+      maxRetries: 2,
+      onStepFinish: async (step) => {
+        await recorder.recordStep(step)
+      },
+    })
+    const verificationPrompt = buildReviewVerifierPrompt({
+      title: pullRequest.title,
+      body: pullRequest.body,
+      baseRef: pullRequest.baseRef,
+      headRef: pullRequest.headRef,
+      diff,
+      affectedSymbols,
+      report,
+    })
+    await recorder.writeText("context/verification-prompt.txt", verificationPrompt)
+    await recorder.writeJson("context/verification-prompt-stats.json", {
+      promptBytes: textBytes(verificationPrompt),
+      findings: report.findings.length,
+    })
+    const verificationGeneration = await verifierAgent.generate({
+      prompt: verificationPrompt,
+    })
+    verification = reviewVerificationSchema.parse(verificationGeneration.output)
+    verificationUsage = verificationGeneration.totalUsage
+    await recorder.writeJson("verification-output.json", {
+      finishReason: verificationGeneration.finishReason,
+      modelId: REVIEW_VERIFIER_MODEL,
+      usage: verificationGeneration.totalUsage,
+      output: verificationGeneration.output,
+      text: verificationGeneration.text,
+    })
+    await recorder.writeJson("verification-report.json", verification)
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "verification",
+      verifierModelId: REVIEW_VERIFIER_MODEL,
+      usage: verificationGeneration.totalUsage,
+      confirmedFindings: verification.verifications.filter(
+        (item) => item.confirmed,
+      ).length,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "verification",
+      verifierModelId: REVIEW_VERIFIER_MODEL,
+      usage: verificationGeneration.totalUsage,
+      confirmedFindings: verification.verifications.filter(
+        (item) => item.confirmed,
+      ).length,
+    })
+  }
+  const finalReport = applyVerification(report, verification)
+  const rejectedFindings = verification
+    ? report.findings.filter(
+        (_, index) =>
+          !verification.verifications.some(
+            (item) => item.findingIndex === index && item.confirmed,
+          ),
+      )
+    : []
+  const renderedReport = renderReviewReport(finalReport)
+  await recorder.writeJson("review-report.json", finalReport)
+  await recorder.writeJson("rejected-findings.json", rejectedFindings)
   await recorder.writeText("rendered-comment.md", renderedReport)
   logger.info("Review agent stage completed", {
     ...context,
     stage: "generation",
     finishReason: generation.finishReason,
     usage: generation.totalUsage,
-    mergeSafetyScore: report.mergeSafetyScore,
-    findings: report.findings.length,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
+    findings: finalReport.findings.length,
+    candidateFindings: report.findings.length,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "generation",
     finishReason: generation.finishReason,
     usage: generation.totalUsage,
-    mergeSafetyScore: report.mergeSafetyScore,
-    findings: report.findings.length,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
+    findings: finalReport.findings.length,
+    candidateFindings: report.findings.length,
   })
 
   logger.info("Review agent stage started", { ...context, stage: "publish" })
@@ -460,17 +593,43 @@ export const runReviewAgent = async ({
     summary: renderedReport,
     triggerSource,
     modelId: REVIEW_MODEL,
+    verifierModelId: REVIEW_VERIFIER_MODEL,
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
     diffCharacterCount,
     commentId,
-    mergeSafetyScore: report.mergeSafetyScore,
-    usage: generation.totalUsage as unknown as Record<string, unknown>,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
+    usage: {
+      review: generation.totalUsage,
+      verification: verificationUsage,
+    } as unknown as Record<string, unknown>,
     startedAt: startedAtIso,
     completedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
   }
   await recorder.writeJson("result.json", result)
+  await recorder.writeJson("summary.json", {
+    status: "completed",
+    reviewRunId,
+    repository: repository.fullName,
+    pullRequestNumber: pullRequest.number,
+    modelId: REVIEW_MODEL,
+    verifierModelId: REVIEW_VERIFIER_MODEL,
+    fetchedFileCount: files.length,
+    filteredFileCount: filteredFiles.length,
+    diffCharacterCount,
+    qdrantEnabled: Boolean(runtime.qdrant),
+    qdrantChunks,
+    qdrantIndexedFiles,
+    qdrantIgnoredFiles,
+    candidateFindings: report.findings.length,
+    confirmedFindings: finalReport.findings.length,
+    rejectedFindings: rejectedFindings.length,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
+    usage: result.usage,
+    counts: recorder.counts(),
+    durationMs: result.durationMs,
+  })
   await recorder.writeText("published-comment.md", renderedReport)
   logger.info("Review agent stage completed", {
     ...context,

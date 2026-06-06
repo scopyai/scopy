@@ -28,6 +28,8 @@ export const env = z
     GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
     GITHUB_APP_WEBHOOK_SECRET: z.string().min(1).optional(),
     OPENROUTER_API_KEY: z.string().min(1).optional(),
+    REVIEW_MODEL: z.string().min(1).default("openai/gpt-5.4-mini"),
+    REVIEW_VERIFIER_MODEL: z.string().min(1).default("openai/gpt-5.4-mini"),
     REVIEW_WORKDIR: z.string().min(1).default(".data/reviews"),
     REVIEW_RUNS_DIR: z.string().min(1).default(".runs"),
     QDRANT_URL: z.string().min(1).optional(),
