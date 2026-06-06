@@ -134,6 +134,8 @@ const serializeCodeIndex = (
 ) => ({
   repository: index.repository,
   repositoryFiles: index.repositoryFiles,
+  discoveredFiles: index.discoveredFiles,
+  ignoredFiles: index.ignoredFiles,
   detectedLanguages: index.detectedLanguages,
   files: index.files,
   graph: index.graph,
@@ -156,11 +158,13 @@ export const prepareReviewRuntime = async ({
   repo,
   pullRequest,
   installationId,
+  changedFiles,
 }: {
   reviewRunId: string
   repo: Repository
   pullRequest: PullRequest
   installationId: string
+  changedFiles?: string[]
 }): Promise<PreparedReviewRuntime> => {
   const paths = getReviewRuntimePaths({
     repositoryId: repo.id,
@@ -172,6 +176,7 @@ export const prepareReviewRuntime = async ({
 
   const codeIndex = await buildRepositoryCodeIndex({
     repository: paths.repositoryPath,
+    changedFiles,
   })
   await writeFile(
     paths.indexPath,

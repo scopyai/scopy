@@ -97,7 +97,7 @@ Review strategy:
 - Use the changed symbol index to choose focused follow-up tool calls.
 - Inspect symbol definitions before reasoning about implementation details not visible in the diff.
 - Inspect callers before claiming a changed symbol breaks its call sites.
-- Use semantic code search for related behavior that is not discoverable from symbol names.
+- Use semantic code search for related behavior that is not discoverable from symbol names. Keep search queries short: behavior phrase plus relevant symbol or file names, not pasted code.
 - Use file reads for specific line ranges or files without usable symbol context.
 
 Merge safety score:

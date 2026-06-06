@@ -1,6 +1,7 @@
 export { analyzeRepository } from "./analyze"
 export { buildRepositoryCodeIndex } from "./code-index"
 export { readRepositoryFile } from "./file-read"
+export { reviewIndexDecision, shouldReviewIndexFile } from "./review-file-policy"
 export { buildDiffContext } from "./diff/context"
 export type {
   AffectedSymbol,

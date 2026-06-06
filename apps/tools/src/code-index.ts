@@ -3,6 +3,7 @@ import path from "node:path"
 import Parser from "tree-sitter"
 import { adaptersByExtension } from "./adapters"
 import { discoverRepositoryFiles } from "./discover"
+import { reviewIndexDecision } from "./review-file-policy"
 import { resolveGraphs } from "./resolve"
 import type {
   CallEdge,
@@ -32,6 +33,8 @@ const sourceLikeExtensions = new Set([
 export type RepositoryCodeIndex = {
   repository: string
   repositoryFiles: string[]
+  discoveredFiles: number
+  ignoredFiles: Array<{ file: string; reason: "hard-ignore" | "soft-ignore" }>
   detectedLanguages: Record<string, number>
   files: ExtractedFile[]
   sourceByFile: Map<string, string>
@@ -61,11 +64,22 @@ const compareDiagnostics = (a: Diagnostic, b: Diagnostic) => {
 
 export const buildRepositoryCodeIndex = async ({
   repository: inputRepository,
+  changedFiles = [],
 }: {
   repository: string
+  changedFiles?: string[]
 }): Promise<RepositoryCodeIndex> => {
   const repository = await realpath(inputRepository)
-  const repositoryFiles = await discoverRepositoryFiles(repository)
+  const discoveredRepositoryFiles = await discoverRepositoryFiles(repository)
+  const changedFileSet = new Set(changedFiles)
+  const ignoredFiles: RepositoryCodeIndex["ignoredFiles"] = []
+  const repositoryFiles = discoveredRepositoryFiles.filter((file) => {
+    const decision = reviewIndexDecision(file, changedFileSet)
+    if (!decision.index && decision.reason) {
+      ignoredFiles.push({ file, reason: decision.reason })
+    }
+    return decision.index
+  })
   const diagnostics: Diagnostic[] = []
   const detectedLanguages: Record<string, number> = {}
   const sourceByFile = new Map<string, string>()
@@ -105,6 +119,8 @@ export const buildRepositoryCodeIndex = async ({
   return {
     repository,
     repositoryFiles,
+    discoveredFiles: discoveredRepositoryFiles.length,
+    ignoredFiles,
     detectedLanguages: Object.fromEntries(
       Object.entries(detectedLanguages).sort(([a], [b]) => a.localeCompare(b)),
     ),

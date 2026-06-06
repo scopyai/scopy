@@ -110,6 +110,29 @@ export type SearchReviewCodeOutput = {
   stats: {
     chunks: number
     bytes: number
+    queryBytes: number
+    originalQueryBytes: number
+    queryTruncated: boolean
+  }
+}
+
+const MAX_CHUNK_BYTES = 60 * 1024
+const MAX_CHUNK_LINES = 400
+const MAX_SEARCH_QUERY_CHARS = 1_500
+
+const normalizeSearchQuery = (query: string) => {
+  const withoutDiffPrefixes = query
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-+ ](?=[^\s])/, ""))
+    .join(" ")
+  const normalized = withoutDiffPrefixes.replace(/\s+/g, " ").trim()
+  const shortened = normalized.slice(0, MAX_SEARCH_QUERY_CHARS)
+  const text = shortened || query.trim().slice(0, MAX_SEARCH_QUERY_CHARS)
+  return {
+    text,
+    originalBytes: Buffer.byteLength(query, "utf8"),
+    bytes: Buffer.byteLength(text, "utf8"),
+    truncated: text.length < query.trim().length,
   }
 }
 
@@ -215,20 +238,17 @@ const chunksForRepository = async ({
   for (const file of index.files) {
     const source = index.sourceByFile.get(file.path)
     if (!source) continue
-    const fileChunk = {
-      repositoryKey,
-      file: file.path,
-      language: file.language,
-      kind: "file" as const,
-      name: file.path,
-      startLine: 1,
-      endLine: source.split(/\r?\n/).length,
-      content: source,
-    }
-    chunks.push({ ...fileChunk, id: pointId(fileChunk) })
 
     for (const scope of file.scopes) {
       if (scope.kind === "top-level") continue
+      const content = lineSlice(source, scope.startLine, scope.endLine)
+      const lines = scope.endLine - scope.startLine + 1
+      if (
+        lines > MAX_CHUNK_LINES ||
+        Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES
+      ) {
+        continue
+      }
       const scopeChunk = {
         repositoryKey,
         file: file.path,
@@ -237,7 +257,7 @@ const chunksForRepository = async ({
         name: scope.name,
         startLine: scope.startLine,
         endLine: scope.endLine,
-        content: lineSlice(source, scope.startLine, scope.endLine),
+        content,
       }
       chunks.push({ ...scopeChunk, id: pointId(scopeChunk) })
     }
@@ -258,20 +278,17 @@ export const chunksForRepositoryIndex = ({
   for (const file of index.files) {
     const source = index.sourceByFile.get(file.path)
     if (!source) continue
-    const fileChunk = {
-      repositoryKey,
-      file: file.path,
-      language: file.language,
-      kind: "file" as const,
-      name: file.path,
-      startLine: 1,
-      endLine: source.split(/\r?\n/).length,
-      content: source,
-    }
-    chunks.push({ ...fileChunk, id: pointId(fileChunk) })
 
     for (const scope of file.scopes) {
       if (scope.kind === "top-level") continue
+      const content = lineSlice(source, scope.startLine, scope.endLine)
+      const lines = scope.endLine - scope.startLine + 1
+      if (
+        lines > MAX_CHUNK_LINES ||
+        Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES
+      ) {
+        continue
+      }
       const scopeChunk = {
         repositoryKey,
         file: file.path,
@@ -280,7 +297,7 @@ export const chunksForRepositoryIndex = ({
         name: scope.name,
         startLine: scope.startLine,
         endLine: scope.endLine,
-        content: lineSlice(source, scope.startLine, scope.endLine),
+        content,
       }
       chunks.push({ ...scopeChunk, id: pointId(scopeChunk) })
     }
@@ -401,14 +418,7 @@ const renderSearchMarkdown = (chunks: Array<ReviewCodeChunk & { score: number }>
     `Chunks: ${chunks.length}`,
     "",
     ...chunks.flatMap((chunk) => [
-      `## ${chunk.kind} ${chunk.name}`,
-      "",
-      `Score: ${chunk.score.toFixed(4)}`,
-      `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
-      "",
-      "```text",
-      chunk.content,
-      "```",
+      `- ${chunk.kind} ${chunk.name} at ${chunk.file}:${chunk.startLine}-${chunk.endLine} (score ${chunk.score.toFixed(4)})`,
       "",
     ]),
   ].join("\n")
@@ -436,6 +446,10 @@ export const indexReviewCodebase = async ({
   const client = qdrantClient(qdrant)
   await ensureCollection(client, qdrant)
   await ensureReviewPayloadIndexes(client, qdrant.collection)
+  await client.delete(qdrant.collection, {
+    wait: true,
+    filter: filterByRun({ repositoryId, headSha, reviewRunId }),
+  })
 
   const chunks = chunksForRepositoryIndex({ index, repositoryKey }).map(
     (chunk): ReviewCodeChunk => ({
@@ -465,6 +479,8 @@ export const indexReviewCodebase = async ({
   return {
     collection: qdrant.collection,
     chunks: chunks.length,
+    indexedFiles: new Set(chunks.map((chunk) => chunk.file)).size,
+    ignoredFiles: index.ignoredFiles.length,
   }
 }
 
@@ -477,9 +493,10 @@ export const searchReviewCode = async ({
   limit = 10,
 }: SearchReviewCodeInput): Promise<SearchReviewCodeOutput> => {
   const client = qdrantClient(qdrant)
+  const normalizedQuery = normalizeSearchQuery(query)
   const result = await client.query(qdrant.collection, {
     query: {
-      text: query,
+      text: normalizedQuery.text,
       model: qdrant.model,
     },
     limit,
@@ -500,6 +517,9 @@ export const searchReviewCode = async ({
     stats: {
       chunks: chunks.length,
       bytes: Buffer.byteLength(markdown, "utf8"),
+      queryBytes: normalizedQuery.bytes,
+      originalQueryBytes: normalizedQuery.originalBytes,
+      queryTruncated: normalizedQuery.truncated,
     },
   }
 }

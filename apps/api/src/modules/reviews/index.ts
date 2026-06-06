@@ -205,6 +205,7 @@ export const runReviewAgent = async ({
     repo: repository,
     pullRequest,
     installationId,
+    changedFiles: filteredFiles.map((file) => file.filename),
   })
   const diffContext = await buildDiffContext({
     repository: runtime.paths.repositoryPath,
@@ -226,6 +227,8 @@ export const runReviewAgent = async ({
   await recorder.writeJson("context/diff-context.json", diffContext)
   await recorder.writeText("context/affected-symbols.md", affectedSymbols)
   let qdrantChunks = 0
+  let qdrantIndexedFiles = 0
+  let qdrantIgnoredFiles = 0
   if (runtime.qdrant) {
     const indexResult = await indexReviewCodebase({
       index: runtime.codeIndex,
@@ -236,6 +239,8 @@ export const runReviewAgent = async ({
       qdrant: runtime.qdrant,
     })
     qdrantChunks = indexResult.chunks
+    qdrantIndexedFiles = indexResult.indexedFiles
+    qdrantIgnoredFiles = indexResult.ignoredFiles
   }
   logger.info("Review agent stage completed", {
     ...context,
@@ -244,6 +249,8 @@ export const runReviewAgent = async ({
     diagnostics: runtime.codeIndex.diagnostics.length,
     qdrantEnabled: Boolean(runtime.qdrant),
     qdrantChunks,
+    qdrantIndexedFiles,
+    qdrantIgnoredFiles,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "runtime",
@@ -251,6 +258,8 @@ export const runReviewAgent = async ({
     diagnostics: runtime.codeIndex.diagnostics.length,
     qdrantEnabled: Boolean(runtime.qdrant),
     qdrantChunks,
+    qdrantIndexedFiles,
+    qdrantIgnoredFiles,
   })
 
   logger.info("Review agent stage started", { ...context, stage: "generation" })
