@@ -22,6 +22,25 @@ type EventRecord = {
 
 const safeSegment = (value: string) => value.replace(/[^A-Za-z0-9_.-]/g, "_")
 const runsDir = () => env.REVIEW_RUNS_DIR ?? ".runs"
+const byteLength = (value: unknown) =>
+  Buffer.byteLength(
+    JSON.stringify(value, createJsonReplacer()) ?? "undefined",
+    "utf8",
+  )
+
+const recordKeys = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value)
+    : []
+
+const pickStats = (value: unknown) =>
+  value &&
+  typeof value === "object" &&
+  "stats" in value &&
+  value.stats &&
+  typeof value.stats === "object"
+    ? value.stats
+    : undefined
 
 const createJsonReplacer = () => {
   const seen = new WeakSet<object>()
@@ -65,14 +84,31 @@ export const createReviewRunRecorder = async (input: RecorderInput) => {
   const stepsPath = path.join(runPath, "steps")
   let toolCallCount = 0
   let stepCount = 0
+  let artifactCount = 0
 
   await mkdir(toolsPath, { recursive: true })
   await mkdir(stepsPath, { recursive: true })
+
+  const appendJsonl = async (relativePath: string, value: unknown) => {
+    await writeFile(
+      path.join(runPath, relativePath),
+      `${JSON.stringify(value, createJsonReplacer())}\n`,
+      { encoding: "utf8", flag: "a" },
+    )
+  }
 
   const writeText = async (relativePath: string, content: string) => {
     const absolutePath = path.join(runPath, relativePath)
     await mkdir(path.dirname(absolutePath), { recursive: true })
     await writeFile(absolutePath, content, "utf8")
+    artifactCount += 1
+    await appendJsonl("artifacts.jsonl", {
+      at: new Date().toISOString(),
+      index: artifactCount,
+      path: relativePath,
+      kind: relativePath.endsWith(".json") ? "json" : "text",
+      bytes: Buffer.byteLength(content, "utf8"),
+    })
   }
 
   const writeJson = async (relativePath: string, value: unknown) => {
@@ -81,11 +117,7 @@ export const createReviewRunRecorder = async (input: RecorderInput) => {
 
   const appendEvent = async (name: string, data?: unknown) => {
     const event: EventRecord = { at: new Date().toISOString(), name, data }
-    await writeFile(
-      path.join(runPath, "events.jsonl"),
-      `${JSON.stringify(event, createJsonReplacer())}\n`,
-      { encoding: "utf8", flag: "a" },
-    )
+    await appendJsonl("events.jsonl", event)
   }
 
   await writeJson("metadata.json", {
@@ -135,6 +167,16 @@ export const createReviewRunRecorder = async (input: RecorderInput) => {
       const prefix = `tools/${String(toolCallCount).padStart(3, "0")}-${safeSegment(name)}`
       await writeJson(`${prefix}.input.json`, input)
       await writeJson(`${prefix}.output.json`, output)
+      await appendJsonl("tool-calls.jsonl", {
+        at: new Date().toISOString(),
+        index: toolCallCount,
+        name,
+        inputBytes: byteLength(input),
+        outputBytes: byteLength(output),
+        inputKeys: recordKeys(input),
+        outputKeys: recordKeys(output),
+        outputStats: pickStats(output),
+      })
       await appendEvent("tool.completed", { name, index: toolCallCount })
     },
     recordStep: async (step: unknown) => {
@@ -143,8 +185,33 @@ export const createReviewRunRecorder = async (input: RecorderInput) => {
         `steps/${String(stepCount).padStart(3, "0")}.json`,
         step,
       )
+      const stepRecord =
+        step && typeof step === "object"
+          ? (step as Record<string, unknown>)
+          : {}
+      await appendJsonl("steps.jsonl", {
+        at: new Date().toISOString(),
+        index: stepCount,
+        finishReason: stepRecord.finishReason,
+        usage: stepRecord.usage,
+        textBytes:
+          typeof stepRecord.text === "string"
+            ? Buffer.byteLength(stepRecord.text, "utf8")
+            : undefined,
+        toolCalls: Array.isArray(stepRecord.toolCalls)
+          ? stepRecord.toolCalls.length
+          : undefined,
+        toolResults: Array.isArray(stepRecord.toolResults)
+          ? stepRecord.toolResults.length
+          : undefined,
+      })
       await appendEvent("agent.step.completed", { index: stepCount })
     },
+    counts: () => ({
+      artifacts: artifactCount,
+      toolCalls: toolCallCount,
+      steps: stepCount,
+    }),
   }
 }
 
