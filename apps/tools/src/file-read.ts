@@ -19,10 +19,10 @@ export type ReadRepositoryFileOutput = {
   bytes: number
 }
 
-const DEFAULT_MAX_LINES = 200
-const HARD_MAX_LINES = 500
+const DEFAULT_MAX_LINES = 80
+const HARD_MAX_LINES = 200
 const MAX_FILE_BYTES = 1024 * 1024
-const MAX_OUTPUT_BYTES = 120 * 1024
+const MAX_OUTPUT_BYTES = 40 * 1024
 
 const isBinary = (buffer: Buffer) => {
   if (buffer.includes(0)) return true

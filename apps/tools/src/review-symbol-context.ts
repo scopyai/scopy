@@ -2,41 +2,73 @@ import type { RepositoryCodeIndex } from "./code-index"
 import {
   inspectSymbol,
   inspectSymbolInIndex,
+  type InspectedCallSite,
+  type InspectedDefinition,
   type InspectSymbolResult,
 } from "./symbol-inspect"
-import { renderReadableSymbolInspection } from "./symbol-readable"
 
 export type GetSymbolDefinitionInput = {
   repository: string
   symbol: string
   ref?: string
+  includeSource?: boolean
+  includeParentSource?: boolean
   keepTemporaryRepository?: boolean
   index?: RepositoryCodeIndex
 }
 
-export type GetSymbolCallersInput =
-  GetSymbolDefinitionInput & {
-    includeCallerDefinitions?: boolean
-    includeUnresolved?: boolean
+export type GetSymbolCallersInput = GetSymbolDefinitionInput & {
+  includeCallerDefinitions?: boolean
+  includeUnresolved?: boolean
+  maxCallers?: number
+}
+
+export type CompactSymbolDefinition = Omit<
+  InspectedDefinition,
+  "source" | "parentScope"
+> & {
+  source?: string
+  parentScope?: Omit<NonNullable<InspectedDefinition["parentScope"]>, "source"> & {
+    source?: string
   }
+}
 
-export type SymbolDefinitionContext = Omit<
-  InspectSymbolResult,
-  "callers" | "unresolvedCandidates"
->
+export type CompactCallSite = Omit<
+  InspectedCallSite,
+  "enclosingSymbol"
+> & {
+  enclosingSymbol?: Omit<
+    NonNullable<InspectedCallSite["enclosingSymbol"]>,
+    "source"
+  > & {
+    source?: string
+  }
+}
 
-export type SymbolCallersContext = InspectSymbolResult & {
-  callers: NonNullable<InspectSymbolResult["callers"]>
-  unresolvedCandidates: NonNullable<InspectSymbolResult["unresolvedCandidates"]>
+export type SymbolDefinitionContext = {
+  repositoryPath: string
+  detectedLanguages: Record<string, number>
+  query: InspectSymbolResult["query"]
+  definitions: CompactSymbolDefinition[]
+  diagnostics: InspectSymbolResult["diagnostics"]
+}
+
+export type SymbolCallersContext = SymbolDefinitionContext & {
+  callers: Array<{
+    definitionId: string
+    directCallers: CompactCallSite[]
+  }>
+  unresolvedCandidates: CompactCallSite[]
 }
 
 export type GetSymbolDefinitionOutput = {
   repositoryPath: string
   json: SymbolDefinitionContext
-  markdown: string
   stats: {
     definitions: number
     diagnostics: number
+    sourceIncluded: boolean
+    parentSourceIncluded: boolean
     bytes: number
   }
 }
@@ -44,55 +76,143 @@ export type GetSymbolDefinitionOutput = {
 export type GetSymbolCallersOutput = {
   repositoryPath: string
   json: SymbolCallersContext
-  markdown: string
   stats: {
     definitions: number
     directCallers: number
     unresolvedCandidates: number
     diagnostics: number
+    sourceIncluded: boolean
+    truncated: boolean
     bytes: number
   }
 }
+
+const compactDefinition = (
+  definition: InspectedDefinition,
+): CompactSymbolDefinition => {
+  const { source, parentScope, ...rest } = definition
+  return {
+    ...rest,
+    ...(source ? { source } : {}),
+    ...(parentScope
+      ? {
+          parentScope: {
+            id: parentScope.id,
+            name: parentScope.name,
+            kind: parentScope.kind,
+            file: parentScope.file,
+            line: parentScope.line,
+            column: parentScope.column,
+            startLine: parentScope.startLine,
+            endLine: parentScope.endLine,
+            ...(parentScope.source ? { source: parentScope.source } : {}),
+          },
+        }
+      : {}),
+  }
+}
+
+const compactCallSite = (call: InspectedCallSite): CompactCallSite => {
+  const { enclosingSymbol, ...rest } = call
+  return {
+    ...rest,
+    ...(enclosingSymbol
+      ? {
+          enclosingSymbol: {
+            id: enclosingSymbol.id,
+            name: enclosingSymbol.name,
+            kind: enclosingSymbol.kind,
+            file: enclosingSymbol.file,
+            line: enclosingSymbol.line,
+            column: enclosingSymbol.column,
+            startLine: enclosingSymbol.startLine,
+            endLine: enclosingSymbol.endLine,
+            ...(enclosingSymbol.source
+              ? { source: enclosingSymbol.source }
+              : {}),
+          },
+        }
+      : {}),
+  }
+}
+
+const inspect = async ({
+  repository,
+  symbol,
+  ref,
+  includeSource = false,
+  includeParentSource = false,
+  includeCallers = false,
+  includeCallerDefinitions = false,
+  includeUnresolved = true,
+  keepTemporaryRepository = false,
+  index,
+}: GetSymbolDefinitionInput & {
+  includeCallers?: boolean
+  includeCallerDefinitions?: boolean
+  includeUnresolved?: boolean
+}) =>
+  index
+    ? inspectSymbolInIndex({
+        index,
+        symbol,
+        includeCallers,
+        includeDefinitionSource: includeSource,
+        includeParentSource,
+        includeCallerDefinitions,
+        includeUnresolved,
+      })
+    : inspectSymbol({
+        repository,
+        symbol,
+        ref,
+        includeCallers,
+        includeDefinitionSource: includeSource,
+        includeParentSource,
+        includeCallerDefinitions,
+        includeUnresolved,
+        keepTemporaryRepository,
+      })
+
+const byteLength = (value: unknown) =>
+  Buffer.byteLength(JSON.stringify(value), "utf8")
 
 export const getSymbolDefinition = async ({
   repository,
   symbol,
   ref,
+  includeSource = false,
+  includeParentSource = false,
   keepTemporaryRepository = false,
   index,
 }: GetSymbolDefinitionInput): Promise<GetSymbolDefinitionOutput> => {
-  const result = index
-    ? inspectSymbolInIndex({
-        index,
-        symbol,
-        includeCallers: false,
-        includeUnresolved: false,
-      })
-    : await inspectSymbol({
-        repository,
-        symbol,
-        ref,
-        includeCallers: false,
-        includeUnresolved: false,
-        keepTemporaryRepository,
-      })
+  const result = await inspect({
+    repository,
+    symbol,
+    ref,
+    includeSource,
+    includeParentSource,
+    includeUnresolved: false,
+    keepTemporaryRepository,
+    index,
+  })
   const json: SymbolDefinitionContext = {
     repositoryPath: result.repositoryPath,
     detectedLanguages: result.detectedLanguages,
     query: result.query,
-    definitions: result.definitions,
+    definitions: result.definitions.map(compactDefinition),
     diagnostics: result.diagnostics,
   }
-  const markdown = renderReadableSymbolInspection(json)
 
   return {
     repositoryPath: result.repositoryPath,
     json,
-    markdown,
     stats: {
       definitions: json.definitions.length,
       diagnostics: json.diagnostics.length,
-      bytes: Buffer.byteLength(markdown, "utf8"),
+      sourceIncluded: includeSource,
+      parentSourceIncluded: includeParentSource,
+      bytes: byteLength(json),
     },
   }
 }
@@ -101,39 +221,60 @@ export const getSymbolCallers = async ({
   repository,
   symbol,
   ref,
+  includeSource = false,
+  includeParentSource = false,
   includeCallerDefinitions = false,
   includeUnresolved = true,
+  maxCallers = 50,
   keepTemporaryRepository = false,
   index,
 }: GetSymbolCallersInput): Promise<GetSymbolCallersOutput> => {
-  const result = index
-    ? inspectSymbolInIndex({
-        index,
-        symbol,
-        includeCallers: true,
-        includeCallerDefinitions,
-        includeUnresolved,
-      })
-    : await inspectSymbol({
-        repository,
-        symbol,
-        ref,
-        includeCallers: true,
-        includeCallerDefinitions,
-        includeUnresolved,
-        keepTemporaryRepository,
-      })
-  const json: SymbolCallersContext = {
-    ...result,
-    callers: result.callers ?? [],
-    unresolvedCandidates: result.unresolvedCandidates ?? [],
+  const result = await inspect({
+    repository,
+    symbol,
+    ref,
+    includeSource,
+    includeParentSource,
+    includeCallers: true,
+    includeCallerDefinitions,
+    includeUnresolved,
+    keepTemporaryRepository,
+    index,
+  })
+  const callerLimit = Math.max(1, Math.floor(maxCallers))
+  let truncated = false
+  let remaining = callerLimit
+  const callers = (result.callers ?? []).map((group) => {
+    const directCallers = group.directCallers.slice(0, remaining)
+    if (directCallers.length < group.directCallers.length) truncated = true
+    remaining = Math.max(0, remaining - directCallers.length)
+    return {
+      definitionId: group.definitionId,
+      directCallers: directCallers.map(compactCallSite),
+    }
+  })
+  const unresolvedCandidates = includeUnresolved && remaining > 0
+    ? (result.unresolvedCandidates ?? []).slice(0, remaining).map(compactCallSite)
+    : []
+  if (
+    includeUnresolved &&
+    unresolvedCandidates.length < (result.unresolvedCandidates ?? []).length
+  ) {
+    truncated = true
   }
-  const markdown = renderReadableSymbolInspection(json)
+  const json: SymbolCallersContext = {
+    repositoryPath: result.repositoryPath,
+    detectedLanguages: result.detectedLanguages,
+    query: result.query,
+    definitions: result.definitions.map(compactDefinition),
+    callers,
+    unresolvedCandidates,
+    diagnostics: result.diagnostics,
+  }
 
   return {
     repositoryPath: result.repositoryPath,
     json,
-    markdown,
     stats: {
       definitions: json.definitions.length,
       directCallers: json.callers.reduce(
@@ -142,7 +283,10 @@ export const getSymbolCallers = async ({
       ),
       unresolvedCandidates: json.unresolvedCandidates.length,
       diagnostics: json.diagnostics.length,
-      bytes: Buffer.byteLength(markdown, "utf8"),
+      sourceIncluded:
+        includeSource || includeParentSource || includeCallerDefinitions,
+      truncated,
+      bytes: byteLength(json),
     },
   }
 }

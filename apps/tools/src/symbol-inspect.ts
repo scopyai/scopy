@@ -21,6 +21,8 @@ export type InspectSymbolInput = {
   symbol: string
   ref?: string
   includeCallers?: boolean
+  includeDefinitionSource?: boolean
+  includeParentSource?: boolean
   includeCallerDefinitions?: boolean
   includeUnresolved?: boolean
   keepTemporaryRepository?: boolean
@@ -96,6 +98,7 @@ const sourceFor = (
 const parentClassScopeFor = (
   index: RepositoryCodeIndex,
   scopeId: string | undefined,
+  includeSource: boolean,
 ): InspectedScope | undefined => {
   let current = scopeId ? index.scopesById.get(scopeId) : undefined
   while (current?.parentScopeId) {
@@ -111,7 +114,9 @@ const parentClassScopeFor = (
         column: parent.column,
         startLine: parent.startLine,
         endLine: parent.endLine,
-        source: sourceFor(index, parent.file, parent.startLine, parent.endLine),
+        source: includeSource
+          ? sourceFor(index, parent.file, parent.startLine, parent.endLine)
+          : undefined,
       }
     }
     current = parent
@@ -122,16 +127,23 @@ const parentClassScopeFor = (
 const inspectDefinition = (
   index: RepositoryCodeIndex,
   definition: SymbolDefinition,
+  {
+    includeDefinitionSource,
+    includeParentSource,
+  }: {
+    includeDefinitionSource: boolean
+    includeParentSource: boolean
+  },
 ): InspectedDefinition => {
   const scope = scopeForSymbol(index, definition)
   return {
     ...definition,
     startLine: scope?.startLine,
     endLine: scope?.endLine,
-    source: scope
+    source: includeDefinitionSource && scope
       ? sourceFor(index, definition.file, scope.startLine, scope.endLine)
       : undefined,
-    parentScope: parentClassScopeFor(index, scope?.id),
+    parentScope: parentClassScopeFor(index, scope?.id, includeParentSource),
   }
 }
 
@@ -196,12 +208,16 @@ export const inspectSymbolInIndex = ({
   index,
   symbol,
   includeCallers = false,
+  includeDefinitionSource = false,
+  includeParentSource = false,
   includeCallerDefinitions = false,
   includeUnresolved = true,
 }: {
   index: RepositoryCodeIndex
   symbol: string
   includeCallers?: boolean
+  includeDefinitionSource?: boolean
+  includeParentSource?: boolean
   includeCallerDefinitions?: boolean
   includeUnresolved?: boolean
 }): InspectSymbolResult => {
@@ -214,7 +230,12 @@ export const inspectSymbolInIndex = ({
   const definitions = index.graph.symbols
     .filter((definition) => definition.name === symbol)
     .sort(compareLocations)
-    .map((definition) => inspectDefinition(index, definition))
+    .map((definition) =>
+      inspectDefinition(index, definition, {
+        includeDefinitionSource,
+        includeParentSource,
+      }),
+    )
 
   const result: InspectSymbolResult = {
     repositoryPath: index.repository,
@@ -250,6 +271,8 @@ const buildSymbolInspection = async ({
   repository,
   symbol,
   includeCallers = false,
+  includeDefinitionSource = false,
+  includeParentSource = false,
   includeCallerDefinitions = false,
   includeUnresolved = true,
 }: Omit<
@@ -261,6 +284,8 @@ const buildSymbolInspection = async ({
     index,
     symbol,
     includeCallers,
+    includeDefinitionSource,
+    includeParentSource,
     includeCallerDefinitions,
     includeUnresolved,
   })
@@ -271,6 +296,8 @@ export const inspectSymbol = async ({
   symbol,
   ref,
   includeCallers,
+  includeDefinitionSource,
+  includeParentSource,
   includeCallerDefinitions,
   includeUnresolved,
   keepTemporaryRepository = false,
@@ -281,6 +308,8 @@ export const inspectSymbol = async ({
       repository: prepared.path,
       symbol,
       includeCallers,
+      includeDefinitionSource,
+      includeParentSource,
       includeCallerDefinitions,
       includeUnresolved,
     })

@@ -268,11 +268,11 @@ export const runReviewAgent = async ({
   const tools = {
     read_file: tool({
       description:
-        "Returns numbered lines from a repository file by repo-relative path.",
+        "Returns numbered lines from a repository file by repo-relative path. Defaults to 80 lines and returns at most 200 lines.",
       inputSchema: z.object({
         file: z.string().min(1),
         startLine: z.number().int().positive().optional(),
-        maxLines: z.number().int().positive().max(500).optional(),
+        maxLines: z.number().int().positive().max(200).optional(),
       }),
       execute: async ({ file, startLine, maxLines }) => {
         const input = { file, startLine, maxLines }
@@ -288,21 +288,26 @@ export const runReviewAgent = async ({
     }),
     get_symbol_definition: tool({
       description:
-        "Get definitions and enclosing source context for a symbol name in the repository.",
+        "Returns repository definitions for a symbol name, including file and line ranges.",
       inputSchema: z.object({
         symbol: z.string().min(1),
+        includeSource: z.boolean().optional(),
+        includeParentSource: z.boolean().optional(),
       }),
-      execute: async ({ symbol }) => {
-        const input = { symbol }
+      execute: async ({
+        symbol,
+        includeSource = false,
+        includeParentSource = false,
+      }) => {
+        const input = { symbol, includeSource, includeParentSource }
         const result = await getSymbolDefinition({
           repository: runtime.paths.repositoryPath,
           index: runtime.codeIndex,
           symbol,
+          includeSource,
+          includeParentSource,
         })
-        const output = {
-          ...result.stats,
-          markdown: toolText(result.markdown),
-        }
+        const output = { ...result.json, stats: result.stats }
         await recorder.recordToolCall({
           name: "get_symbol_definition",
           input,
@@ -313,29 +318,34 @@ export const runReviewAgent = async ({
     }),
     get_symbol_callers: tool({
       description:
-        "Get direct callers for a symbol name, optionally including caller definitions.",
+        "Returns direct call sites for a symbol name, with call lines and enclosing symbol locations.",
       inputSchema: z.object({
         symbol: z.string().min(1),
         includeCallerDefinitions: z.boolean().optional(),
         includeUnresolved: z.boolean().optional(),
+        maxCallers: z.number().int().positive().max(100).optional(),
       }),
       execute: async ({
         symbol,
         includeCallerDefinitions = false,
         includeUnresolved = true,
+        maxCallers = 50,
       }) => {
-        const input = { symbol, includeCallerDefinitions, includeUnresolved }
+        const input = {
+          symbol,
+          includeCallerDefinitions,
+          includeUnresolved,
+          maxCallers,
+        }
         const result = await getSymbolCallers({
           repository: runtime.paths.repositoryPath,
           index: runtime.codeIndex,
           symbol,
           includeCallerDefinitions,
           includeUnresolved,
+          maxCallers,
         })
-        const output = {
-          ...result.stats,
-          markdown: toolText(result.markdown),
-        }
+        const output = { ...result.json, stats: result.stats }
         await recorder.recordToolCall({
           name: "get_symbol_callers",
           input,

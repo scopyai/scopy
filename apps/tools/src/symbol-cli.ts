@@ -29,6 +29,8 @@ if (!repository || !symbol) {
       ref,
       symbol,
       includeCallers,
+      includeDefinitionSource: readable,
+      includeParentSource: readable,
       includeCallerDefinitions,
       includeUnresolved,
       keepTemporaryRepository: keepTemp,
