@@ -7,6 +7,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -47,6 +48,12 @@ export const reviewRunStatus = pgEnum("review_run_status", [
   "skipped",
   "failed",
   "superseded",
+])
+export const reviewFindingSeverity = pgEnum("review_finding_severity", [
+  "critical",
+  "high",
+  "medium",
+  "low",
 ])
 export const workspaceBillingTier = pgEnum("workspace_billing_tier", [
   "free",
@@ -402,6 +409,30 @@ export const reviewRun = pgTable(
   ]
 )
 
+export const reviewFinding = pgTable(
+  "review_finding",
+  {
+    id: text("id").primaryKey(),
+    reviewRunId: text("review_run_id")
+      .notNull()
+      .references(() => reviewRun.id, { onDelete: "cascade" }),
+    severity: reviewFindingSeverity("severity").notNull(),
+    file: text("file").notNull(),
+    startLine: integer("start_line").notNull(),
+    endLine: integer("end_line").notNull(),
+    title: text("title").notNull(),
+    confidence: real("confidence").notNull(),
+    language: text("language").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("review_finding_review_run_id_idx").on(table.reviewRunId),
+    index("review_finding_severity_idx").on(table.severity),
+    index("review_finding_file_idx").on(table.file),
+    index("review_finding_language_idx").on(table.language),
+  ]
+)
+
 export const webhookEvent = pgTable(
   "webhook_event",
   {
@@ -538,7 +569,7 @@ export const reviewConfigRelations = relations(reviewConfig, ({ one }) => ({
   }),
 }))
 
-export const reviewRunRelations = relations(reviewRun, ({ one }) => ({
+export const reviewRunRelations = relations(reviewRun, ({ one, many }) => ({
   pullRequest: one(pullRequest, {
     fields: [reviewRun.pullRequestId],
     references: [pullRequest.id],
@@ -546,6 +577,14 @@ export const reviewRunRelations = relations(reviewRun, ({ one }) => ({
   triggerWebhookEvent: one(webhookEvent, {
     fields: [reviewRun.triggerWebhookEventId],
     references: [webhookEvent.id],
+  }),
+  findings: many(reviewFinding),
+}))
+
+export const reviewFindingRelations = relations(reviewFinding, ({ one }) => ({
+  reviewRun: one(reviewRun, {
+    fields: [reviewFinding.reviewRunId],
+    references: [reviewRun.id],
   }),
 }))
 

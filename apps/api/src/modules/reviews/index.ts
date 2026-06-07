@@ -102,6 +102,7 @@ export type ReviewAgentResult = {
   inlineReviewPublishError?: string
   skipReason?: string
   mergeSafetyScore?: number
+  findings?: ReviewReport["findings"]
   usage?: Record<string, unknown>
   billing?: {
     llmCostMicrocents: number
@@ -1065,6 +1066,7 @@ export const runReviewAgent = async ({
     inlineCommentCount,
     inlineReviewPublishError,
     mergeSafetyScore: finalReport.mergeSafetyScore,
+    findings: finalReport.findings,
     usage: {
       review: initialGenerationUsage,
       inspectionRerun: inspectionRerunUsage,

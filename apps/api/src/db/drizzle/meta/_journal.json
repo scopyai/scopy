@@ -71,6 +71,13 @@
       "when": 1780886400000,
       "tag": "0009_usd_usage_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780846122861,
+      "tag": "0010_odd_the_call",
+      "breakpoints": true
     }
   ]
 }

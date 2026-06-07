@@ -3,6 +3,7 @@ import { cors } from '@elysiajs/cors'
 import { Elysia } from 'elysia'
 import { env } from './env'
 import { authRoutes } from './modules/auth'
+import { analyticsRoutes } from './modules/analytics'
 import { githubRoutes } from './modules/github'
 import { healthRoutes } from './modules/health'
 import { meRoutes } from './modules/me'
@@ -21,6 +22,7 @@ export const app = new Elysia({
 		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 	}))
 	.use(authRoutes)
+	.use(analyticsRoutes)
 	.use(healthRoutes)
 	.use(meRoutes)
 	.use(githubRoutes)

@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto"
+import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "../../db/client"
-import { reviewRun } from "../../db/schema"
+import { reviewFinding, reviewRun } from "../../db/schema"
 import {
   debitReviewUsage,
   hasPositiveUsageBalance,
@@ -25,6 +27,34 @@ type JobContext = {
   attempt: number
   maxAttempts: number
 }
+
+const languageByExtension: Record<string, string> = {
+  ".c": "c",
+  ".cc": "cpp",
+  ".cpp": "cpp",
+  ".cs": "csharp",
+  ".css": "css",
+  ".go": "go",
+  ".html": "html",
+  ".java": "java",
+  ".js": "javascript",
+  ".jsx": "javascript",
+  ".kt": "kotlin",
+  ".mjs": "javascript",
+  ".php": "php",
+  ".py": "python",
+  ".rb": "ruby",
+  ".rs": "rust",
+  ".scala": "scala",
+  ".sh": "shell",
+  ".swift": "swift",
+  ".ts": "typescript",
+  ".tsx": "typescript",
+  ".vue": "vue",
+}
+
+const languageForFile = (file: string) =>
+  languageByExtension[path.extname(file).toLowerCase()] ?? "unknown"
 
 export const executeReviewPullRequest = async (
   { reviewRunId }: { reviewRunId: string },
@@ -190,15 +220,36 @@ export const executeReviewPullRequest = async (
       }
     }
 
-    await db
-      .update(reviewRun)
-      .set({
-        status: result.kind === "skipped" ? "skipped" : "completed",
-        result: resultToStore,
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(reviewRun.id, run.id))
+    const completedAt = new Date()
+    await db.transaction(async (tx) => {
+      await tx
+        .update(reviewRun)
+        .set({
+          status: result.kind === "skipped" ? "skipped" : "completed",
+          result: resultToStore,
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(eq(reviewRun.id, run.id))
+
+      await tx.delete(reviewFinding).where(eq(reviewFinding.reviewRunId, run.id))
+
+      if (result.kind === "summary" && result.findings?.length) {
+        await tx.insert(reviewFinding).values(
+          result.findings.map((finding) => ({
+            id: randomUUID(),
+            reviewRunId: run.id,
+            severity: finding.severity,
+            file: finding.file,
+            startLine: finding.startLine,
+            endLine: finding.endLine,
+            title: finding.title,
+            confidence: finding.confidence,
+            language: languageForFile(finding.file),
+          })),
+        )
+      }
+    })
     logger.info("Completed pull request review job", {
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
