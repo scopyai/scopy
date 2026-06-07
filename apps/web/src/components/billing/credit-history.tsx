@@ -1,12 +1,6 @@
 import { useState } from "react"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
@@ -43,11 +37,13 @@ export function CreditHistory({
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Usage history</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <div className="rounded-xl border bg-card shadow-sm ring-1 ring-border/50">
+      <div className="border-b px-6 py-4">
+        <h2 className="text-sm font-semibold">
+          Usage history
+        </h2>
+      </div>
+      <div className="flex flex-col gap-4 p-6">
         {isPending ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -84,14 +80,14 @@ export function CreditHistory({
                       <TableCell>
                         {formatCreditTransactionType(item.type)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="text-right">
                         {item.type === "usage_week"
                           ? Number(item.transactionCount).toLocaleString("en-US")
                           : "-"}
                       </TableCell>
                       <TableCell
                         className={cn(
-                          "text-right tabular-nums",
+                          "text-right",
                           amount > 0
                             ? "text-green-600 dark:text-green-400"
                             : "text-red-600 dark:text-red-400",
@@ -99,7 +95,7 @@ export function CreditHistory({
                       >
                         {formatCreditTransactionAmount(amount)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="text-right">
                         {formatUsageBalance(Number(item.balanceAfter))}
                       </TableCell>
                       <TableCell className="max-w-56 truncate text-muted-foreground">
@@ -138,7 +134,7 @@ export function CreditHistory({
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

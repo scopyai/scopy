@@ -1,11 +1,7 @@
-import { Badge } from "@workspace/ui/components/badge"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
+import { Separator } from "@workspace/ui/components/separator"
+import { cn } from "@workspace/ui/lib/utils"
 import { formatPeriodEnd, formatUsageBalance } from "@/lib/billing-format"
+import { SubscriptionActions } from "./subscription-actions"
 
 type Tier = "free" | "premium" | "ultra" | "enterprise"
 
@@ -18,16 +14,7 @@ type Account = {
   pendingChangeAt: Date | string | null
   monthlyAllowance: number
   creditBalance: number
-}
-
-const tierBadgeVariant: Record<
-  Tier,
-  "outline" | "default" | "secondary"
-> = {
-  free: "outline",
-  premium: "default",
-  ultra: "secondary",
-  enterprise: "secondary",
+  creemCustomerId: string | null
 }
 
 const tierLabel: Record<Tier, string> = {
@@ -40,24 +27,35 @@ const tierLabel: Record<Tier, string> = {
 export function AccountSummary({
   account,
   isOwner,
+  workspaceId,
 }: {
   account: Account
   isOwner: boolean
+  workspaceId: string
 }) {
   const isPaid =
     account.tier !== "free" && account.tier !== "enterprise"
+  const usagePercent =
+    account.monthlyAllowance > 0
+      ? Math.min(
+          100,
+          Math.max(0, (account.creditBalance / account.monthlyAllowance) * 100),
+        )
+      : 0
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <CardTitle>Current plan</CardTitle>
-          <Badge variant={tierBadgeVariant[account.tier]}>
+    <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm ring-1 ring-border/50">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/[0.05] via-transparent to-transparent" />
+
+      <div className="relative flex flex-col gap-5 p-6">
+        <p className="text-sm text-muted-foreground">
+          You're on the{" "}
+          <span className="font-medium text-foreground">
             {tierLabel[account.tier]}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+          </span>{" "}
+          plan
+        </p>
+
         {account.cancelAtPeriodEnd && account.periodEnd && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
             Subscription cancelled — access until{" "}
@@ -79,34 +77,41 @@ export function AccountSummary({
           )}
 
         {isPaid && account.monthlyAllowance > 0 && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">
-                Usage remaining
-              </span>
-              <span className="text-lg font-semibold tabular-nums">
-                {formatUsageBalance(account.creditBalance)}
-              </span>
+          <>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Stat
+                label="Usage remaining"
+                value={formatUsageBalance(account.creditBalance)}
+                large
+              />
+              <Stat
+                label="Monthly allowance"
+                value={formatUsageBalance(account.monthlyAllowance)}
+                large
+              />
+              {!account.cancelAtPeriodEnd && account.periodEnd && (
+                <Stat
+                  label="Next renewal"
+                  value={formatPeriodEnd(account.periodEnd)}
+                />
+              )}
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">
-                Monthly allowance
-              </span>
-              <span className="text-lg font-semibold tabular-nums">
-                {formatUsageBalance(account.monthlyAllowance)}
-              </span>
-            </div>
-            {!account.cancelAtPeriodEnd && account.periodEnd && (
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">
-                  Next renewal
-                </span>
-                <span className="text-sm font-medium">
-                  {formatPeriodEnd(account.periodEnd)}
-                </span>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Billing period usage</span>
+                <span>{Math.round(usagePercent)}% remaining</span>
               </div>
-            )}
-          </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full bg-primary transition-all duration-500",
+                  )}
+                  style={{ width: `${usagePercent}%` }}
+                />
+              </div>
+            </div>
+          </>
         )}
 
         {!isOwner && (
@@ -114,7 +119,42 @@ export function AccountSummary({
             Billing changes can only be made by the workspace owner.
           </p>
         )}
-      </CardContent>
-    </Card>
+
+        {isOwner && isPaid && (
+          <>
+            <Separator />
+            <SubscriptionActions
+              account={account}
+              workspaceId={workspaceId}
+              inline
+            />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Stat({
+  label,
+  value,
+  large,
+}: {
+  label: string
+  value: string
+  large?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          "font-medium",
+          large ? "text-base font-semibold" : "text-sm",
+        )}
+      >
+        {value}
+      </span>
+    </div>
   )
 }

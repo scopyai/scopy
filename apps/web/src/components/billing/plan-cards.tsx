@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CheckIcon, MailIcon, ZapIcon } from "lucide-react"
+import { CheckIcon, MailIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Badge } from "@workspace/ui/components/badge"
 import {
@@ -12,8 +12,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog"
+import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
-import { formatPlanPrice, formatUsageBalance } from "@/lib/billing-format"
+import {
+  formatPlanPriceAmount,
+  formatUsageBalance,
+} from "@/lib/billing-format"
 import { contactSalesHref } from "@/lib/billing-contact"
 import {
   useCheckoutBilling,
@@ -31,6 +35,24 @@ type Plan = {
 }
 
 type Tier = "free" | "premium" | "ultra" | "enterprise"
+
+const planFeatures: Record<string, string[]> = {
+  premium: [
+    "AI reviews on every pull request",
+    "Unlimited repositories",
+    "Team workspace management",
+  ],
+  ultra: [
+    "Everything in Premium",
+    "5× monthly usage allowance",
+    "Built for high-volume teams",
+  ],
+  enterprise: [
+    "Custom usage & pricing",
+    "Dedicated onboarding",
+    "Priority support & SLAs",
+  ],
+}
 
 function getPlanAction(
   plan: Plan,
@@ -74,45 +96,72 @@ function PlanCard({
     planChangesDisabled,
   )
   const isCurrent = action === "current"
+  const isRecommended = plan.slug === "premium"
   const checkout = useCheckoutBilling(workspaceId)
+  const features = planFeatures[plan.slug] ?? []
 
   return (
     <div
       className={cn(
-        "flex flex-col gap-4 rounded-xl border p-6 transition-colors",
-        isCurrent
-          ? "border-primary/40 bg-primary/5"
-          : "border-border bg-card",
+        "relative flex flex-col rounded-xl border bg-card p-6 transition-all",
+        isCurrent && "border-primary/50 shadow-md ring-1 ring-primary/30",
+        isRecommended &&
+          !isCurrent &&
+          "border-primary/30 shadow-sm ring-1 ring-primary/15",
+        !isCurrent && !isRecommended && "border-border hover:border-border/80",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span className="font-heading text-base font-semibold">
-              {plan.name}
-            </span>
-            {isCurrent && (
-              <Badge variant="default" className="text-xs">
-                Current
-              </Badge>
-            )}
-          </div>
-          <span className="text-2xl font-bold tabular-nums">
-            {formatPlanPrice(plan.price, plan.currency)}
-          </span>
-        </div>
-      </div>
-
-      {plan.monthlyCredits !== null && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ZapIcon className="size-3.5 shrink-0 text-primary" />
-          <span>{formatUsageBalance(plan.monthlyCredits)} usage/month</span>
-        </div>
+      {isRecommended && !isCurrent && (
+        <span className="absolute -top-2.5 left-4 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-foreground">
+          Recommended
+        </span>
       )}
 
-      <div className="mt-auto pt-2">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-semibold">
+            {plan.name}
+          </h3>
+          {isCurrent && (
+            <Badge variant="default" className="text-xs">
+              Current
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex items-baseline gap-1">
+          <span className="text-xl font-bold">
+            {formatPlanPriceAmount(plan.price, plan.currency)}
+          </span>
+          {plan.price !== null && (
+            <span className="text-sm text-muted-foreground">/mo</span>
+          )}
+        </div>
+
+        {plan.monthlyCredits !== null && (
+          <p className="text-sm text-muted-foreground">
+            {formatUsageBalance(plan.monthlyCredits)} usage included
+          </p>
+        )}
+      </div>
+
+      <Separator className="my-5" />
+
+      <ul className="flex flex-1 flex-col gap-2.5">
+        {features.map((feature) => (
+          <li
+            key={feature}
+            className="flex items-start gap-2 text-sm text-muted-foreground"
+          >
+            <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-6">
         {action === "contact" && (
-          <Button variant="outline" size="sm" className="w-full" asChild>
+          <Button variant="outline" className="w-full" asChild>
             <a href={contactSalesHref}>
               <MailIcon />
               Contact sales
@@ -121,14 +170,14 @@ function PlanCard({
         )}
 
         {action === "current" && (
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <div className="flex h-9 items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <CheckIcon className="size-4 text-primary" />
             Active plan
           </div>
         )}
 
         {action === "pending" && (
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <div className="flex h-9 items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <CheckIcon className="size-4 text-primary" />
             Scheduled plan
           </div>
@@ -136,20 +185,20 @@ function PlanCard({
 
         {action === "subscribe" && (
           <Button
-            size="sm"
             className="w-full"
             disabled={!isOwner || checkout.isPending}
-            onClick={() =>
-              checkout.mutate(plan.slug as "premium" | "ultra")
-            }
+            onClick={() => checkout.mutate(plan.slug as "premium" | "ultra")}
           >
-            {checkout.isPending ? "Redirecting…" : isOwner ? "Subscribe" : "Owner only"}
+            {checkout.isPending
+              ? "Redirecting…"
+              : isOwner
+                ? "Get started"
+                : "Owner only"}
           </Button>
         )}
 
         {action === "upgrade" && (
           <Button
-            size="sm"
             className="w-full"
             disabled={!isOwner}
             onClick={onUpgradeRequest}
@@ -161,7 +210,6 @@ function PlanCard({
         {action === "downgrade" && (
           <Button
             variant="outline"
-            size="sm"
             className="w-full"
             disabled={!isOwner}
             onClick={onDowngradeRequest}
@@ -197,7 +245,7 @@ export function PlanCards({
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-3">
         {plans.map((plan) => (
           <PlanCard
             key={plan.slug}
@@ -246,8 +294,8 @@ export function PlanCards({
           <AlertDialogHeader>
             <AlertDialogTitle>Downgrade to Premium?</AlertDialogTitle>
             <AlertDialogDescription>
-              Your Ultra plan and remaining usage balance will stay active until the
-              end of the current billing period. Premium pricing and usage
+              Your Ultra plan and remaining usage balance will stay active until
+              the end of the current billing period. Premium pricing and usage
               will apply at the next renewal.
             </AlertDialogDescription>
           </AlertDialogHeader>

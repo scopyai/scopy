@@ -4,17 +4,16 @@ import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { AccountSummary } from "./account-summary"
 import { PlanCards } from "./plan-cards"
-import { SubscriptionActions } from "./subscription-actions"
 import { CreditHistory } from "./credit-history"
 
 function BillingLoadingSkeleton() {
   return (
-    <div className="flex flex-col gap-6">
-      <Skeleton className="h-36 w-full rounded-xl" />
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Skeleton className="h-44 rounded-xl" />
-        <Skeleton className="h-44 rounded-xl" />
-        <Skeleton className="h-44 rounded-xl" />
+    <div className="flex flex-col gap-8">
+      <Skeleton className="h-44 w-full rounded-xl" />
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Skeleton className="h-80 rounded-xl" />
+        <Skeleton className="h-80 rounded-xl" />
+        <Skeleton className="h-80 rounded-xl" />
       </div>
       <Skeleton className="h-48 w-full rounded-xl" />
     </div>
@@ -67,18 +66,25 @@ export function BillingPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <AccountSummary account={billing.account} isOwner={isOwner ?? false} />
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-10">
+      <AccountSummary
+        account={billing.account}
+        isOwner={isOwner ?? false}
+        workspaceId={selectedWorkspaceId}
+      />
 
-      {isOwner && (
-        <SubscriptionActions
-          account={billing.account}
-          workspaceId={selectedWorkspaceId}
-        />
-      )}
+      <section className="relative flex flex-col gap-6">
+        <div className="pointer-events-none absolute -inset-x-8 -top-8 h-48 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/8 via-transparent to-transparent" />
 
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
+        <div className="relative flex flex-col gap-1">
+          <h2 className="text-base font-semibold">
+            Plans
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Scale AI code reviews as your team grows
+          </p>
+        </div>
+
         <PlanCards
           plans={billing.plans}
           accountTier={billing.account.tier}
@@ -87,7 +93,7 @@ export function BillingPage() {
           isOwner={isOwner ?? false}
           workspaceId={selectedWorkspaceId}
         />
-      </div>
+      </section>
 
       <CreditHistory workspaceId={selectedWorkspaceId} />
     </div>

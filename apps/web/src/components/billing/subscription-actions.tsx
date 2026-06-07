@@ -12,12 +12,6 @@ import {
   AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
-import {
   useCancelBilling,
   usePortalBilling,
 } from "@/hooks/use-workspace-billing-mutations"
@@ -31,9 +25,11 @@ type Account = {
 export function SubscriptionActions({
   account,
   workspaceId,
+  inline = false,
 }: {
   account: Account
   workspaceId: string
+  inline?: boolean
 }) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const portal = usePortalBilling(workspaceId)
@@ -45,36 +41,42 @@ export function SubscriptionActions({
 
   if (!isPaid) return null
 
+  const actions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {hasCustomer && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={portal.isPending}
+          onClick={() => portal.mutate()}
+        >
+          <ExternalLinkIcon />
+          {portal.isPending ? "Opening…" : "Manage billing"}
+        </Button>
+      )}
+
+      {!account.cancelAtPeriodEnd && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={() => setCancelOpen(true)}
+        >
+          Cancel subscription
+        </Button>
+      )}
+    </div>
+  )
+
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Subscription management</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {hasCustomer && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={portal.isPending}
-              onClick={() => portal.mutate()}
-            >
-              <ExternalLinkIcon />
-              {portal.isPending ? "Opening…" : "Manage billing"}
-            </Button>
-          )}
-
-          {!account.cancelAtPeriodEnd && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setCancelOpen(true)}
-            >
-              Cancel subscription
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+      {inline ? (
+        actions
+      ) : (
+        <div className="rounded-xl border bg-card p-4 shadow-sm ring-1 ring-border/50">
+          {actions}
+        </div>
+      )}
 
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <AlertDialogContent>
@@ -93,7 +95,9 @@ export function SubscriptionActions({
               variant="destructive"
               disabled={cancel.isPending}
               onClick={() => {
-                cancel.mutate(undefined, { onSuccess: () => setCancelOpen(false) })
+                cancel.mutate(undefined, {
+                  onSuccess: () => setCancelOpen(false),
+                })
               }}
             >
               {cancel.isPending ? "Cancelling…" : "Cancel subscription"}

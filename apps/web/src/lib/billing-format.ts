@@ -1,15 +1,29 @@
+function formatCurrencyAmount(
+  cents: number,
+  currency: string,
+): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100)
+}
+
 export function formatPlanPrice(
   cents: number | null,
   currency: string | null,
 ): string {
   if (cents === null || currency === null) return "Custom"
-  const formatter = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  })
-  return `${formatter.format(cents / 100)}/mo`
+  return `${formatCurrencyAmount(cents, currency)}/mo`
+}
+
+export function formatPlanPriceAmount(
+  cents: number | null,
+  currency: string | null,
+): string {
+  if (cents === null || currency === null) return "Custom"
+  return formatCurrencyAmount(cents, currency)
 }
 
 export function formatUsageBalance(microcents: number): string {
