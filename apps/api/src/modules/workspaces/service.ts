@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto"
-import { and, eq, isNull, notInArray } from "drizzle-orm"
+import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
   repository,
   reviewConfig,
+  user,
   workspace,
   workspaceMember,
   type workspaceMemberRole,
@@ -36,7 +37,8 @@ export const getWorkspaceForUser = async (
     .where(
       and(
         eq(workspaceMember.workspaceId, workspaceId),
-        eq(workspaceMember.userId, userId)
+        eq(workspaceMember.userId, userId),
+        eq(workspaceMember.status, "active")
       )
     )
     .limit(1)
@@ -69,6 +71,92 @@ export const requireWorkspaceRole = async (
   }
 
   return workspaceWithRole
+}
+
+export const getWorkspaceMembershipForUser = async (
+  workspaceId: string,
+  userId: string
+) => {
+  return db.query.workspaceMember.findFirst({
+    where: and(
+      eq(workspaceMember.workspaceId, workspaceId),
+      eq(workspaceMember.userId, userId)
+    ),
+    with: {
+      workspace: true,
+    },
+  })
+}
+
+export const inviteWorkspaceMemberByEmail = async ({
+  workspaceId,
+  email,
+  role,
+  invitedByUserId,
+}: {
+  workspaceId: string
+  email: string
+  role: Exclude<WorkspaceMemberRole, "owner">
+  invitedByUserId: string
+}) => {
+  const normalizedEmail = email.trim().toLowerCase()
+  const invitedUser = await db.query.user.findFirst({
+    where: sql`lower(${user.email}) = ${normalizedEmail}`,
+  })
+
+  if (!invitedUser || !invitedUser.emailVerified) {
+    return null
+  }
+
+  const existingMembership = await db.query.workspaceMember.findFirst({
+    where: and(
+      eq(workspaceMember.workspaceId, workspaceId),
+      eq(workspaceMember.userId, invitedUser.id)
+    ),
+  })
+
+  if (existingMembership?.status === "active") {
+    return {
+      status: "already_member" as const,
+      membership: existingMembership,
+    }
+  }
+
+  const now = new Date()
+  const membership = {
+    id: existingMembership?.id ?? randomUUID(),
+    workspaceId,
+    userId: invitedUser.id,
+    role,
+    status: "pending" as const,
+    invitedByUserId,
+    invitedAt: now,
+    acceptedAt: null,
+    updatedAt: now,
+  }
+
+  const [savedMembership] = await db
+    .insert(workspaceMember)
+    .values(membership)
+    .onConflictDoUpdate({
+      target: [workspaceMember.workspaceId, workspaceMember.userId],
+      set: {
+        role: membership.role,
+        status: membership.status,
+        invitedByUserId: membership.invitedByUserId,
+        invitedAt: membership.invitedAt,
+        acceptedAt: membership.acceptedAt,
+        updatedAt: membership.updatedAt,
+      },
+    })
+    .returning()
+
+  return savedMembership
+    ? {
+        status: "invited" as const,
+        membership: savedMembership,
+      }
+    : null
 }
 
 export const upsertGitHubWorkspace = async (
@@ -157,6 +245,10 @@ export const upsertGitHubWorkspace = async (
     workspaceId: savedWorkspace.id,
     userId,
     role,
+    status: "active" as const,
+    invitedByUserId: null,
+    invitedAt: null,
+    acceptedAt: new Date(),
     updatedAt: new Date(),
   }
 
@@ -167,6 +259,10 @@ export const upsertGitHubWorkspace = async (
       target: [workspaceMember.workspaceId, workspaceMember.userId],
       set: {
         role: membership.role,
+        status: membership.status,
+        invitedByUserId: membership.invitedByUserId,
+        invitedAt: membership.invitedAt,
+        acceptedAt: membership.acceptedAt,
         updatedAt: membership.updatedAt,
       },
     })

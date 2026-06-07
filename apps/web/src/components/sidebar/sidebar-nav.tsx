@@ -40,11 +40,11 @@ const workspaceItems: NavItem[] = [
     icon: BarChart3Icon,
     to: "/$workspaceSlug/analytics",
   },
-  {
-    label: "Review settings",
-    icon: Settings2Icon,
-    to: "/$workspaceSlug/settings",
-  },
+  // {
+  //   label: "Review settings",
+  //   icon: Settings2Icon,
+  //   to: "/$workspaceSlug/settings",
+  // },
 ]
 
 const managementItems: NavItem[] = [
@@ -61,11 +61,11 @@ const managementItems: NavItem[] = [
 ]
 
 const resourceItems = [
-  {
-    label: "CLI",
-    icon: TerminalIcon,
-    href: "https://docs.example.com/cli",
-  },
+  // {
+  //   label: "CLI",
+  //   icon: TerminalIcon,
+  //   href: "https://docs.example.com/cli",
+  // },
   {
     label: "Docs",
     icon: BookOpenIcon,
@@ -94,7 +94,8 @@ function NavSection({
         {items.map((item) => {
           const hrefSuffix = item.to.replace("/$workspaceSlug", "")
           const isActive =
-            !!workspaceSlug && currentPath.startsWith(`/${workspaceSlug}${hrefSuffix}`)
+            !!workspaceSlug &&
+            currentPath.startsWith(`/${workspaceSlug}${hrefSuffix}`)
           const Icon = item.icon
 
           if (item.disabled || !workspaceSlug) {

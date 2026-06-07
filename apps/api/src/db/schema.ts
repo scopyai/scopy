@@ -32,6 +32,10 @@ export const workspaceMemberRole = pgEnum("workspace_member_role", [
   "admin",
   "member",
 ])
+export const workspaceMemberStatus = pgEnum("workspace_member_status", [
+  "active",
+  "pending",
+])
 export const pullRequestState = pgEnum("pull_request_state", [
   "open",
   "closed",
@@ -210,6 +214,12 @@ export const workspaceMember = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: workspaceMemberRole("role").default("member").notNull(),
+    status: workspaceMemberStatus("status").default("active").notNull(),
+    invitedByUserId: text("invited_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    invitedAt: timestamp("invited_at"),
+    acceptedAt: timestamp("accepted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -529,6 +539,10 @@ export const workspaceMemberRelations = relations(
     }),
     user: one(user, {
       fields: [workspaceMember.userId],
+      references: [user.id],
+    }),
+    invitedByUser: one(user, {
+      fields: [workspaceMember.invitedByUserId],
       references: [user.id],
     }),
   })
