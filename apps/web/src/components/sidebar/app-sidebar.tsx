@@ -1,6 +1,6 @@
-import { Separator } from "@workspace/ui/components/separator"
 import { WorkspaceSwitcher } from "./workspace-switcher"
 import { SidebarNav } from "./sidebar-nav"
+import { SidebarFeedback } from "./sidebar-feedback"
 import { UserMenu } from "./user-menu"
 
 export function AppSidebar() {
@@ -14,8 +14,8 @@ export function AppSidebar() {
         <SidebarNav />
       </div>
 
-      <Separator />
-      <div className="p-2">
+      <div className="flex shrink-0 flex-col gap-2 p-2">
+        <SidebarFeedback />
         <UserMenu />
       </div>
     </aside>

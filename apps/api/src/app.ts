@@ -10,6 +10,7 @@ import { meRoutes } from './modules/me'
 import { webhookRoutes } from './modules/webhooks'
 import { workspaceRoutes } from './modules/workspaces'
 import { billingRoutes } from './modules/billing'
+import { feedbackRoutes } from './modules/feedback'
 	
 export const app = new Elysia({
 	name: 'api',
@@ -28,6 +29,7 @@ export const app = new Elysia({
 	.use(githubRoutes)
 	.use(workspaceRoutes)
 	.use(billingRoutes)
+	.use(feedbackRoutes)
 	.use(webhookRoutes)
 
 export type App = typeof app

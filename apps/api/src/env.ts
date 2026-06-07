@@ -55,5 +55,7 @@ export const env = z
       .int()
       .nonnegative()
       .default(90_000),
+    TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+    TELEGRAM_FEEDBACK_CHAT_ID: z.string().min(1).optional(),
   })
   .parse(process.env)
