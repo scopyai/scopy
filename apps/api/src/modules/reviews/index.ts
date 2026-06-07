@@ -23,6 +23,8 @@ import {
 import {
   findOrCreateReviewComment,
   listPullRequestFiles,
+  publishPullRequestReview,
+  type PullRequestReviewEvent,
   reviewFailedBody,
   updateReviewComment,
 } from "./github"
@@ -32,11 +34,12 @@ import {
   type ReviewReportEvidenceValidation,
 } from "./evidence"
 import {
+  buildReviewAgentInspectionRetryPrompt,
   buildReviewAgentPrompt,
   buildReviewAgentRepairPrompt,
   buildReviewVerifierPrompt,
   renderAffectedSymbols,
-  renderReviewReport,
+  renderReviewSummaryComment,
   renderSemanticCoverage,
   reviewAgentInstructions,
   reviewReportSchema,
@@ -52,6 +55,15 @@ import { prepareReviewRuntime } from "./runtime"
 export const REVIEW_MODEL = env.REVIEW_MODEL
 export const REVIEW_VERIFIER_MODEL =
   env.REVIEW_VERIFIER_MODEL ?? env.REVIEW_MODEL
+const reviewModelProviderOptions = REVIEW_MODEL.startsWith("openai/")
+  ? {
+      openrouter: {
+        reasoning: {
+          effort: "low",
+        },
+      },
+    }
+  : undefined
 
 type Logger = {
   info: (message: string, details?: Record<string, unknown>) => void
@@ -77,6 +89,10 @@ export type ReviewAgentResult = {
   filteredFileCount: number
   diffCharacterCount: number
   commentId: number
+  reviewId?: number
+  reviewEvent?: PullRequestReviewEvent
+  inlineCommentCount?: number
+  inlineReviewPublishError?: string
   skipReason?: string
   mergeSafetyScore?: number
   usage?: Record<string, unknown>
@@ -118,19 +134,11 @@ const applyVerification = (
   const findings = candidates.filter((finding) =>
     confirmed.has(finding.candidateId)
   )
-  if (findings.length === 0) {
-    return {
-      summary: "No candidate findings were confirmed by verification.",
-      mergeSafetyScore: 5,
-      mergeSafetyReason:
-        "The verifier did not confirm any actionable issue in the candidate report.",
-      findings,
-    }
-  }
+
   return {
-    summary: verification.summary,
-    mergeSafetyScore: verification.mergeSafetyScore,
-    mergeSafetyReason: verification.mergeSafetyReason,
+    summary: report.summary,
+    mergeSafetyScore: report.mergeSafetyScore,
+    mergeSafetyReason: report.mergeSafetyReason,
     findings,
   }
 }
@@ -492,20 +500,23 @@ export const runReviewAgent = async ({
         }),
       }
     : baseTools
-  const reviewAgent = new ToolLoopAgent({
-    model: openrouter.chat(REVIEW_MODEL),
-    instructions: reviewAgentInstructions,
-    tools,
-    output: Output.object({
-      schema: reviewReportSchema,
-      name: "review_report",
-      description: "Structured pull request review report",
-    }),
-    maxRetries: 2,
-    onStepFinish: async (step) => {
-      await recorder.recordStep(step)
-    },
-  })
+  const createReviewAgent = () =>
+    new ToolLoopAgent({
+      model: openrouter.chat(REVIEW_MODEL),
+      instructions: reviewAgentInstructions,
+      tools,
+      providerOptions: reviewModelProviderOptions,
+      output: Output.object({
+        schema: reviewReportSchema,
+        name: "review_report",
+        description: "Structured pull request review report",
+      }),
+      maxRetries: 2,
+      onStepFinish: async (step) => {
+        await recorder.recordStep(step)
+      },
+    })
+  const reviewAgent = createReviewAgent()
   await recorder.writeText(
     "context/review-instructions.txt",
     reviewAgentInstructions
@@ -528,14 +539,67 @@ export const runReviewAgent = async ({
     semanticEnabled,
     semanticContextPreloaded: false,
   })
-  const generation = await reviewAgent.generate({ prompt })
-  const initialReport = reviewReportSchema.parse(generation.output)
+  let generation = await reviewAgent.generate({ prompt })
+  let initialReport = reviewReportSchema.parse(generation.output)
   await recorder.writeJson("agent-output.json", {
     finishReason: generation.finishReason,
     usage: generation.totalUsage,
     output: generation.output,
     text: generation.text,
   })
+  const initialGenerationToolCalls = recorder.counts().toolCalls
+  const initialGenerationUsage = generation.totalUsage
+  let inspectionRerunUsage: unknown
+  if (initialGenerationToolCalls === 0) {
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "inspection-rerun",
+      reason: "report_without_tool_calls",
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "inspection-rerun",
+      reason: "report_without_tool_calls",
+    })
+    const retryPrompt = buildReviewAgentInspectionRetryPrompt({
+      originalPrompt: prompt,
+    })
+    await recorder.writeText("context/inspection-rerun-prompt.txt", retryPrompt)
+    await recorder.writeJson("context/inspection-rerun-prompt-stats.json", {
+      promptBytes: textBytes(retryPrompt),
+    })
+    generation = await createReviewAgent().generate({ prompt: retryPrompt })
+    inspectionRerunUsage = generation.totalUsage
+    initialReport = reviewReportSchema.parse(generation.output)
+    await recorder.writeJson("agent-inspection-rerun-output.json", {
+      finishReason: generation.finishReason,
+      usage: generation.totalUsage,
+      output: generation.output,
+      text: generation.text,
+    })
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "inspection-rerun",
+      usage: generation.totalUsage,
+      findings: initialReport.findings.length,
+      toolCalls: recorder.counts().toolCalls - initialGenerationToolCalls,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "inspection-rerun",
+      usage: generation.totalUsage,
+      findings: initialReport.findings.length,
+      toolCalls: recorder.counts().toolCalls - initialGenerationToolCalls,
+    })
+    if (recorder.counts().toolCalls === initialGenerationToolCalls) {
+      logger.info("Review agent accepted no-tool rerun", {
+        ...context,
+        stage: "inspection-rerun",
+        findings: initialReport.findings.length,
+      })
+      await recorder.appendEvent("inspection-rerun.accepted_without_tools", {
+        findings: initialReport.findings.length,
+      })
+    }
+  }
   await recorder.writeJson("candidate-review-report.json", initialReport)
   let report = initialReport
   let reportValidation: ReviewReportEvidenceValidation =
@@ -568,9 +632,7 @@ export const runReviewAgent = async ({
       report,
       validation: {
         ...reportValidation,
-        findings: reportValidation.findings.filter(
-          (finding) => !finding.valid
-        ),
+        findings: reportValidation.findings.filter((finding) => !finding.valid),
       },
     })
     await recorder.writeText("context/repair-prompt.txt", repairPrompt)
@@ -727,7 +789,11 @@ export const runReviewAgent = async ({
       )
     : []
   const finalReport = applyVerification(report, candidateFindings, verification)
-  const renderedReport = renderReviewReport(finalReport)
+  const renderedReport = renderReviewSummaryComment({
+    report: finalReport,
+    files: filteredFiles,
+    inlineReview: { kind: "not_needed" },
+  })
   await recorder.writeJson("review-report.json", finalReport)
   await recorder.writeJson("rejected-findings.json", rejectedFindings)
   await recorder.writeText("rendered-comment.md", renderedReport)
@@ -735,7 +801,8 @@ export const runReviewAgent = async ({
     ...context,
     stage: "generation",
     usage: {
-      review: generation.totalUsage,
+      review: initialGenerationUsage,
+      inspectionRerun: inspectionRerunUsage,
       repair: repairUsage,
       verification: verificationUsage,
     },
@@ -748,7 +815,8 @@ export const runReviewAgent = async ({
   await recorder.appendEvent("stage.completed", {
     stage: "generation",
     usage: {
-      review: generation.totalUsage,
+      review: initialGenerationUsage,
+      inspectionRerun: inspectionRerunUsage,
       repair: repairUsage,
       verification: verificationUsage,
     },
@@ -761,16 +829,112 @@ export const runReviewAgent = async ({
 
   logger.info("Review agent stage started", { ...context, stage: "publish" })
   await recorder.appendEvent("stage.started", { stage: "publish" })
+  let publishedReport = renderedReport
   await updateReviewComment({
     repo: repository,
     installationId,
     commentId,
     pullRequestId: pullRequest.id,
-    body: renderedReport,
+    body: publishedReport,
   })
+  let reviewId: number | undefined
+  let reviewEvent: PullRequestReviewEvent | undefined
+  let inlineCommentCount: number | undefined
+  let inlineReviewPublishError: string | undefined
+  if (finalReport.findings.length > 0) {
+    let inlineReview: {
+      reviewId: number
+      inlineCommentCount: number
+      event: PullRequestReviewEvent
+    } | null = null
+    try {
+      inlineReview = await publishPullRequestReview({
+        repo: repository,
+        installationId,
+        pullRequestNumber: pullRequest.number,
+        headSha: pullRequest.headSha,
+        findings: finalReport.findings,
+      })
+    } catch (error) {
+      inlineReviewPublishError =
+        error instanceof Error
+          ? error.message
+          : "Unknown inline review publish error"
+      logger.error("Failed to publish inline pull request review", {
+        ...context,
+        stage: "publish",
+        commentId,
+        error,
+      })
+      await recorder.writeJson("inline-review-error.json", {
+        message: inlineReviewPublishError,
+        error,
+      })
+      await recorder.appendEvent("inline_review.failed", {
+        message: inlineReviewPublishError,
+        findings: finalReport.findings.length,
+      })
+      publishedReport = renderReviewSummaryComment({
+        report: finalReport,
+        files: filteredFiles,
+        inlineReview: {
+          kind: "failed",
+          error: inlineReviewPublishError,
+        },
+      })
+      try {
+        await updateReviewComment({
+          repo: repository,
+          installationId,
+          commentId,
+          pullRequestId: pullRequest.id,
+          body: publishedReport,
+        })
+      } catch (fallbackError) {
+        logger.error("Failed to publish inline review fallback summary", {
+          ...context,
+          stage: "publish",
+          commentId,
+          error: fallbackError,
+        })
+      }
+    }
+    if (inlineReview) {
+      reviewId = inlineReview.reviewId
+      reviewEvent = inlineReview.event
+      inlineCommentCount = inlineReview.inlineCommentCount
+      publishedReport = renderReviewSummaryComment({
+        report: finalReport,
+        files: filteredFiles,
+        inlineReview: {
+          kind: "published",
+          inlineCommentCount: inlineReview.inlineCommentCount,
+        },
+      })
+      try {
+        await updateReviewComment({
+          repo: repository,
+          installationId,
+          commentId,
+          pullRequestId: pullRequest.id,
+          body: publishedReport,
+        })
+      } catch (summaryError) {
+        logger.error("Failed to update summary after inline review publish", {
+          ...context,
+          stage: "publish",
+          commentId,
+          reviewId,
+          reviewEvent,
+          inlineCommentCount,
+          error: summaryError,
+        })
+      }
+    }
+  }
   const result = {
     kind: "summary" as const,
-    summary: renderedReport,
+    summary: publishedReport,
     triggerSource,
     modelId: REVIEW_MODEL,
     verifierModelId: REVIEW_VERIFIER_MODEL,
@@ -778,9 +942,14 @@ export const runReviewAgent = async ({
     filteredFileCount: filteredFiles.length,
     diffCharacterCount,
     commentId,
+    reviewId,
+    reviewEvent,
+    inlineCommentCount,
+    inlineReviewPublishError,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     usage: {
-      review: generation.totalUsage,
+      review: initialGenerationUsage,
+      inspectionRerun: inspectionRerunUsage,
       repair: repairUsage,
       verification: verificationUsage,
     } as unknown as Record<string, unknown>,
@@ -808,22 +977,34 @@ export const runReviewAgent = async ({
     generatedCandidateFindings: initialReport.findings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
     confirmedFindings: finalReport.findings.length,
+    inlineCommentCount,
+    reviewId,
+    reviewEvent,
+    inlineReviewPublishError,
     rejectedFindings: rejectedFindings.length,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     usage: result.usage,
     counts: recorder.counts(),
     durationMs: result.durationMs,
   })
-  await recorder.writeText("published-comment.md", renderedReport)
+  await recorder.writeText("published-comment.md", publishedReport)
   logger.info("Review agent stage completed", {
     ...context,
     stage: "publish",
     commentId,
+    reviewId,
+    reviewEvent,
+    inlineCommentCount,
+    inlineReviewPublishError,
     durationMs: result.durationMs,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "publish",
     commentId,
+    reviewId,
+    reviewEvent,
+    inlineCommentCount,
+    inlineReviewPublishError,
     durationMs: result.durationMs,
   })
   await recorder.appendEvent("review.completed", result)

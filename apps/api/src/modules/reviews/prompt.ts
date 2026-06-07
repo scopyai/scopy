@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { CodeChunk, DiffContextResult, RepositoryCodeIndex } from "tools"
+import type { PullRequestFile } from "./diff"
 
 export const reviewFindingSchema = z.object({
   severity: z.enum(["critical", "high", "medium", "low"]),
@@ -231,18 +232,21 @@ Merge safety score:
 4 = mostly safe; minor concerns or low-risk follow-up.
 5 = safe to merge; no actionable issues found.`
 
-export const reviewVerifierInstructions = `Verify pull request review reports for false positives and duplicates.
+export const reviewVerifierInstructions = `Verify candidate pull request findings for truthfulness only.
 
-Your job is to confirm, reject, and deduplicate candidate findings. Do not add new findings.
-Each candidate finding has a candidateId. Every verification decision must copy the exact candidateId string from the candidate finding it evaluates.
-A finding is confirmed only when its file/startLine/endLine range is valid and the exact claim is directly supported by the diff or by tool results you inspect.
-If a finding is plausible but not proven, mark it unconfirmed.
-If the selected range does not support the claim, mark it unconfirmed even if a nearby issue might exist.
-If two findings describe the same underlying problem, confirm the clearest and most specific one and mark the duplicates unconfirmed.
-If a finding depends on implementation details outside the diff, inspect the relevant symbol or file range.
-If a finding depends on call-site behavior, inspect callers.
-Use locate_text only as a locator for exact identifiers, strings, route paths, config keys, env vars, table or column names, and imports. Prefer symbol tools after it returns locations.
-Use semantic code search only when the semantic search tool is available and exact text is unknown.`
+Your job is narrow: remove lies, unsupported claims, invalid review ranges, and duplicates. Do not judge whether a true finding is important enough to publish.
+
+Rules:
+- Every verification decision must copy the exact candidateId string from the candidate finding it evaluates.
+- Confirm a finding when its factual claim is true or reasonably supported by the diff or inspected code.
+- Confirm true findings even when they are low severity, light impact, non-blocking, easy to fix, or mostly a maintainability, reliability, performance, UX, documentation, or follow-up concern.
+- Confirm true findings even when a more serious finding also exists. Severity is already represented on the finding; do not use verification to suppress light findings.
+- Reject a finding only when the claim is false, clearly unsupported by the diff and inspected code, attached to an invalid or non-reviewable range, or duplicates the same underlying issue as another confirmed finding.
+- Do not reject a true finding because behavior might be intentional. If the finding accurately describes a real behavior or tradeoff in the changed code, confirm it.
+- Do not rewrite findings, change severity, or add new findings.
+
+When a candidate depends on code outside the visible diff, inspect the relevant symbol, callers, or file range before rejecting it.
+Use tools only to decide whether the candidate claim is true.`
 
 export const buildReviewAgentPrompt = ({
   title,
@@ -302,6 +306,24 @@ ${JSON.stringify(report, null, 2)}
 
 Location validation failures:
 ${JSON.stringify(validation, null, 2)}`
+
+export const buildReviewAgentInspectionRetryPrompt = ({
+  originalPrompt,
+}: {
+  originalPrompt: string
+}) => `${originalPrompt}
+
+This review pass must inspect repository context with tools before returning the final report.
+
+Inspect the changed backend/security-relevant symbols and their callers with the available tools before returning the final report.
+
+Pay special attention to:
+- authorization helpers and routes that accept alternate credentials such as share tokens, API keys, session cookies, or tenant ids
+- endpoints that accept both a path resource id and a token/query/body credential
+- whether the authorization check binds the credential to the exact resource id used by later data-loading code
+- changed helper functions reused by multiple endpoints
+
+Only return a final report after that inspection is complete.`
 
 export const buildReviewVerifierPrompt = ({
   title,
@@ -381,6 +403,92 @@ export const renderReviewReport = (report: ReviewReport) => {
         "",
       )
     }
+  }
+
+  return sections.join("\n").trim()
+}
+
+type InlineReviewPublishStatus =
+  | { kind: "not_needed" }
+  | { kind: "published"; inlineCommentCount: number }
+  | { kind: "failed"; error: string }
+
+const renderChangedFiles = (files: PullRequestFile[]) => {
+  if (files.length === 0) {
+    return "No reviewable changed files."
+  }
+
+  return files
+    .map(
+      (file) =>
+        `- \`${file.filename}\` (${file.status}, +${file.additions} -${file.deletions})`,
+    )
+    .join("\n")
+}
+
+const renderInlineFindingSummary = (report: ReviewReport) => {
+  if (report.findings.length === 0) {
+    return "No actionable inline findings."
+  }
+
+  return report.findings
+    .map(
+      (finding) =>
+        `- [${finding.severity}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``,
+    )
+    .join("\n")
+}
+
+export const renderReviewSummaryComment = ({
+  report,
+  files,
+  inlineReview,
+}: {
+  report: ReviewReport
+  files: PullRequestFile[]
+  inlineReview: InlineReviewPublishStatus
+}) => {
+  const sections = [
+    "## Review summary",
+    "",
+    report.summary,
+    "",
+    "## Changed files",
+    "",
+    renderChangedFiles(files),
+    "",
+    "## Merge safety",
+    "",
+    `**${scoreLabel(report.mergeSafetyScore)}**`,
+    "",
+    report.mergeSafetyReason,
+    "",
+    "## Inline findings",
+    "",
+  ]
+
+  if (inlineReview.kind === "published") {
+    sections.push(
+      `${inlineReview.inlineCommentCount} inline review comment${
+        inlineReview.inlineCommentCount === 1 ? " was" : "s were"
+      } published in a GitHub review.`,
+    )
+  } else if (inlineReview.kind === "failed") {
+    sections.push(
+      "I could not publish the inline GitHub review comments. Findings are listed here so they are not lost.",
+      "",
+      renderInlineFindingSummary(report),
+      "",
+      `Publish error: ${inlineReview.error}`,
+    )
+  } else if (report.findings.length === 0) {
+    sections.push("No actionable findings.")
+  } else {
+    sections.push(
+      `${report.findings.length} inline review comment${
+        report.findings.length === 1 ? " is" : "s are"
+      } ready to publish.`,
+    )
   }
 
   return sections.join("\n").trim()
