@@ -10,6 +10,7 @@ import {
 const analyticsQuerySchema = z.object({
   range: z.enum(analyticsRangeValues).default("last_30_days"),
   repositoryIds: z.string().optional(),
+  authorIds: z.string().optional(),
 })
 
 export const analyticsRoutes = protectedRoute("/workspaces").get(
@@ -34,6 +35,7 @@ export const analyticsRoutes = protectedRoute("/workspaces").get(
         workspaceId: params.workspaceId,
         range: parsed.data.range,
         repositoryIds: parsed.data.repositoryIds,
+        authorIds: parsed.data.authorIds,
       })
     } catch (error) {
       if (error instanceof AnalyticsError) {

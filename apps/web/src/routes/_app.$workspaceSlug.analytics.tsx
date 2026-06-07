@@ -41,6 +41,7 @@ import {
 const searchSchema = z.object({
   range: z.enum(workspaceAnalyticsRanges).catch("last_30_days"),
   repositoryId: z.string().optional(),
+  authorId: z.string().optional(),
 })
 
 export const Route = createFileRoute("/_app/$workspaceSlug/analytics")({
@@ -49,7 +50,7 @@ export const Route = createFileRoute("/_app/$workspaceSlug/analytics")({
 })
 
 function AnalyticsRoute() {
-  const { range, repositoryId } = Route.useSearch()
+  const { range, repositoryId, authorId } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const { selectedWorkspaceId } = useWorkspaceContext()
 
@@ -57,9 +58,14 @@ function AnalyticsRoute() {
     useRepositories(selectedWorkspaceId)
 
   const repositoryIds = repositoryId ? [repositoryId] : []
+  const authorIds = authorId ? [authorId] : []
 
   const { data, isPending, isFetching, isError, refetch } =
-    useWorkspaceAnalytics(selectedWorkspaceId, { range, repositoryIds })
+    useWorkspaceAnalytics(selectedWorkspaceId, {
+      range,
+      repositoryIds,
+      authorIds,
+    })
 
   const isInitialLoad = isPending && !data
   const isRefreshing = isFetching && !!data
@@ -72,7 +78,17 @@ function AnalyticsRoute() {
 
   function handleRepositoryChange(newRepositoryId: string | undefined) {
     navigate({
-      search: (prev) => ({ ...prev, repositoryId: newRepositoryId }),
+      search: (prev) => ({
+        ...prev,
+        repositoryId: newRepositoryId,
+        authorId: undefined,
+      }),
+    })
+  }
+
+  function handleAuthorChange(newAuthorId: string | undefined) {
+    navigate({
+      search: (prev) => ({ ...prev, authorId: newAuthorId }),
     })
   }
 
@@ -102,6 +118,10 @@ function AnalyticsRoute() {
             onRepositoryChange={handleRepositoryChange}
             repositories={repositories ?? []}
             repositoriesPending={repositoriesPending}
+            authorId={authorId}
+            onAuthorChange={handleAuthorChange}
+            authors={data?.availableAuthors ?? []}
+            authorsPending={isInitialLoad}
             isLoading={isRefreshing}
           />
 

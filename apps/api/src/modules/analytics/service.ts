@@ -5,6 +5,7 @@ import {
   repository,
   reviewFinding,
   reviewRun,
+  type ProviderActor,
 } from "../../db/schema"
 
 export const analyticsRangeValues = [
@@ -105,6 +106,12 @@ const parseRepositoryIds = (repositoryIds: string | undefined) =>
     .map((id) => id.trim())
     .filter(Boolean)
 
+const parseAuthorIds = (authorIds: string | undefined) =>
+  (authorIds ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+
 const getRepositoryFilter = async (
   workspaceId: string,
   repositoryIds: string | undefined,
@@ -132,12 +139,31 @@ const getRepositoryFilter = async (
   return { selectedRepositoryIds: uniqueIds }
 }
 
+const getAuthorFilter = (authorIds: string | undefined) => {
+  const selectedAuthorIds = [...new Set(parseAuthorIds(authorIds))]
+  return {
+    selectedAuthorIds:
+      selectedAuthorIds.length > 0 ? selectedAuthorIds : null,
+  }
+}
+
 const withRepositoryFilter = (
   selectedRepositoryIds: string[] | null,
   conditions: Parameters<typeof and>,
 ) =>
   selectedRepositoryIds
     ? [...conditions, inArray(repository.id, selectedRepositoryIds)]
+    : conditions
+
+const withAuthorFilter = (
+  selectedAuthorIds: string[] | null,
+  conditions: Parameters<typeof and>,
+) =>
+  selectedAuthorIds
+    ? [
+        ...conditions,
+        inArray(sql`${pullRequest.author}->>'id'`, selectedAuthorIds),
+      ]
     : conditions
 
 const withDateRange = <TColumn>(
@@ -154,6 +180,7 @@ const withDateRange = <TColumn>(
 const getCompletedReviewConditions = (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) =>
@@ -161,16 +188,20 @@ const getCompletedReviewConditions = (
     reviewRun.completedAt,
     start,
     end,
-    withRepositoryFilter(selectedRepositoryIds, [
-      eq(repository.workspaceId, workspaceId),
-      eq(reviewRun.status, "completed"),
-      isNotNull(reviewRun.completedAt),
-    ]),
+    withAuthorFilter(
+      selectedAuthorIds,
+      withRepositoryFilter(selectedRepositoryIds, [
+        eq(repository.workspaceId, workspaceId),
+        eq(reviewRun.status, "completed"),
+        isNotNull(reviewRun.completedAt),
+      ]),
+    ),
   )
 
 const getPullRequestConditions = (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
   dateColumn: typeof pullRequest.openedAt | typeof pullRequest.mergedAt,
@@ -179,14 +210,18 @@ const getPullRequestConditions = (
     dateColumn,
     start,
     end,
-    withRepositoryFilter(selectedRepositoryIds, [
-      eq(repository.workspaceId, workspaceId),
-    ]),
+    withAuthorFilter(
+      selectedAuthorIds,
+      withRepositoryFilter(selectedRepositoryIds, [
+        eq(repository.workspaceId, workspaceId),
+      ]),
+    ),
   )
 
 const getCompletedReviewRowsByDay = async (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) =>
@@ -203,6 +238,7 @@ const getCompletedReviewRowsByDay = async (
         ...getCompletedReviewConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
         ),
@@ -214,6 +250,7 @@ const getCompletedReviewRowsByDay = async (
 const getFindingRowsByDay = async (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) =>
@@ -231,6 +268,7 @@ const getFindingRowsByDay = async (
         ...getCompletedReviewConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
         ),
@@ -242,6 +280,7 @@ const getFindingRowsByDay = async (
 const getPullRequestRowsByDay = async (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) =>
@@ -257,6 +296,7 @@ const getPullRequestRowsByDay = async (
         ...getPullRequestConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
           pullRequest.openedAt,
@@ -269,6 +309,7 @@ const getPullRequestRowsByDay = async (
 const getSummary = async (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) => {
@@ -285,6 +326,7 @@ const getSummary = async (
         ...getCompletedReviewConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
         ),
@@ -304,6 +346,7 @@ const getSummary = async (
         ...getCompletedReviewConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
         ),
@@ -322,6 +365,7 @@ const getSummary = async (
         ...getPullRequestConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
           pullRequest.mergedAt,
@@ -348,6 +392,7 @@ const getSummary = async (
 const getSeverityDistribution = async (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) => {
@@ -365,6 +410,7 @@ const getSeverityDistribution = async (
         ...getCompletedReviewConditions(
           workspaceId,
           selectedRepositoryIds,
+          selectedAuthorIds,
           start,
           end,
         ),
@@ -382,12 +428,14 @@ const getSeverityDistribution = async (
 const getCodebaseHealth = async (
   workspaceId: string,
   selectedRepositoryIds: string[] | null,
+  selectedAuthorIds: string[] | null,
   start: Date | null,
   end: Date,
 ) => {
   const conditions = getCompletedReviewConditions(
     workspaceId,
     selectedRepositoryIds,
+    selectedAuthorIds,
     start,
     end,
   )
@@ -435,21 +483,54 @@ const getCodebaseHealth = async (
   }
 }
 
+const getAvailableAuthors = async (
+  workspaceId: string,
+  selectedRepositoryIds: string[] | null,
+) => {
+  const rows = await db
+    .select({ author: pullRequest.author })
+    .from(pullRequest)
+    .innerJoin(repository, eq(repository.id, pullRequest.repositoryId))
+    .where(
+      and(
+        ...withRepositoryFilter(selectedRepositoryIds, [
+          eq(repository.workspaceId, workspaceId),
+          isNotNull(pullRequest.author),
+        ]),
+      ),
+    )
+
+  const authorsById = new Map<string, ProviderActor>()
+
+  for (const row of rows) {
+    const author = row.author
+    if (!author?.id || !author.login) continue
+    authorsById.set(author.id, author)
+  }
+
+  return [...authorsById.values()].sort((a, b) =>
+    a.login.localeCompare(b.login),
+  )
+}
+
 export const getWorkspaceAnalytics = async ({
   workspaceId,
   range,
   repositoryIds,
+  authorIds,
   now = new Date(),
 }: {
   workspaceId: string
   range: AnalyticsRange
   repositoryIds?: string
+  authorIds?: string
   now?: Date
 }) => {
   const { selectedRepositoryIds } = await getRepositoryFilter(
     workspaceId,
     repositoryIds,
   )
+  const { selectedAuthorIds } = getAuthorFilter(authorIds)
   const window = resolveAnalyticsWindow(range, now)
   const { start, end } = window
 
@@ -460,19 +541,52 @@ export const getWorkspaceAnalytics = async ({
     pullRequestRows,
     severityDistribution,
     codebaseHealth,
+    availableAuthors,
   ] = await Promise.all([
-    getSummary(workspaceId, selectedRepositoryIds, start, end),
-    getCompletedReviewRowsByDay(workspaceId, selectedRepositoryIds, start, end),
-    getFindingRowsByDay(workspaceId, selectedRepositoryIds, start, end),
-    getPullRequestRowsByDay(workspaceId, selectedRepositoryIds, start, end),
-    getSeverityDistribution(workspaceId, selectedRepositoryIds, start, end),
-    getCodebaseHealth(workspaceId, selectedRepositoryIds, start, end),
+    getSummary(workspaceId, selectedRepositoryIds, selectedAuthorIds, start, end),
+    getCompletedReviewRowsByDay(
+      workspaceId,
+      selectedRepositoryIds,
+      selectedAuthorIds,
+      start,
+      end,
+    ),
+    getFindingRowsByDay(
+      workspaceId,
+      selectedRepositoryIds,
+      selectedAuthorIds,
+      start,
+      end,
+    ),
+    getPullRequestRowsByDay(
+      workspaceId,
+      selectedRepositoryIds,
+      selectedAuthorIds,
+      start,
+      end,
+    ),
+    getSeverityDistribution(
+      workspaceId,
+      selectedRepositoryIds,
+      selectedAuthorIds,
+      start,
+      end,
+    ),
+    getCodebaseHealth(
+      workspaceId,
+      selectedRepositoryIds,
+      selectedAuthorIds,
+      start,
+      end,
+    ),
+    getAvailableAuthors(workspaceId, selectedRepositoryIds),
   ])
 
   return {
     range,
     filters: {
       repositoryIds: selectedRepositoryIds ?? [],
+      authorIds: selectedAuthorIds ?? [],
     },
     window: {
       start,
@@ -489,5 +603,6 @@ export const getWorkspaceAnalytics = async ({
       mergedPrCount: summary.mergedPrCount,
     },
     prHeatmap: fillDailyBuckets(pullRequestRows, start, end),
+    availableAuthors,
   }
 }

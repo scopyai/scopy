@@ -16,6 +16,7 @@ export type WorkspaceAnalyticsRange =
 type WorkspaceAnalyticsOptions = {
   range?: WorkspaceAnalyticsRange
   repositoryIds?: string[]
+  authorIds?: string[]
 }
 
 export function useWorkspaceAnalytics(
@@ -25,6 +26,7 @@ export function useWorkspaceAnalytics(
   const { data: session } = authClient.useSession()
   const range = options.range ?? "last_30_days"
   const repositoryIds = options.repositoryIds ?? []
+  const authorIds = options.authorIds ?? []
 
   return useQuery({
     queryKey: [
@@ -33,6 +35,7 @@ export function useWorkspaceAnalytics(
       "analytics",
       range,
       [...repositoryIds].sort(),
+      [...authorIds].sort(),
     ],
     queryFn: async () => {
       const { data, error } = await api
@@ -42,6 +45,9 @@ export function useWorkspaceAnalytics(
             range,
             ...(repositoryIds.length > 0
               ? { repositoryIds: repositoryIds.join(",") }
+              : {}),
+            ...(authorIds.length > 0
+              ? { authorIds: authorIds.join(",") }
               : {}),
           },
         })
