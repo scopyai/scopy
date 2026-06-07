@@ -1,20 +1,22 @@
 import { Navigate } from "@tanstack/react-router"
 import { useWorkspaces } from "@/hooks/use-workspaces"
-import { getWorkspaceSlug } from "@/lib/workspace-slug"
+import { getActiveWorkspaces, getWorkspaceSlug } from "@/lib/workspace-slug"
 
 export function WorkspaceHomeRedirect() {
   const { data: workspaces, isPending } = useWorkspaces()
 
   if (isPending) return null
 
-  if (!workspaces?.length) {
+  const active = getActiveWorkspaces(workspaces)
+
+  if (!active.length) {
     return <Navigate to="/connect" replace />
   }
 
   return (
     <Navigate
       to="/$workspaceSlug/repositories"
-      params={{ workspaceSlug: getWorkspaceSlug(workspaces[0].workspace) }}
+      params={{ workspaceSlug: getWorkspaceSlug(active[0].workspace) }}
       replace
     />
   )

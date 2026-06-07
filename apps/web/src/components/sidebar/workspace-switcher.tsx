@@ -13,14 +13,20 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
-import { getWorkspaceSlug } from "@/lib/workspace-slug"
+import {
+  getWorkspaceSlug,
+  getActiveWorkspaces,
+  getPendingWorkspaces,
+} from "@/lib/workspace-slug"
 import { cn } from "@workspace/ui/lib/utils"
+import { PendingWorkspaceInvitations } from "./pending-workspace-invitations"
 
 const statusVariant = {
   active: "secondary",
@@ -34,12 +40,15 @@ export function WorkspaceSwitcher() {
   const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
   const navigate = useNavigate()
 
-  const selectedEntry = workspaces?.find(
+  const active = getActiveWorkspaces(workspaces)
+  const pending = getPendingWorkspaces(workspaces)
+
+  const selectedEntry = active.find(
     (w) => w.workspace.id === selectedWorkspaceId
   )
 
   const handleSelectWorkspace = (workspaceId: string) => {
-    const entry = workspaces?.find((w) => w.workspace.id === workspaceId)
+    const entry = active.find((w) => w.workspace.id === workspaceId)
     if (!entry) return
 
     navigate({
@@ -104,7 +113,7 @@ export function WorkspaceSwitcher() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="start" sideOffset={4}>
-        {workspaces?.map(({ workspace, role }) => (
+        {active.map(({ workspace, role }) => (
           <DropdownMenuItem
             key={workspace.id}
             onClick={() => handleSelectWorkspace(workspace.id)}
@@ -142,10 +151,18 @@ export function WorkspaceSwitcher() {
           </DropdownMenuItem>
         ))}
 
+        {pending.length > 0 && (
+          <>
+            {active.length > 0 && <DropdownMenuSeparator />}
+            <PendingWorkspaceInvitations pending={pending} />
+          </>
+        )}
+
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleAddOrg}
           disabled={fetchingUrl}
-          className="mt-0.5 gap-2"
+          className="gap-2"
         >
           <div className="flex size-4 items-center justify-center rounded-sm border border-dashed border-border">
             <Plus className="size-3" />

@@ -1,7 +1,11 @@
 import { Outlet, createFileRoute, Navigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
-import { getWorkspaceSlug, findWorkspaceBySlug } from "@/lib/workspace-slug"
+import {
+  getWorkspaceSlug,
+  findActiveWorkspaceBySlug,
+  getActiveWorkspaces,
+} from "@/lib/workspace-slug"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 
 export const Route = createFileRoute("/_app/$workspaceSlug")({
@@ -13,7 +17,7 @@ function WorkspaceLayout() {
   const { data: workspaces, isPending } = useWorkspaces()
   const { setSelectedWorkspaceId } = useWorkspaceContext()
 
-  const entry = findWorkspaceBySlug(workspaces, workspaceSlug)
+  const entry = findActiveWorkspaceBySlug(workspaces, workspaceSlug)
 
   useEffect(() => {
     setSelectedWorkspaceId(entry?.workspace.id ?? null)
@@ -21,8 +25,10 @@ function WorkspaceLayout() {
 
   if (isPending) return null
 
-  if (!entry && workspaces && workspaces.length > 0) {
-    const fallback = workspaces[0]
+  const active = getActiveWorkspaces(workspaces)
+
+  if (!entry && active.length > 0) {
+    const fallback = active[0]
     return (
       <Navigate
         to="/$workspaceSlug/repositories"

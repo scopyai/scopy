@@ -5,6 +5,7 @@ type WorkspaceLike = {
 
 type WorkspaceEntry = {
   workspace: WorkspaceLike
+  status?: string
 }
 
 /** URL segment for a workspace (GitHub org login, e.g. `acme-corp`). */
@@ -26,4 +27,28 @@ export function findWorkspaceById(
 ) {
   if (!workspaces || !workspaceId) return undefined
   return workspaces.find((entry) => entry.workspace.id === workspaceId)
+}
+
+export function getActiveWorkspaces<T extends WorkspaceEntry>(
+  workspaces: T[] | undefined
+): T[] {
+  if (!workspaces) return []
+  return workspaces.filter((e) => e.status === "active")
+}
+
+export function getPendingWorkspaces<T extends WorkspaceEntry>(
+  workspaces: T[] | undefined
+): T[] {
+  if (!workspaces) return []
+  return workspaces.filter((e) => e.status === "pending")
+}
+
+export function findActiveWorkspaceBySlug<T extends WorkspaceEntry>(
+  workspaces: T[] | undefined,
+  slug: string | undefined
+): T | undefined {
+  if (!workspaces || !slug) return undefined
+  return getActiveWorkspaces(workspaces).find(
+    (entry) => getWorkspaceSlug(entry.workspace) === slug
+  )
 }

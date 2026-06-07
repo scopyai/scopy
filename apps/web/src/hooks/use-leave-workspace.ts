@@ -6,7 +6,9 @@ export function useLeaveWorkspace() {
 
   return useMutation({
     mutationFn: async (workspaceId: string) => {
-      const { data, error } = await api.workspaces({ workspaceId }).delete()
+      const { data, error } = await api
+        .workspaces({ workspaceId })
+        .members.me.delete()
       if (error) throw error
       return data
     },

@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import {
-  CreditCardIcon,
   ExternalLinkIcon,
   RefreshCwIcon,
   Settings2Icon,
@@ -28,12 +27,13 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { PageHeader } from "@/components/page-header"
+import { WorkspaceMembers } from "@/components/team/workspace-members"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
 import { useLeaveWorkspace } from "@/hooks/use-leave-workspace"
 import { useWorkspaceGithubLinks } from "@/hooks/use-workspace-github-links"
-
+import { authClient } from "@/lib/auth-client"
 import { getWorkspaceSlug } from "@/lib/workspace-slug"
 
 export const Route = createFileRoute("/_app/$workspaceSlug/manage-team")({
@@ -47,8 +47,11 @@ function ManageTeamRoute() {
   const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
   const leaveWorkspace = useLeaveWorkspace()
   const { data: githubLinks } = useWorkspaceGithubLinks(selectedWorkspaceId)
+  const { data: session } = authClient.useSession()
   const navigate = useNavigate()
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
+
+  void workspaceSlug
 
   const selectedEntry = workspaces?.find(
     (w) => w.workspace.id === selectedWorkspaceId
@@ -120,94 +123,78 @@ function ManageTeamRoute() {
       <PageHeader icon={UsersIcon} title="Manage Team" />
 
       <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCardIcon className="size-4 text-muted-foreground" />
-                Billing
-              </CardTitle>
-              <CardDescription>
-                Manage your subscription, payment methods, and invoices.
-              </CardDescription>
-            </CardHeader>
-            <CardFooter>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  navigate({
-                    to: "/$workspaceSlug/billing",
-                    params: { workspaceSlug },
-                  })
-                }
-              >
-                Go to Billing
-              </Button>
-            </CardFooter>
-          </Card>
+        <div className="flex flex-col gap-6">
+          {session?.user.id && (
+            <WorkspaceMembers
+              workspaceId={selectedWorkspaceId}
+              currentUserId={session.user.id}
+              currentUserRole={selectedEntry.role as "owner" | "admin" | "member"}
+            />
+          )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Settings2Icon className="size-4 text-muted-foreground" />
-                GitHub Configuration
-              </CardTitle>
-              <CardDescription>
-                {isReinstall
-                  ? "The GitHub App installation needs to be reinstalled."
-                  : "Manage repository access and permissions on GitHub."}
-              </CardDescription>
-            </CardHeader>
-            <CardFooter>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleConfigureGitHub}
-                disabled={
-                  fetchingUrl ||
-                  (!isReinstall && !githubLinks?.installationSettingsUrl)
-                }
-              >
-                {isReinstall ? (
-                  <>
-                    <RefreshCwIcon className="size-3.5" />
-                    {fetchingUrl ? "Loading…" : "Reinstall on GitHub"}
-                  </>
-                ) : (
-                  <>
-                    <ExternalLinkIcon className="size-3.5" />
-                    Configure on GitHub
-                  </>
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
-
-          {selectedEntry.role === "owner" && (
-            <Card className="border-destructive/30">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base text-destructive">
-                  <UnlinkIcon className="size-4" />
-                  Leave Workspace
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Settings2Icon className="size-4 text-muted-foreground" />
+                  GitHub Configuration
                 </CardTitle>
                 <CardDescription>
-                  Remove this workspace from your dashboard. The GitHub App
-                  installation will remain active.
+                  {isReinstall
+                    ? "The GitHub App installation needs to be reinstalled."
+                    : "Manage repository access and permissions on GitHub."}
                 </CardDescription>
               </CardHeader>
               <CardFooter>
                 <Button
-                  variant="destructive"
+                  variant="outline"
                   size="sm"
-                  onClick={() => setLeaveDialogOpen(true)}
-                  disabled={leaveWorkspace.isPending}
+                  onClick={handleConfigureGitHub}
+                  disabled={
+                    fetchingUrl ||
+                    (!isReinstall && !githubLinks?.installationSettingsUrl)
+                  }
                 >
-                  Leave workspace
+                  {isReinstall ? (
+                    <>
+                      <RefreshCwIcon className="size-3.5" />
+                      {fetchingUrl ? "Loading…" : "Reinstall on GitHub"}
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLinkIcon className="size-3.5" />
+                      Configure on GitHub
+                    </>
+                  )}
                 </Button>
               </CardFooter>
             </Card>
-          )}
+
+            {selectedEntry.role !== "owner" && (
+              <Card className="border-destructive/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base text-destructive">
+                    <UnlinkIcon className="size-4" />
+                    Leave Workspace
+                  </CardTitle>
+                  <CardDescription>
+                    Remove yourself from this workspace. You will lose access to
+                    its repositories and reviews.
+                  </CardDescription>
+                </CardHeader>
+                <CardFooter>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setLeaveDialogOpen(true)}
+                    disabled={leaveWorkspace.isPending}
+                  >
+                    Leave workspace
+                  </Button>
+                </CardFooter>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
 
@@ -218,8 +205,8 @@ function ManageTeamRoute() {
               Leave {selectedEntry.workspace.name}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the workspace from your dashboard. The GitHub App
-              installation will remain active.
+              You will lose access to {selectedEntry.workspace.name} and its
+              repositories.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
