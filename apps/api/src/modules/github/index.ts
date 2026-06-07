@@ -159,9 +159,7 @@ const handleInstallationCallback = async ({
       console.error("Failed to verify GitHub installation ownership", error)
 
       if (error instanceof PersonalGitHubWorkspaceAlreadyConnectedError) {
-        return redirectWithGitHubError(
-          "personal_account_already_connected"
-        )
+        return redirectWithGitHubError("personal_account_already_connected")
       }
 
       return redirectWithGitHubError("installation_not_accessible")
@@ -198,6 +196,7 @@ const handleInstallationCallback = async ({
         .where(
           and(
             eq(workspaceMember.userId, currentUser.id),
+            eq(workspaceMember.status, "active"),
             eq(workspace.provider, "github"),
             eq(workspace.providerInstallationId, installationId),
             ne(workspace.connectionStatus, "deleted")
@@ -258,6 +257,7 @@ export const githubRoutes = protectedRoute("/github")
       .where(
         and(
           eq(workspaceMember.userId, currentUser.id),
+          eq(workspaceMember.status, "active"),
           eq(workspace.provider, "github")
         )
       )

@@ -3,6 +3,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
+import { checkRateLimit } from "../../lib/rate-limit"
 import {
   repository,
   pullRequest,
@@ -30,6 +31,10 @@ const inviteWorkspaceMemberSchema = z.object({
   email: z.email(),
   role: z.enum(["admin", "member"]).default("member"),
 })
+const inviteWorkspaceMemberRateLimit = {
+  limit: 10,
+  windowMs: 10 * 60 * 1000,
+}
 
 const updateWorkspaceMemberSchema = z.object({
   role: z.enum(["admin", "member"]),
@@ -52,7 +57,15 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get("/", async ({ user: currentUser }) => {
     return db
       .select({
-        workspace,
+        workspace: {
+          id: workspace.id,
+          provider: workspace.provider,
+          providerAccountLogin: workspace.providerAccountLogin,
+          providerAccountType: workspace.providerAccountType,
+          providerAccountAvatarUrl: workspace.providerAccountAvatarUrl,
+          name: workspace.name,
+          connectionStatus: workspace.connectionStatus,
+        },
         role: workspaceMember.role,
         status: workspaceMember.status,
       })
@@ -146,17 +159,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       return status(404, { error: "Workspace not found" })
     }
 
-    const [removedMembership] = await db
-      .delete(workspaceMember)
-      .where(
-        and(
-          eq(workspaceMember.workspaceId, params.workspaceId),
-          eq(workspaceMember.userId, currentUser.id)
-        )
-      )
-      .returning()
-
-    return removedMembership
+    return status(409, { error: "Workspace owners cannot leave yet" })
   })
   .get(
     "/:workspaceId/members",
@@ -168,6 +171,14 @@ export const workspaceRoutes = protectedRoute("/workspaces")
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
+      }
+
+      const memberConditions = [
+        eq(workspaceMember.workspaceId, params.workspaceId),
+      ]
+
+      if (!["owner", "admin"].includes(workspaceWithRole.role)) {
+        memberConditions.push(eq(workspaceMember.status, "active"))
       }
 
       return db
@@ -187,7 +198,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         })
         .from(workspaceMember)
         .innerJoin(user, eq(user.id, workspaceMember.userId))
-        .where(eq(workspaceMember.workspaceId, params.workspaceId))
+        .where(and(...memberConditions))
         .orderBy(asc(user.name))
     }
   )
@@ -208,6 +219,22 @@ export const workspaceRoutes = protectedRoute("/workspaces")
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
+      }
+
+      if (parsed.data.role === "admin" && workspaceWithRole.role !== "owner") {
+        return status(403, { error: "Only workspace owners can invite admins" })
+      }
+
+      const inviteRateLimit = checkRateLimit({
+        key: `workspace-member-invite:${params.workspaceId}:${currentUser.id}`,
+        ...inviteWorkspaceMemberRateLimit,
+      })
+
+      if (!inviteRateLimit.allowed) {
+        return status(429, {
+          error: "Too many member invites",
+          retryAfterSeconds: inviteRateLimit.retryAfterSeconds,
+        })
       }
 
       const inviteResult = await inviteWorkspaceMemberByEmail({

@@ -189,11 +189,12 @@ export const upsertGitHubWorkspace = async (
         ),
       })
     : null
+  const hasActiveMembership = existingMembership?.status === "active"
 
   if (
     existing &&
     providerAccountType === "user" &&
-    !existingMembership &&
+    !hasActiveMembership &&
     existing.installedByUserId !== userId
   ) {
     throw new PersonalGitHubWorkspaceAlreadyConnectedError()
@@ -239,16 +240,22 @@ export const upsertGitHubWorkspace = async (
     .returning()
 
   const role: WorkspaceMemberRole =
-    !existing || existing.installedByUserId === userId ? "owner" : "member"
+    existingMembership?.role ??
+    (!existing || existing.installedByUserId === userId ? "owner" : "member")
+  const membershipStatus = existingMembership?.status ?? ("active" as const)
+  const acceptedAt =
+    membershipStatus === "active"
+      ? (existingMembership?.acceptedAt ?? new Date())
+      : (existingMembership?.acceptedAt ?? null)
   const membership = {
     id: randomUUID(),
     workspaceId: savedWorkspace.id,
     userId,
     role,
-    status: "active" as const,
-    invitedByUserId: null,
-    invitedAt: null,
-    acceptedAt: new Date(),
+    status: membershipStatus,
+    invitedByUserId: existingMembership?.invitedByUserId ?? null,
+    invitedAt: existingMembership?.invitedAt ?? null,
+    acceptedAt,
     updatedAt: new Date(),
   }
 
