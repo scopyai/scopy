@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from "react"
 import { toast } from "sonner"
 import {
@@ -47,13 +45,19 @@ import {
 type MemberRole = "owner" | "admin" | "member"
 type MemberStatus = "active" | "pending"
 
-const roleBadgeVariant: Record<MemberRole, "default" | "secondary" | "outline"> = {
+const roleBadgeVariant: Record<
+  MemberRole,
+  "default" | "secondary" | "outline"
+> = {
   owner: "default",
   admin: "secondary",
   member: "outline",
 }
 
-const statusBadgeVariant: Record<MemberStatus, "default" | "secondary" | "outline"> = {
+const statusBadgeVariant: Record<
+  MemberStatus,
+  "default" | "secondary" | "outline"
+> = {
   active: "secondary",
   pending: "outline",
 }
@@ -98,7 +102,10 @@ export function WorkspaceMembers({
     }
   }
 
-  const handleRoleChange = async (memberId: string, role: "admin" | "member") => {
+  const handleRoleChange = async (
+    memberId: string,
+    role: "admin" | "member"
+  ) => {
     try {
       await updateMember.mutateAsync({ memberId, role })
       toast.success("Role updated")
@@ -252,11 +259,15 @@ export function WorkspaceMembers({
                         </div>
                       </TableCell>
                       <TableCell>
-                        {showActions && canChangeRole(memberRole, member.user.id) ? (
+                        {showActions &&
+                        canChangeRole(memberRole, member.user.id) ? (
                           <Select
                             value={memberRole}
                             onValueChange={(v) =>
-                              handleRoleChange(member.id, v as "admin" | "member")
+                              handleRoleChange(
+                                member.id,
+                                v as "admin" | "member"
+                              )
                             }
                             disabled={updateMember.isPending}
                           >

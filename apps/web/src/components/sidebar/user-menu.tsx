@@ -1,5 +1,3 @@
-"use client"
-
 import { Settings2Icon, LogOutIcon, ChevronsUpDown } from "lucide-react"
 import {
   Avatar,
