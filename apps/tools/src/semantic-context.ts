@@ -108,6 +108,7 @@ export type SearchReviewCodeInput = {
   reviewRunId: string
   query: string
   qdrant: QdrantInferenceConfig
+  indexedLogicalBytes?: number
   limit?: number
 }
 
@@ -120,6 +121,9 @@ export type SearchReviewCodeOutput = {
     queryBytes: number
     originalQueryBytes: number
     queryTruncated: boolean
+    queriedBytes: number
+    returnedBytes: number
+    queryUnits: number
   }
 }
 
@@ -172,6 +176,14 @@ const pointId = (chunk: Omit<CodeChunk, "id">) => {
     idHash.slice(20, 32),
   ].join("-")
 }
+
+const logicalVectorBytes = (
+  chunk: ReviewCodeChunk,
+  vectorSize: number,
+) =>
+  Buffer.byteLength(chunk.content, "utf8") +
+  Buffer.byteLength(JSON.stringify(chunk), "utf8") +
+  vectorSize * 4
 
 const fileChunkFor = ({
   repositoryKey,
@@ -711,6 +723,10 @@ export const indexReviewCodebase = async ({
     chunks: chunks.length,
     indexedFiles: new Set(chunks.map((chunk) => chunk.file)).size,
     ignoredFiles: index.ignoredFiles.length,
+    logicalWriteBytes: chunks.reduce(
+      (total, chunk) => total + logicalVectorBytes(chunk, qdrant.vectorSize),
+      0
+    ),
   }
 }
 
@@ -720,6 +736,7 @@ export const searchReviewCode = async ({
   reviewRunId,
   query,
   qdrant,
+  indexedLogicalBytes = 0,
   limit = 5,
 }: SearchReviewCodeInput): Promise<SearchReviewCodeOutput> => {
   const client = qdrantClient(qdrant)
@@ -740,16 +757,20 @@ export const searchReviewCode = async ({
       score: point.score,
     }))
   const markdown = renderSearchMarkdown(chunks)
+  const returnedBytes = Buffer.byteLength(markdown, "utf8")
 
   return {
     chunks,
     markdown,
     stats: {
       chunks: chunks.length,
-      bytes: Buffer.byteLength(markdown, "utf8"),
+      bytes: returnedBytes,
       queryBytes: normalizedQuery.bytes,
       originalQueryBytes: normalizedQuery.originalBytes,
       queryTruncated: normalizedQuery.truncated,
+      queriedBytes: indexedLogicalBytes,
+      returnedBytes,
+      queryUnits: 1,
     },
   }
 }

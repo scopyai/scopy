@@ -20,8 +20,10 @@ import { cn } from "@workspace/ui/lib/utils"
 import { useWorkspaceBillingCredits } from "@/hooks/use-workspace-billing-credits"
 import {
   formatDate,
+  formatDateRange,
   formatCreditTransactionAmount,
   formatCreditTransactionType,
+  formatUsageBalance,
 } from "@/lib/billing-format"
 
 const PAGE_SIZE = 25
@@ -43,7 +45,7 @@ export function CreditHistory({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Credit history</CardTitle>
+        <CardTitle>Usage history</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {isPending ? (
@@ -54,15 +56,16 @@ export function CreditHistory({
           </div>
         ) : !data || data.items.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No credit activity yet
+            No usage activity yet
           </p>
         ) : (
           <>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Period</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Reviews</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="text-right">Balance</TableHead>
                   <TableHead>Reason</TableHead>
@@ -74,10 +77,17 @@ export function CreditHistory({
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="text-muted-foreground">
-                        {formatDate(item.createdAt)}
+                        {item.periodStart && item.periodEnd
+                          ? formatDateRange(item.periodStart, item.periodEnd)
+                          : formatDate(item.createdAt)}
                       </TableCell>
                       <TableCell>
                         {formatCreditTransactionType(item.type)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {item.type === "usage_week"
+                          ? Number(item.transactionCount).toLocaleString("en-US")
+                          : "-"}
                       </TableCell>
                       <TableCell
                         className={cn(
@@ -90,7 +100,7 @@ export function CreditHistory({
                         {formatCreditTransactionAmount(amount)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {Number(item.balanceAfter)}
+                        {formatUsageBalance(Number(item.balanceAfter))}
                       </TableCell>
                       <TableCell className="max-w-56 truncate text-muted-foreground">
                         {item.reason}

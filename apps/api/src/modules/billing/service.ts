@@ -6,7 +6,7 @@ import type {
   NormalizedSubscriptionEntity,
   NormalizedWebhookEvent,
 } from "@creem_io/webhook-types"
-import { desc, eq, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import { workspace, workspaceCreditTransaction } from "../../db/schema"
 import { env } from "../../env"
@@ -79,6 +79,21 @@ const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
   creemCustomerId: value.creemCustomerId,
   creemSubscriptionId: value.creemSubscriptionId,
 })
+
+type CreditHistoryRow = {
+  id: string
+  type: "usage_week" | "reset" | "revoke"
+  amount: number
+  balanceAfter: number
+  reason: string
+  createdAt: Date
+  periodStart: Date | null
+  periodEnd: Date | null
+  transactionCount: number
+}
+
+const toHistoryDate = (value: Date | string) =>
+  value instanceof Date ? value : new Date(value)
 
 const resolveWorkspace = async (
   tx: Transaction,
@@ -363,19 +378,54 @@ export const listWorkspaceCreditTransactions = async (
   pageSize: number,
 ) => {
   const offset = (page - 1) * pageSize
-  const [items, [{ count }]] = await Promise.all([
-    db.query.workspaceCreditTransaction.findMany({
-      where: eq(workspaceCreditTransaction.workspaceId, workspaceId),
-      orderBy: [desc(workspaceCreditTransaction.createdAt)],
-      limit: pageSize,
-      offset,
-    }),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(workspaceCreditTransaction)
-      .where(eq(workspaceCreditTransaction.workspaceId, workspaceId)),
-  ])
-  return { items, page, pageSize, total: count }
+  const usageRows = await db
+    .select({
+      id: sql<string>`'usage-week:' || to_char(date_trunc('week', ${workspaceCreditTransaction.createdAt}), 'YYYY-MM-DD')`,
+      type: sql<CreditHistoryRow["type"]>`'usage_week'`,
+      amount: sql<number>`sum(${workspaceCreditTransaction.amount})::bigint`,
+      balanceAfter: sql<number>`(array_agg(${workspaceCreditTransaction.balanceAfter} order by ${workspaceCreditTransaction.createdAt} desc))[1]::bigint`,
+      reason: sql<string>`'weekly_review_usage'`,
+      createdAt: sql<Date>`max(${workspaceCreditTransaction.createdAt})`,
+      periodStart: sql<Date>`date_trunc('week', ${workspaceCreditTransaction.createdAt})`,
+      periodEnd: sql<Date>`date_trunc('week', ${workspaceCreditTransaction.createdAt}) + interval '7 days'`,
+      transactionCount: sql<number>`count(*)::int`,
+    })
+    .from(workspaceCreditTransaction)
+    .where(sql`${workspaceCreditTransaction.workspaceId} = ${workspaceId} and ${workspaceCreditTransaction.type} = 'usage_debit'`)
+    .groupBy(sql`date_trunc('week', ${workspaceCreditTransaction.createdAt})`)
+
+  const adjustmentRows = await db
+    .select({
+      id: workspaceCreditTransaction.id,
+      type: sql<CreditHistoryRow["type"]>`${workspaceCreditTransaction.type}`,
+      amount: workspaceCreditTransaction.amount,
+      balanceAfter: workspaceCreditTransaction.balanceAfter,
+      reason: workspaceCreditTransaction.reason,
+      createdAt: workspaceCreditTransaction.createdAt,
+      periodStart: sql<Date | null>`null`,
+      periodEnd: sql<Date | null>`null`,
+      transactionCount: sql<number>`1`,
+    })
+    .from(workspaceCreditTransaction)
+    .where(sql`${workspaceCreditTransaction.workspaceId} = ${workspaceId} and ${workspaceCreditTransaction.type} <> 'usage_debit'`)
+
+  const rows: CreditHistoryRow[] = [...usageRows, ...adjustmentRows]
+    .map((row) => ({
+      ...row,
+      amount: Number(row.amount),
+      balanceAfter: Number(row.balanceAfter),
+      createdAt: toHistoryDate(row.createdAt),
+      periodStart: row.periodStart ? toHistoryDate(row.periodStart) : null,
+      periodEnd: row.periodEnd ? toHistoryDate(row.periodEnd) : null,
+    }))
+    .sort((a, b) => {
+      const aSortDate = a.periodEnd ?? a.createdAt
+      const bSortDate = b.periodEnd ?? b.createdAt
+      return bSortDate.getTime() - aSortDate.getTime()
+    })
+  const items = rows.slice(offset, offset + pageSize)
+
+  return { items, page, pageSize, total: rows.length }
 }
 
 export const createWorkspaceCheckout = async (

@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm"
 import {
   boolean,
+  bigint,
   index,
   integer,
   jsonb,
@@ -55,7 +56,7 @@ export const workspaceBillingTier = pgEnum("workspace_billing_tier", [
 ])
 export const workspaceCreditTransactionType = pgEnum(
   "workspace_credit_transaction_type",
-  ["reset", "revoke"]
+  ["reset", "revoke", "usage_debit"]
 )
 
 export type ProviderActor = {
@@ -160,7 +161,9 @@ export const workspace = pgTable(
     lastSyncedAt: timestamp("last_synced_at"),
     billingTier: workspaceBillingTier("billing_tier").default("free").notNull(),
     billingStatus: text("billing_status").default("free").notNull(),
-    creditBalance: integer("credit_balance").default(0).notNull(),
+    creditBalance: bigint("credit_balance", { mode: "number" })
+      .default(0)
+      .notNull(),
     creemCustomerId: text("creem_customer_id"),
     creemSubscriptionId: text("creem_subscription_id"),
     billingPeriodStart: timestamp("billing_period_start"),
@@ -433,8 +436,8 @@ export const workspaceCreditTransaction = pgTable(
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
     type: workspaceCreditTransactionType("type").notNull(),
-    amount: integer("amount").notNull(),
-    balanceAfter: integer("balance_after").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    balanceAfter: bigint("balance_after", { mode: "number" }).notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     reason: text("reason").notNull(),
     metadata: jsonb("metadata")

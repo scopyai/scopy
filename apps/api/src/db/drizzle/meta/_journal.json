@@ -64,6 +64,13 @@
       "when": 1780428997703,
       "tag": "0008_skinny_lester",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780886400000,
+      "tag": "0009_usd_usage_credits",
+      "breakpoints": true
     }
   ]
 }

@@ -40,5 +40,20 @@ export const env = z
       .min(1)
       .default("sentence-transformers/all-minilm-l6-v2"),
     QDRANT_VECTOR_SIZE: z.coerce.number().int().positive().default(384),
+    VECTOR_WRITE_MICROUSD_PER_GIB: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(2_500_000),
+    VECTOR_QUERY_MICROUSD_PER_TIB: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(7_500),
+    VECTOR_NETWORK_MICROUSD_PER_GIB: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(90_000),
   })
   .parse(process.env)

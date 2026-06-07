@@ -29,6 +29,9 @@ export const reviewStartedBody =
 export const reviewFailedBody =
   "I could not complete this review after several retries. Please mention me again later to retry."
 
+export const reviewBalanceBlockedBody =
+  "I cannot start this review because this workspace has no remaining usage balance. Please update billing or wait for the next allowance reset."
+
 const severityLabel = (severity: ReviewFinding["severity"]) =>
   severity.toUpperCase()
 

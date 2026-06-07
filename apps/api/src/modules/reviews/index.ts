@@ -15,6 +15,12 @@ import { z } from "zod"
 import { env } from "../../env"
 import type { pullRequest, repository, reviewConfig } from "../../db/schema"
 import {
+  calculateVectorNetworkCostMicrocents,
+  calculateVectorQueryCostMicrocents,
+  calculateVectorWriteCostMicrocents,
+  resolveOpenRouterCost,
+} from "../billing/usage"
+import {
   filterPullRequestFiles,
   getDiffSkipReason,
   serializePullRequestFilesAsUnifiedDiff,
@@ -85,6 +91,7 @@ export type ReviewAgentResult = {
   summary?: string
   triggerSource: string
   modelId: string
+  verifierModelId?: string
   fetchedFileCount: number
   filteredFileCount: number
   diffCharacterCount: number
@@ -96,6 +103,19 @@ export type ReviewAgentResult = {
   skipReason?: string
   mergeSafetyScore?: number
   usage?: Record<string, unknown>
+  billing?: {
+    llmCostMicrocents: number
+    vectorWriteBytes: number
+    vectorQueryBytes: number
+    vectorNetworkBytes: number
+    vectorQueryCount: number
+    vectorWriteCostMicrocents: number
+    vectorQueryCostMicrocents: number
+    vectorNetworkCostMicrocents: number
+    totalCostMicrocents: number
+    llm: Record<string, unknown>
+    transactionId?: string
+  }
   startedAt: string
   completedAt: string
   durationMs: number
@@ -119,6 +139,32 @@ const toolText = (text: string, maxBytes = 90_000) => {
 }
 
 const textBytes = (text: string) => Buffer.byteLength(text, "utf8")
+
+const recordLlmBilling = async (
+  stages: Record<string, unknown>,
+  stage: string,
+  modelId: string,
+  generation: unknown,
+) => {
+  const cost = await resolveOpenRouterCost(generation)
+  if (cost.costMicrocents === null) {
+    throw new Error(`OpenRouter cost is missing for ${stage}`)
+  }
+  const usage =
+    typeof generation === "object" && generation !== null && "totalUsage" in generation
+      ? (generation as { totalUsage: unknown }).totalUsage
+      : undefined
+  stages[stage] = {
+    modelId,
+    usage,
+    costUsd: cost.cost,
+    costMicrocents: cost.costMicrocents,
+    providerMetadata: cost.providerMetadata,
+    generationId: cost.generationId,
+    generationUsage: cost.generationUsage,
+  }
+  return usage
+}
 
 const applyVerification = (
   report: ReviewReport,
@@ -327,6 +373,7 @@ export const runReviewAgent = async ({
   let qdrantChunks = 0
   let qdrantIndexedFiles = 0
   let qdrantIgnoredFiles = 0
+  let qdrantLogicalWriteBytes = 0
   if (semanticEnabled && runtime.qdrant) {
     const indexResult = await indexReviewCodebase({
       index: runtime.codeIndex,
@@ -339,6 +386,7 @@ export const runReviewAgent = async ({
     qdrantChunks = indexResult.chunks
     qdrantIndexedFiles = indexResult.indexedFiles
     qdrantIgnoredFiles = indexResult.ignoredFiles
+    qdrantLogicalWriteBytes = indexResult.logicalWriteBytes
   }
   logger.info("Review agent stage completed", {
     ...context,
@@ -350,6 +398,7 @@ export const runReviewAgent = async ({
     qdrantChunks,
     qdrantIndexedFiles,
     qdrantIgnoredFiles,
+    qdrantLogicalWriteBytes,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "runtime",
@@ -360,11 +409,16 @@ export const runReviewAgent = async ({
     qdrantChunks,
     qdrantIndexedFiles,
     qdrantIgnoredFiles,
+    qdrantLogicalWriteBytes,
   })
 
   logger.info("Review agent stage started", { ...context, stage: "generation" })
   await recorder.appendEvent("stage.started", { stage: "generation" })
   const openrouter = createOpenRouter({ apiKey: requireOpenRouterApiKey() })
+  const llmBilling: Record<string, unknown> = {}
+  let vectorQueryBytes = 0
+  let vectorNetworkBytes = 0
+  let vectorQueryCount = 0
   const baseTools = {
     read_file: tool({
       description:
@@ -484,8 +538,12 @@ export const runReviewAgent = async ({
               reviewRunId,
               qdrant: runtime.qdrant,
               query,
+              indexedLogicalBytes: qdrantLogicalWriteBytes,
               limit,
             })
+            vectorQueryBytes += result.stats.queriedBytes
+            vectorNetworkBytes += result.stats.returnedBytes
+            vectorQueryCount += result.stats.queryUnits
             const output = {
               ...result.stats,
               markdown: toolText(result.markdown),
@@ -540,15 +598,21 @@ export const runReviewAgent = async ({
     semanticContextPreloaded: false,
   })
   let generation = await reviewAgent.generate({ prompt })
+  const initialGenerationUsage = await recordLlmBilling(
+    llmBilling,
+    "review",
+    REVIEW_MODEL,
+    generation,
+  )
   let initialReport = reviewReportSchema.parse(generation.output)
   await recorder.writeJson("agent-output.json", {
     finishReason: generation.finishReason,
     usage: generation.totalUsage,
+    providerMetadata: generation.providerMetadata,
     output: generation.output,
     text: generation.text,
   })
   const initialGenerationToolCalls = recorder.counts().toolCalls
-  const initialGenerationUsage = generation.totalUsage
   let inspectionRerunUsage: unknown
   if (initialGenerationToolCalls === 0) {
     logger.info("Review agent stage started", {
@@ -568,11 +632,17 @@ export const runReviewAgent = async ({
       promptBytes: textBytes(retryPrompt),
     })
     generation = await createReviewAgent().generate({ prompt: retryPrompt })
-    inspectionRerunUsage = generation.totalUsage
+    inspectionRerunUsage = await recordLlmBilling(
+      llmBilling,
+      "inspectionRerun",
+      REVIEW_MODEL,
+      generation,
+    )
     initialReport = reviewReportSchema.parse(generation.output)
     await recorder.writeJson("agent-inspection-rerun-output.json", {
       finishReason: generation.finishReason,
       usage: generation.totalUsage,
+      providerMetadata: generation.providerMetadata,
       output: generation.output,
       text: generation.text,
     })
@@ -645,11 +715,17 @@ export const runReviewAgent = async ({
     const repairGeneration = await reviewAgent.generate({
       prompt: repairPrompt,
     })
-    repairUsage = repairGeneration.totalUsage
+    repairUsage = await recordLlmBilling(
+      llmBilling,
+      "repair",
+      REVIEW_MODEL,
+      repairGeneration,
+    )
     report = reviewReportSchema.parse(repairGeneration.output)
     await recorder.writeJson("agent-repair-output.json", {
       finishReason: repairGeneration.finishReason,
       usage: repairGeneration.totalUsage,
+      providerMetadata: repairGeneration.providerMetadata,
       output: repairGeneration.output,
       text: repairGeneration.text,
     })
@@ -752,11 +828,17 @@ export const runReviewAgent = async ({
       prompt: verificationPrompt,
     })
     verification = reviewVerificationSchema.parse(verificationGeneration.output)
-    verificationUsage = verificationGeneration.totalUsage
+    verificationUsage = await recordLlmBilling(
+      llmBilling,
+      "verification",
+      REVIEW_VERIFIER_MODEL,
+      verificationGeneration,
+    )
     await recorder.writeJson("verification-output.json", {
       finishReason: verificationGeneration.finishReason,
       modelId: REVIEW_VERIFIER_MODEL,
       usage: verificationGeneration.totalUsage,
+      providerMetadata: verificationGeneration.providerMetadata,
       output: verificationGeneration.output,
       text: verificationGeneration.text,
     })
@@ -932,6 +1014,42 @@ export const runReviewAgent = async ({
       }
     }
   }
+  const llmCostMicrocents = Object.values(llmBilling).reduce<number>((total, value) => {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "costMicrocents" in value &&
+      typeof (value as { costMicrocents?: unknown }).costMicrocents === "number"
+    ) {
+      return total + (value as { costMicrocents: number }).costMicrocents
+    }
+    return total
+  }, 0)
+  const vectorWriteCostMicrocents = semanticEnabled
+    ? calculateVectorWriteCostMicrocents(qdrantLogicalWriteBytes)
+    : 0
+  const vectorQueryCostMicrocents = semanticEnabled
+    ? calculateVectorQueryCostMicrocents(vectorQueryBytes)
+    : 0
+  const vectorNetworkCostMicrocents = semanticEnabled
+    ? calculateVectorNetworkCostMicrocents(vectorNetworkBytes)
+    : 0
+  const billing = {
+    llmCostMicrocents,
+    vectorWriteBytes: qdrantLogicalWriteBytes,
+    vectorQueryBytes,
+    vectorNetworkBytes,
+    vectorQueryCount,
+    vectorWriteCostMicrocents,
+    vectorQueryCostMicrocents,
+    vectorNetworkCostMicrocents,
+    totalCostMicrocents:
+      llmCostMicrocents +
+      vectorWriteCostMicrocents +
+      vectorQueryCostMicrocents +
+      vectorNetworkCostMicrocents,
+    llm: llmBilling,
+  }
   const result = {
     kind: "summary" as const,
     summary: publishedReport,
@@ -953,6 +1071,7 @@ export const runReviewAgent = async ({
       repair: repairUsage,
       verification: verificationUsage,
     } as unknown as Record<string, unknown>,
+    billing,
     startedAt: startedAtIso,
     completedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
@@ -973,6 +1092,7 @@ export const runReviewAgent = async ({
     qdrantChunks,
     qdrantIndexedFiles,
     qdrantIgnoredFiles,
+    qdrantLogicalWriteBytes,
     candidateFindings: report.findings.length,
     generatedCandidateFindings: initialReport.findings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
@@ -984,6 +1104,7 @@ export const runReviewAgent = async ({
     rejectedFindings: rejectedFindings.length,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     usage: result.usage,
+    billing,
     counts: recorder.counts(),
     durationMs: result.durationMs,
   })

@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import { formatCredits, formatPeriodEnd } from "@/lib/billing-format"
+import { formatPeriodEnd, formatUsageBalance } from "@/lib/billing-format"
 
 type Tier = "free" | "premium" | "ultra" | "enterprise"
 
@@ -82,10 +82,10 @@ export function AccountSummary({
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs text-muted-foreground">
-                Credits remaining
+                Usage remaining
               </span>
               <span className="text-lg font-semibold tabular-nums">
-                {formatCredits(account.creditBalance)}
+                {formatUsageBalance(account.creditBalance)}
               </span>
             </div>
             <div className="flex flex-col gap-0.5">
@@ -93,7 +93,7 @@ export function AccountSummary({
                 Monthly allowance
               </span>
               <span className="text-lg font-semibold tabular-nums">
-                {formatCredits(account.monthlyAllowance)}
+                {formatUsageBalance(account.monthlyAllowance)}
               </span>
             </div>
             {!account.cancelAtPeriodEnd && account.periodEnd && (

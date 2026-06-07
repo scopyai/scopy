@@ -2,6 +2,15 @@ import { eq } from "drizzle-orm"
 import { db } from "../../db/client"
 import { reviewRun } from "../../db/schema"
 import {
+  debitReviewUsage,
+  hasPositiveUsageBalance,
+} from "../billing/usage"
+import {
+  findOrCreateReviewComment,
+  reviewBalanceBlockedBody,
+  updateReviewComment,
+} from "./github"
+import {
   publishReviewFailure,
   REVIEW_MODEL,
   runReviewAgent,
@@ -68,6 +77,61 @@ export const executeReviewPullRequest = async (
     return
   }
 
+  const workspaceId = run.pullRequest.repository.workspace.id
+  if (!(await hasPositiveUsageBalance(workspaceId))) {
+    let commentId: number | undefined
+    try {
+      commentId = await findOrCreateReviewComment({
+        repo: run.pullRequest.repository,
+        installationId:
+          run.pullRequest.repository.workspace.providerInstallationId,
+        pullRequestNumber: run.pullRequest.number,
+        pullRequestId: run.pullRequest.id,
+      })
+      await updateReviewComment({
+        repo: run.pullRequest.repository,
+        installationId:
+          run.pullRequest.repository.workspace.providerInstallationId,
+        commentId,
+        pullRequestId: run.pullRequest.id,
+        body: reviewBalanceBlockedBody,
+      })
+    } catch (publishError) {
+      logger.error("Failed to publish billing blocked notice", {
+        reviewRunId: run.id,
+        pullRequestId: run.pullRequestId,
+        error: publishError,
+      })
+    }
+
+    const completedAt = new Date()
+    await db
+      .update(reviewRun)
+      .set({
+        status: "skipped",
+        result: {
+          kind: "billing_blocked",
+          triggerSource:
+            typeof run.result?.triggerSource === "string"
+              ? run.result.triggerSource
+              : "automatic",
+          modelId: REVIEW_MODEL,
+          commentId,
+          skipReason: "workspace_balance_empty",
+          completedAt: completedAt.toISOString(),
+        },
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(eq(reviewRun.id, run.id))
+    logger.info("Skipped pull request review because workspace balance is empty", {
+      reviewRunId: run.id,
+      pullRequestId: run.pullRequestId,
+      workspaceId,
+    })
+    return
+  }
+
   await db
     .update(reviewRun)
     .set({
@@ -93,12 +157,44 @@ export const executeReviewPullRequest = async (
       triggerSource,
       logger,
     })
+    let resultToStore = result
+    if (result.kind === "summary" && result.billing) {
+      const transaction = await debitReviewUsage({
+        workspaceId,
+        reviewRunId: run.id,
+        pullRequestId: run.pullRequest.id,
+        repositoryId: run.pullRequest.repository.id,
+        modelId: result.modelId,
+        verifierModelId:
+          typeof result.verifierModelId === "string"
+            ? result.verifierModelId
+            : REVIEW_MODEL,
+        llmCostMicrocents: result.billing.llmCostMicrocents,
+        llmUsage: result.billing.llm,
+        vector: {
+          writeBytes: result.billing.vectorWriteBytes,
+          queryBytes: result.billing.vectorQueryBytes,
+          networkBytes: result.billing.vectorNetworkBytes,
+          queryCount: result.billing.vectorQueryCount,
+          writeCostMicrocents: result.billing.vectorWriteCostMicrocents,
+          queryCostMicrocents: result.billing.vectorQueryCostMicrocents,
+          networkCostMicrocents: result.billing.vectorNetworkCostMicrocents,
+        },
+      })
+      resultToStore = {
+        ...result,
+        billing: {
+          ...result.billing,
+          transactionId: transaction?.id,
+        },
+      }
+    }
 
     await db
       .update(reviewRun)
       .set({
         status: result.kind === "skipped" ? "skipped" : "completed",
-        result,
+        result: resultToStore,
         completedAt: new Date(),
         updatedAt: new Date(),
       })

@@ -13,7 +13,7 @@ import {
   AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog"
 import { cn } from "@workspace/ui/lib/utils"
-import { formatCredits, formatPlanPrice } from "@/lib/billing-format"
+import { formatPlanPrice, formatUsageBalance } from "@/lib/billing-format"
 import { contactSalesHref } from "@/lib/billing-contact"
 import {
   useCheckoutBilling,
@@ -106,7 +106,7 @@ function PlanCard({
       {plan.monthlyCredits !== null && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <ZapIcon className="size-3.5 shrink-0 text-primary" />
-          <span>{formatCredits(plan.monthlyCredits)} credits/month</span>
+          <span>{formatUsageBalance(plan.monthlyCredits)} usage/month</span>
         </div>
       )}
 
@@ -220,7 +220,7 @@ export function PlanCards({
             <AlertDialogDescription>
               Your subscription will be upgraded to Ultra immediately. Creem
               will charge the prorated amount for the remainder of the billing
-              period and your credit balance will be refreshed.
+              period and your usage balance will be refreshed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -246,8 +246,8 @@ export function PlanCards({
           <AlertDialogHeader>
             <AlertDialogTitle>Downgrade to Premium?</AlertDialogTitle>
             <AlertDialogDescription>
-              Your Ultra plan and remaining credits will stay active until the
-              end of the current billing period. Premium pricing and credits
+              Your Ultra plan and remaining usage balance will stay active until the
+              end of the current billing period. Premium pricing and usage
               will apply at the next renewal.
             </AlertDialogDescription>
           </AlertDialogHeader>
