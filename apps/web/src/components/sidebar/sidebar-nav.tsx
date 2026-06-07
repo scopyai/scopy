@@ -4,8 +4,6 @@ import {
   CreditCardIcon,
   ArrowUpRight,
   GitForkIcon,
-  Settings2Icon,
-  TerminalIcon,
   UsersIcon,
 } from "lucide-react"
 import { Link, useRouterState } from "@tanstack/react-router"

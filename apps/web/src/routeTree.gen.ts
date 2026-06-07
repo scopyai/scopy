@@ -16,6 +16,9 @@ import { Route as GithubInstallationRouteImport } from './routes/github.installa
 import { Route as GithubAuthorizationRouteImport } from './routes/github.authorization'
 import { Route as AppConnectRouteImport } from './routes/_app.connect'
 import { Route as AppWorkspaceSlugRouteImport } from './routes/_app.$workspaceSlug'
+import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
+import { Route as AppOnboardingOverviewRouteImport } from './routes/_app.onboarding.overview'
+import { Route as AppOnboardingConnectRouteImport } from './routes/_app.onboarding.connect'
 import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
 import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
 import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
@@ -57,6 +60,22 @@ const AppConnectRoute = AppConnectRouteImport.update({
 const AppWorkspaceSlugRoute = AppWorkspaceSlugRouteImport.update({
   id: '/$workspaceSlug',
   path: '/$workspaceSlug',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingRepositoriesRoute =
+  AppOnboardingRepositoriesRouteImport.update({
+    id: '/onboarding/repositories',
+    path: '/onboarding/repositories',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppOnboardingOverviewRoute = AppOnboardingOverviewRouteImport.update({
+  id: '/onboarding/overview',
+  path: '/onboarding/overview',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingConnectRoute = AppOnboardingConnectRouteImport.update({
+  id: '/onboarding/connect',
+  path: '/onboarding/connect',
   getParentRoute: () => AppRoute,
 } as any)
 const AppWorkspaceSlugSettingsRoute =
@@ -119,6 +138,9 @@ export interface FileRoutesByFullPath {
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/onboarding/connect': typeof AppOnboardingConnectRoute
+  '/onboarding/overview': typeof AppOnboardingOverviewRoute
+  '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
   '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -134,6 +156,9 @@ export interface FileRoutesByTo {
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/onboarding/connect': typeof AppOnboardingConnectRoute
+  '/onboarding/overview': typeof AppOnboardingOverviewRoute
+  '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
   '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -152,6 +177,9 @@ export interface FileRoutesById {
   '/_app/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/_app/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/_app/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/_app/onboarding/connect': typeof AppOnboardingConnectRoute
+  '/_app/onboarding/overview': typeof AppOnboardingOverviewRoute
+  '/_app/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
   '/_app/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/_app/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/_app/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -170,6 +198,9 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/manage-team'
     | '/$workspaceSlug/repositories'
     | '/$workspaceSlug/settings'
+    | '/onboarding/connect'
+    | '/onboarding/overview'
+    | '/onboarding/repositories'
     | '/$workspaceSlug/billing/success'
     | '/$workspaceSlug/repositories/$repositoryId'
     | '/$workspaceSlug/repositories/'
@@ -185,6 +216,9 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
     | '/$workspaceSlug/settings'
+    | '/onboarding/connect'
+    | '/onboarding/overview'
+    | '/onboarding/repositories'
     | '/$workspaceSlug/billing/success'
     | '/$workspaceSlug/repositories/$repositoryId'
     | '/$workspaceSlug/repositories'
@@ -202,6 +236,9 @@ export interface FileRouteTypes {
     | '/_app/$workspaceSlug/manage-team'
     | '/_app/$workspaceSlug/repositories'
     | '/_app/$workspaceSlug/settings'
+    | '/_app/onboarding/connect'
+    | '/_app/onboarding/overview'
+    | '/_app/onboarding/repositories'
     | '/_app/$workspaceSlug/billing/success'
     | '/_app/$workspaceSlug/repositories/$repositoryId'
     | '/_app/$workspaceSlug/repositories/'
@@ -264,6 +301,27 @@ declare module '@tanstack/react-router' {
       path: '/$workspaceSlug'
       fullPath: '/$workspaceSlug'
       preLoaderRoute: typeof AppWorkspaceSlugRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/repositories': {
+      id: '/_app/onboarding/repositories'
+      path: '/onboarding/repositories'
+      fullPath: '/onboarding/repositories'
+      preLoaderRoute: typeof AppOnboardingRepositoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/overview': {
+      id: '/_app/onboarding/overview'
+      path: '/onboarding/overview'
+      fullPath: '/onboarding/overview'
+      preLoaderRoute: typeof AppOnboardingOverviewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/connect': {
+      id: '/_app/onboarding/connect'
+      path: '/onboarding/connect'
+      fullPath: '/onboarding/connect'
+      preLoaderRoute: typeof AppOnboardingConnectRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/$workspaceSlug/settings': {
@@ -380,11 +438,17 @@ const AppWorkspaceSlugRouteWithChildren =
 interface AppRouteChildren {
   AppWorkspaceSlugRoute: typeof AppWorkspaceSlugRouteWithChildren
   AppConnectRoute: typeof AppConnectRoute
+  AppOnboardingConnectRoute: typeof AppOnboardingConnectRoute
+  AppOnboardingOverviewRoute: typeof AppOnboardingOverviewRoute
+  AppOnboardingRepositoriesRoute: typeof AppOnboardingRepositoriesRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceSlugRoute: AppWorkspaceSlugRouteWithChildren,
   AppConnectRoute: AppConnectRoute,
+  AppOnboardingConnectRoute: AppOnboardingConnectRoute,
+  AppOnboardingOverviewRoute: AppOnboardingOverviewRoute,
+  AppOnboardingRepositoriesRoute: AppOnboardingRepositoriesRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

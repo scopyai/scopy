@@ -2,13 +2,15 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { authClient } from "@/lib/auth-client"
 
-export function useInstallUrl() {
+export function useInstallUrl(source: "connect" | "onboarding" = "connect") {
   const { data: session } = authClient.useSession()
 
   return useQuery({
-    queryKey: ["github", "install-url"],
+    queryKey: ["github", "install-url", source],
     queryFn: async () => {
-      const { data, error } = await api.github["install-url"].get()
+      const { data, error } = await api.github["install-url"].get({
+        query: { source },
+      })
       if (error) throw error
       return data
     },

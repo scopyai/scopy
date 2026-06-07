@@ -2,7 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto"
 import { and, eq, ne } from "drizzle-orm"
 import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
-import { workspace, workspaceMember } from "../../db/schema"
+import { user, workspace, workspaceMember } from "../../db/schema"
 import { env } from "../../env"
 import {
   getGitHubInstallUrl,
@@ -23,6 +23,7 @@ type InstallState = {
   nonce: string
   expiresAt: number
   installationId?: string
+  source?: "connect" | "onboarding"
 }
 
 const sign = (payload: string) =>
@@ -33,7 +34,8 @@ const sign = (payload: string) =>
 const createInstallState = (
   userId: string,
   type: InstallState["type"] = "install",
-  installationId?: string
+  installationId?: string,
+  source: InstallState["source"] = "connect"
 ) => {
   const state: InstallState = {
     type,
@@ -41,6 +43,7 @@ const createInstallState = (
     nonce: randomUUID(),
     expiresAt: Date.now() + 10 * 60 * 1000,
     ...(installationId ? { installationId } : {}),
+    source,
   }
   const payload = Buffer.from(JSON.stringify(state)).toString("base64url")
 
@@ -87,7 +90,10 @@ const verifyInstallState = (
   }
 }
 
-const redirectAfterConnect = async (workspaceId: string) => {
+const redirectAfterConnect = async (
+  workspaceId: string,
+  source: InstallState["source"] = "connect"
+) => {
   const ws = await db.query.workspace.findFirst({
     where: eq(workspace.id, workspaceId),
   })
@@ -96,10 +102,11 @@ const redirectAfterConnect = async (workspaceId: string) => {
     return Response.redirect(new URL("/connect", env.FRONTEND_URL), 302)
   }
 
-  const url = new URL(
-    `/${encodeURIComponent(ws.providerAccountLogin)}/repositories`,
-    env.FRONTEND_URL
-  )
+  const path =
+    source === "onboarding"
+      ? "/onboarding/overview"
+      : `/${encodeURIComponent(ws.providerAccountLogin)}/repositories`
+  const url = new URL(path, env.FRONTEND_URL)
   url.searchParams.set("connected", "1")
   return Response.redirect(url, 302)
 }
@@ -112,7 +119,8 @@ const redirectWithGitHubError = (error: string) => {
 
 const connectGitHubInstallation = async (
   installationId: string,
-  userId: string
+  userId: string,
+  source: InstallState["source"] = "connect"
 ) => {
   const installation = await getGitHubInstallation(installationId)
   const savedWorkspace = await upsertGitHubWorkspace(installation, userId)
@@ -124,7 +132,17 @@ const connectGitHubInstallation = async (
     installation.repository_selection
   )
 
-  return redirectAfterConnect(savedWorkspace.id)
+  await db
+    .update(user)
+    .set({
+      onboardingStatus: "select_repositories",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(user.id, userId), eq(user.onboardingStatus, "connect_github"))
+    )
+
+  return redirectAfterConnect(savedWorkspace.id, source)
 }
 
 const handleInstallationCallback = async ({
@@ -153,7 +171,8 @@ const handleInstallationCallback = async ({
 
       return await connectGitHubInstallation(
         verifiedState.installationId,
-        currentUser.id
+        currentUser.id,
+        verifiedState.source
       )
     } catch (error) {
       console.error("Failed to verify GitHub installation ownership", error)
@@ -181,7 +200,8 @@ const handleInstallationCallback = async ({
           createInstallState(
             currentUser.id,
             "verify-installation",
-            installationId
+            installationId,
+            verifiedInstallState.source
           )
         ),
         302
@@ -234,10 +254,13 @@ const handleInstallationCallback = async ({
 }
 
 export const githubRoutes = protectedRoute("/github")
-  .get("/install-url", ({ user: currentUser, status }) => {
+  .get("/install-url", ({ query, user: currentUser, status }) => {
     try {
+      const source = query.source === "onboarding" ? "onboarding" : "connect"
       return {
-        url: getGitHubInstallUrl(createInstallState(currentUser.id)),
+        url: getGitHubInstallUrl(
+          createInstallState(currentUser.id, "install", undefined, source)
+        ),
       }
     } catch {
       return status(503, { error: "GitHub App is not configured" })

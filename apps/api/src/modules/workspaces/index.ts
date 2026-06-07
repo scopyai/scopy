@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, asc, desc, eq, isNull } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
@@ -42,6 +42,10 @@ const updateWorkspaceMemberSchema = z.object({
 
 const updateRepositorySchema = z.object({
   enabled: z.boolean().optional(),
+})
+
+const onboardingRepositoriesSchema = z.object({
+  repositoryIds: z.array(z.string()).default([]),
 })
 
 const updateReviewConfigSchema = z.object({
@@ -509,6 +513,86 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         .from(repository)
         .where(and(...conditions))
         .orderBy(asc(repository.fullName))
+    }
+  )
+  .post(
+    "/:workspaceId/onboarding/repositories",
+    async ({ body, params, user: currentUser, status }) => {
+      const parsed = onboardingRepositoriesSchema.safeParse(body)
+
+      if (!parsed.success) {
+        return status(400, { error: "Invalid onboarding repository selection" })
+      }
+
+      const workspaceWithRole = await requireWorkspaceRole(
+        params.workspaceId,
+        currentUser.id,
+        ["owner", "admin"]
+      ).catch(() => null)
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" })
+      }
+
+      const availableRepositories = await db
+        .select({ id: repository.id })
+        .from(repository)
+        .where(
+          and(
+            eq(repository.workspaceId, params.workspaceId),
+            isNull(repository.providerAccessRemovedAt)
+          )
+        )
+
+      const availableRepositoryIds = new Set(
+        availableRepositories.map((repo) => repo.id)
+      )
+      const selectedRepositoryIds = parsed.data.repositoryIds.filter((id) =>
+        availableRepositoryIds.has(id)
+      )
+      const now = new Date()
+
+      await db
+        .update(repository)
+        .set({
+          enabled: false,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(repository.workspaceId, params.workspaceId),
+            isNull(repository.providerAccessRemovedAt)
+          )
+        )
+
+      if (selectedRepositoryIds.length) {
+        await db
+          .update(repository)
+          .set({
+            enabled: true,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(repository.workspaceId, params.workspaceId),
+              inArray(repository.id, selectedRepositoryIds),
+              isNull(repository.providerAccessRemovedAt)
+            )
+          )
+      }
+
+      await db
+        .update(user)
+        .set({
+          onboardingStatus: "done",
+          updatedAt: now,
+        })
+        .where(eq(user.id, currentUser.id))
+
+      return {
+        enabled: selectedRepositoryIds.length,
+        total: availableRepositories.length,
+      }
     }
   )
   .get(

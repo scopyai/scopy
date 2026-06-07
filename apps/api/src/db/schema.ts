@@ -69,6 +69,11 @@ export const workspaceCreditTransactionType = pgEnum(
   "workspace_credit_transaction_type",
   ["reset", "revoke", "usage_debit"]
 )
+export const userOnboardingStatus = pgEnum("user_onboarding_status", [
+  "connect_github",
+  "select_repositories",
+  "done",
+])
 
 export type ProviderActor = {
   id: string
@@ -83,6 +88,9 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
+  onboardingStatus: userOnboardingStatus("onboarding_status")
+    .default("connect_github")
+    .notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
