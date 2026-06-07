@@ -14,10 +14,7 @@ import {
 } from "@workspace/ui/components/alert-dialog"
 import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
-import {
-  formatPlanPriceAmount,
-  formatUsageBalance,
-} from "@/lib/billing-format"
+import { formatPlanPriceAmount, formatUsageBalance } from "@/lib/billing-format"
 import { contactSalesHref } from "@/lib/billing-contact"
 import {
   useCheckoutBilling,
@@ -58,7 +55,7 @@ function getPlanAction(
   plan: Plan,
   accountTier: Tier,
   pendingTier: Tier | null,
-  planChangesDisabled: boolean,
+  planChangesDisabled: boolean
 ) {
   if (plan.slug === accountTier) return "current"
   if (plan.slug === pendingTier) return "pending"
@@ -93,10 +90,10 @@ function PlanCard({
     plan,
     accountTier,
     pendingTier,
-    planChangesDisabled,
+    planChangesDisabled
   )
   const isCurrent = action === "current"
-  const isRecommended = plan.slug === "premium"
+  const isRecommended = plan.slug === "ultra"
   const checkout = useCheckoutBilling(workspaceId)
   const features = planFeatures[plan.slug] ?? []
 
@@ -108,20 +105,18 @@ function PlanCard({
         isRecommended &&
           !isCurrent &&
           "border-primary/30 shadow-sm ring-1 ring-primary/15",
-        !isCurrent && !isRecommended && "border-border hover:border-border/80",
+        !isCurrent && !isRecommended && "border-border hover:border-border/80"
       )}
     >
       {isRecommended && !isCurrent && (
-        <span className="absolute -top-2.5 left-4 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-foreground">
+        <span className="absolute -top-2.5 left-4 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium tracking-wide text-primary-foreground uppercase">
           Recommended
         </span>
       )}
 
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-base font-semibold">
-            {plan.name}
-          </h3>
+          <h3 className="text-base font-semibold">{plan.name}</h3>
           {isCurrent && (
             <Badge variant="default" className="text-xs">
               Current

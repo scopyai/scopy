@@ -27,14 +27,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import { Skeleton } from "@workspace/ui/components/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@workspace/ui/components/table"
+import { cn } from "@workspace/ui/lib/utils"
 import { useWorkspaceMembers } from "@/hooks/use-workspace-members"
 import {
   useInviteWorkspaceMember,
@@ -143,16 +136,16 @@ export function WorkspaceMembers({
     return true
   }
 
+  const memberCount = members?.length ?? 0
+  const memberGridClass = canManage
+    ? "grid grid-cols-[auto_minmax(0,1fr)_5.5rem_4.5rem_3.5rem] items-center gap-3"
+    : "grid grid-cols-[auto_minmax(0,1fr)_5.5rem_4.5rem] items-center gap-3"
+  const roleSelectClassName =
+    "!h-6 w-full gap-1 py-0 pl-1.5 pr-1 text-xs shadow-none [&_svg]:size-3"
+
   return (
     <>
-      <section className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-base font-medium">Members</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage who has access to this workspace.
-          </p>
-        </div>
-
+      <section className="flex flex-col gap-2">
         {canManage && (
           <form
             onSubmit={handleInvite}
@@ -203,10 +196,14 @@ export function WorkspaceMembers({
           </p>
         )}
 
+        <div className={cn("flex flex-col gap-2", canManage && "mt-4")}>
         {membersLoading ? (
           <div className="flex flex-col gap-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-3 py-2">
+              <div
+                key={i}
+                className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
+              >
                 <Skeleton className="size-8 rounded-full" />
                 <div className="flex flex-1 flex-col gap-1.5">
                   <Skeleton className="h-3.5 w-32" />
@@ -217,116 +214,122 @@ export function WorkspaceMembers({
             ))}
           </div>
         ) : members && members.length > 0 ? (
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canManage && (
-                    <TableHead className="text-right">Actions</TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((member) => {
-                  const memberRole = member.role as MemberRole
-                  const memberStatus = member.status as MemberStatus
-                  const showActions = canManage
+          <div className="flex flex-col gap-2">
+            <div
+              className={`${memberGridClass} px-4 text-xs text-muted-foreground`}
+            >
+              <span className="col-span-2 flex h-6 items-center">
+                {memberCount} {memberCount === 1 ? "member" : "members"}
+              </span>
+              <span className="flex h-6 items-center">Role</span>
+              <span className="flex h-6 items-center">Status</span>
+              {canManage && (
+                <span className="flex h-6 items-center justify-end">
+                  Actions
+                </span>
+              )}
+            </div>
+            {members.map((member) => {
+              const memberRole = member.role as MemberRole
+              const memberStatus = member.status as MemberStatus
+              const showRoleSelect =
+                canManage && canChangeRole(memberRole, member.user.id)
+              const showRemove =
+                canManage && canRemove(memberRole, member.user.id)
 
-                  return (
-                    <TableRow key={member.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar size="sm">
-                            <AvatarImage
-                              src={member.user.image ?? undefined}
-                              alt={member.user.name}
-                            />
-                            <AvatarFallback>
-                              {member.user.name.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium">
-                              {member.user.name}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {member.user.email}
-                            </span>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {showActions &&
-                        canChangeRole(memberRole, member.user.id) ? (
-                          <Select
-                            value={memberRole}
-                            onValueChange={(v) =>
-                              handleRoleChange(
-                                member.id,
-                                v as "admin" | "member"
-                              )
-                            }
-                            disabled={updateMember.isPending}
-                          >
-                            <SelectTrigger className="h-7 w-24 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="member">Member</SelectItem>
-                              {currentUserRole === "owner" && (
-                                <SelectItem value="admin">Admin</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge
-                            variant={roleBadgeVariant[memberRole]}
-                            className="capitalize"
-                          >
-                            {memberRole}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={statusBadgeVariant[memberStatus]}
-                          className="capitalize"
+              return (
+                <div
+                  key={member.id}
+                  className={`${memberGridClass} rounded-lg border border-border bg-card px-4 py-2.5`}
+                >
+                  <Avatar size="sm">
+                    <AvatarImage
+                      src={member.user.image ?? undefined}
+                      alt={member.user.name}
+                    />
+                    <AvatarFallback>
+                      {member.user.name.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate text-sm font-medium">
+                      {member.user.name}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {member.user.email}
+                    </span>
+                  </div>
+                  <div className="flex h-6 items-center">
+                    {showRoleSelect ? (
+                      <Select
+                        value={memberRole}
+                        onValueChange={(v) =>
+                          handleRoleChange(member.id, v as "admin" | "member")
+                        }
+                        disabled={updateMember.isPending}
+                      >
+                        <SelectTrigger
+                          size="sm"
+                          className={roleSelectClassName}
                         >
-                          {memberStatus}
-                        </Badge>
-                      </TableCell>
-                      {showActions && (
-                        <TableCell className="text-right">
-                          {canRemove(memberRole, member.user.id) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-destructive hover:text-destructive"
-                              disabled={removeMember.isPending}
-                              onClick={() =>
-                                setRemoveTarget({
-                                  id: member.id,
-                                  name: member.user.name,
-                                })
-                              }
-                            >
-                              Remove
-                            </Button>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="member">Member</SelectItem>
+                          {currentUserRole === "owner" && (
+                            <SelectItem value="admin">Admin</SelectItem>
                           )}
-                        </TableCell>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge
+                        variant={roleBadgeVariant[memberRole]}
+                        className="capitalize"
+                      >
+                        {memberRole}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex h-6 items-center">
+                    <Badge
+                      variant={statusBadgeVariant[memberStatus]}
+                      className="capitalize"
+                    >
+                      {memberStatus}
+                    </Badge>
+                  </div>
+                  {canManage && (
+                    <div className="flex h-6 items-center justify-end">
+                      {showRemove ? (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={removeMember.isPending}
+                          onClick={() =>
+                            setRemoveTarget({
+                              id: member.id,
+                              name: member.user.name,
+                            })
+                          }
+                        >
+                          Remove
+                        </Button>
+                      ) : (
+                        <span className="inline-block w-[4.25rem]" aria-hidden />
                       )}
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No members yet.</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">
+            No members yet
+          </p>
         )}
+        </div>
       </section>
 
       <AlertDialog

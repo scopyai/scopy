@@ -19,13 +19,6 @@ import {
   AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog"
 import { Button } from "@workspace/ui/components/button"
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
 import { PageHeader } from "@/components/page-header"
 import { WorkspaceMembers } from "@/components/team/workspace-members"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
@@ -106,10 +99,13 @@ function ManageTeamRoute() {
 
   if (!selectedWorkspaceId || !selectedEntry) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">
-          Select an organization to manage
-        </p>
+      <div className="flex h-full flex-col overflow-hidden">
+        <PageHeader icon={UsersIcon} title="Manage Team" />
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-muted-foreground">
+            Select an organization to manage
+          </p>
+        </div>
       </div>
     )
   }
@@ -132,69 +128,68 @@ function ManageTeamRoute() {
             />
           )}
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Settings2Icon className="size-4 text-muted-foreground" />
-                  GitHub Configuration
-                </CardTitle>
-                <CardDescription>
+          <section className="flex flex-col gap-3 border-t border-border pt-5">
+            <p className="text-sm text-muted-foreground">Workspace settings</p>
+            <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+              <Settings2Icon className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">GitHub configuration</p>
+                <p className="text-xs text-muted-foreground">
                   {isReinstall
                     ? "The GitHub App installation needs to be reinstalled."
                     : "Manage repository access and permissions on GitHub."}
-                </CardDescription>
-              </CardHeader>
-              <CardFooter>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleConfigureGitHub}
-                  disabled={
-                    fetchingUrl ||
-                    (!isReinstall && !githubLinks?.installationSettingsUrl)
-                  }
-                >
-                  {isReinstall ? (
-                    <>
-                      <RefreshCwIcon className="size-3.5" />
-                      {fetchingUrl ? "Loading…" : "Reinstall on GitHub"}
-                    </>
-                  ) : (
-                    <>
-                      <ExternalLinkIcon className="size-3.5" />
-                      Configure on GitHub
-                    </>
-                  )}
-                </Button>
-              </CardFooter>
-            </Card>
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={handleConfigureGitHub}
+                disabled={
+                  fetchingUrl ||
+                  (!isReinstall && !githubLinks?.installationSettingsUrl)
+                }
+              >
+                {isReinstall ? (
+                  <>
+                    <RefreshCwIcon className="size-3.5" />
+                    {fetchingUrl ? "Loading…" : "Reinstall on GitHub"}
+                  </>
+                ) : (
+                  <>
+                    <ExternalLinkIcon className="size-3.5" />
+                    Configure on GitHub
+                  </>
+                )}
+              </Button>
+            </div>
 
             {selectedEntry.role !== "owner" && (
-              <Card className="border-destructive/30">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base text-destructive">
-                    <UnlinkIcon className="size-4" />
-                    Leave Workspace
-                  </CardTitle>
-                  <CardDescription>
+              <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-card px-4 py-3">
+                <UnlinkIcon className="size-4 shrink-0 text-destructive" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-destructive">
+                    Leave workspace
+                  </p>
+                  <p className="text-xs text-muted-foreground">
                     Remove yourself from this workspace. You will lose access to
                     its repositories and reviews.
-                  </CardDescription>
-                </CardHeader>
-                <CardFooter>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setLeaveDialogOpen(true)}
-                    disabled={leaveWorkspace.isPending}
-                  >
-                    Leave workspace
-                  </Button>
-                </CardFooter>
-              </Card>
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setLeaveDialogOpen(true)}
+                  disabled={leaveWorkspace.isPending}
+                >
+                  Leave workspace
+                </Button>
+              </div>
             )}
-          </div>
+            </div>
+          </section>
         </div>
       </div>
 
