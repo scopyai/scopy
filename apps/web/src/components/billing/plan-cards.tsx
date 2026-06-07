@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CheckIcon, MailIcon } from "lucide-react"
+import { CheckIcon, CircleCheckIcon, MailIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Badge } from "@workspace/ui/components/badge"
 import {
@@ -170,10 +170,10 @@ function PlanCard({
         )}
 
         {action === "current" && (
-          <div className="flex h-9 items-center justify-center gap-1.5 text-sm text-muted-foreground">
-            <CheckIcon className="size-4 text-primary" />
+          <Button variant="outline" className="w-full" disabled>
+            <CircleCheckIcon />
             Active plan
-          </div>
+          </Button>
         )}
 
         {action === "pending" && (

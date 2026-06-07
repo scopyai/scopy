@@ -73,8 +73,8 @@ export function BillingPage() {
         workspaceId={selectedWorkspaceId}
       />
 
-      <section className="relative flex flex-col gap-6">
-        <div className="pointer-events-none absolute -inset-x-8 -top-8 h-48 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/8 via-transparent to-transparent" />
+      <section className="relative flex flex-col gap-6 overflow-hidden">
+        <div className="pointer-events-none absolute inset-x-0 -top-8 h-48 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/8 via-transparent to-transparent" />
 
         <div className="relative flex flex-col gap-1">
           <h2 className="text-base font-semibold">

@@ -1,4 +1,4 @@
-import { Settings2Icon, LogOutIcon, ChevronsUpDown } from "lucide-react"
+import { LogOutIcon, ChevronsUpDown } from "lucide-react"
 import {
   Avatar,
   AvatarFallback,
@@ -56,11 +56,6 @@ export function UserMenu() {
             <span className="text-xs text-muted-foreground">{user?.email}</span>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled className="gap-2">
-          <Settings2Icon />
-          Settings
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
