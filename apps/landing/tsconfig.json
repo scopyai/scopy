@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["**/*.ts", "**/*.tsx", "eslint.config.js", "vite.config.ts"],
+  "exclude": [".output", ".tanstack", "dist", "node_modules"],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "allowJs": true,
+    "paths": {
+      "#/*": ["./src/*"],
+      "@/*": ["./src/*"],
+      "@workspace/ui/*": ["../../packages/ui/src/*"]
+    }
+  }
+}
