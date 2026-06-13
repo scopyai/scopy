@@ -34,6 +34,8 @@ RUN pnpm install --frozen-lockfile --prod --filter api...
 
 FROM node:22-alpine AS runner-base
 
+RUN apk add --no-cache git
+
 RUN addgroup -S app && adduser -S app -G app
 
 WORKDIR /repo/apps/api
@@ -47,6 +49,8 @@ COPY --from=builder --chown=app:app /repo/apps/tools /repo/apps/tools
 COPY --from=builder --chown=app:app /repo/apps/api/dist ./dist
 COPY --from=builder --chown=app:app /repo/apps/api/src/db/drizzle ./src/db/drizzle
 COPY --from=builder --chown=app:app /repo/apps/api/package.json ./package.json
+
+RUN mkdir -p .runs .data/reviews && chown -R app:app .runs .data
 
 USER app
 
