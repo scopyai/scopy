@@ -31,6 +31,7 @@
     "@elysiajs/cors": "^1.4.1",
     "@octokit/webhooks": "^14.2.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
+    "@qdrant/js-client-rest": "^1.18.0",
     "ai": "^6.0.193",
     "better-auth": "^1.6.5",
     "creem": "^1.4.5",
@@ -41,6 +42,13 @@
     "octokit": "^5.0.5",
     "pg": "^8.20.0",
     "tools": "workspace:*",
+    "tree-sitter": "^0.25.0",
+    "tree-sitter-go": "^0.25.0",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-typescript": "^0.23.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {

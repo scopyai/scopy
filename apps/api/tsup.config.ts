@@ -8,6 +8,7 @@ export default defineConfig({
   outDir: "dist",
   clean: true,
   external: [
+    "@qdrant/js-client-rest",
     "tree-sitter",
     "tree-sitter-go",
     "tree-sitter-java",
