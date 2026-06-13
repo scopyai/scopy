@@ -32,7 +32,7 @@ COPY apps/tools/package.json ./apps/tools/package.json
 
 RUN pnpm install --frozen-lockfile --prod --filter api...
 
-FROM node:22-alpine AS runner
+FROM node:22-alpine AS runner-base
 
 RUN addgroup -S app && adduser -S app -G app
 
@@ -52,4 +52,10 @@ USER app
 
 EXPOSE 3001
 
+FROM runner-base AS api-runner
+
 CMD ["sh", "-c", "node dist/migrate.js && node dist/index.js"]
+
+FROM runner-base AS worker-runner
+
+CMD ["sh", "-c", "node dist/migrate.js && node dist/worker.js"]

@@ -25,6 +25,7 @@ jobs:
 
     outputs:
       image: ${{ steps.image.outputs.image }}
+      worker-image: ${{ steps.image.outputs.worker-image }}
 
     steps:
       - name: Checkout
@@ -34,7 +35,9 @@ jobs:
         id: image
         run: |
           image="${REGISTRY}/${GITHUB_REPOSITORY,,}/api"
+          worker_image="${REGISTRY}/${GITHUB_REPOSITORY,,}/api-worker"
           echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "worker-image=${worker_image}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -46,15 +49,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push API image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
+          target: api-runner
           push: true
           tags: |
             ${{ steps.image.outputs.image }}:latest
             ${{ steps.image.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: worker-runner
+          push: true
+          tags: |
+            ${{ steps.image.outputs.worker-image }}:latest
+            ${{ steps.image.outputs.worker-image }}:${{ github.sha }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
 
@@ -66,6 +83,7 @@ jobs:
       - build-and-push
     env:
       DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_BACKEND_WEBHOOK_URL }}
+      DOKPLOY_WORKER_WEBHOOK_URL: ${{ secrets.DOKPLOY_BACKEND_WORKER_WEBHOOK_URL }}
       GITHUB_REF_NAME: ${{ github.ref_name }}
 
     steps:
@@ -79,6 +97,20 @@ jobs:
             --data "{\"ref\":\"refs/heads/${GITHUB_REF_NAME}\"}" \
             "$DOKPLOY_WEBHOOK_URL"
 
+      - name: Call worker webhook
+        if: ${{ env.DOKPLOY_WORKER_WEBHOOK_URL != '' }}
+        run: |
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "X-GitHub-Event: push" \
+            --header "content-type: application/json" \
+            --data "{\"ref\":\"refs/heads/${GITHUB_REF_NAME}\"}" \
+            "$DOKPLOY_WORKER_WEBHOOK_URL"
+
       - name: Skip redeploy
         if: ${{ env.DOKPLOY_WEBHOOK_URL == '' }}
         run: echo "DOKPLOY_BACKEND_WEBHOOK_URL is not configured; image was pushed but redeploy was skipped."
+
+      - name: Skip worker redeploy
+        if: ${{ env.DOKPLOY_WORKER_WEBHOOK_URL == '' }}
+        run: echo "DOKPLOY_BACKEND_WORKER_WEBHOOK_URL is not configured; worker image was pushed but redeploy was skipped."
