@@ -1,9 +1,9 @@
 ---
 title: "Architecture overview"
-description: "High-level map of the Review system."
+description: "High-level map of the Scopy system."
 ---
 
-Review is split into a typed web/API product surface, a worker-backed GitHub integration, and a repository analysis toolkit used by the review agent.
+Scopy is split into a typed web/API product surface, a worker-backed GitHub integration, and a repository analysis toolkit used by the review agent.
 
 ```mermaid
 flowchart LR
@@ -50,7 +50,7 @@ At a high level:
 6. The review model proposes findings.
 7. The verifier model confirms candidate findings.
 8. The API publishes a GitHub review comment and inline findings when possible.
-9. Review run, usage, billing, and debug metadata are persisted.
+9. Scopy review run, usage, billing, and debug metadata are persisted.
 
 ## Data model
 
@@ -59,8 +59,7 @@ The Drizzle schema in `apps/api/src/db/schema.ts` includes the major product con
 - Better Auth tables: `user`, `session`, `account`, `verification`.
 - Workspace installation state: `workspace`, `workspaceMember`, `repository`.
 - Pull request state and review history.
-- Review runs, findings, model usage, and billing transactions.
+- Scopy review runs, findings, model usage, and billing transactions.
 - Billing tier, subscription, credit balance, and usage accounting fields.
 
 Migrations live in `apps/api/src/db/drizzle`.
-

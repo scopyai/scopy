@@ -35,7 +35,7 @@ const howItWorksSteps = [
     icon: FolderGit2Icon,
     title: "Enable the repositories you want",
     description:
-      "Choose which repos Review should watch. You can update this anytime from repository settings.",
+      "Choose which repos Scopy should watch. You can update this anytime from repository settings.",
   },
   {
     icon: GitPullRequestIcon,
@@ -110,7 +110,7 @@ function OnboardingOverviewPage() {
           <CardHeader>
             <CardTitle>What to expect</CardTitle>
             <CardDescription>
-              Review runs in the background and keeps feedback where your team
+              Scopy runs in the background and keeps feedback where your team
               already works — on the pull request.
             </CardDescription>
           </CardHeader>

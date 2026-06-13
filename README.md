@@ -1,69 +1,60 @@
-# Review
+# Scopy
 
-Review is an open-source AI code review tool for GitHub pull requests. It is built as a TypeScript monorepo with:
+Scopy is an open-source AI code review tool for GitHub pull requests.
+
+It connects to GitHub, watches enabled repositories, reviews pull request diffs with an AI review engine, posts findings back to GitHub, and tracks review activity in a product dashboard.
+
+## Monorepo
 
 - `apps/web`: TanStack Start, React, shadcn/ui, React Query, Eden treaty
 - `apps/api`: Elysia, Better Auth, Drizzle, PostgreSQL, Graphile Worker
 - `apps/tools`: repository analysis, diff context, symbol lookup, text search, and semantic indexing utilities
+- `apps/landing`: marketing site
 - `packages/ui`: shared shadcn/ui components
 
-Developer documentation lives in [`docs/`](docs/) and is structured for Mintlify import.
+Scopy developer and product docs live in [`docs/`](docs/) and are structured for Mintlify.
 
 ## Quickstart
 
-Install dependencies:
-
 ```bash
 pnpm install
-```
-
-Create env files from the examples:
-
-```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
-```
-
-Run the app:
-
-```bash
 pnpm dev
 ```
 
-The product web app runs on `http://localhost:3000` and the API defaults to `http://localhost:3001`.
+Default local URLs:
+
+- Web app: `http://localhost:3000`
+- API: `http://localhost:3001`
+- Landing app: `http://localhost:3002`
 
 ## Docs
-
-Run the Mintlify docs locally from the repo root:
 
 ```bash
 pnpm docs:dev
 ```
 
-## API Types
+Start with:
 
-The web app consumes the API type through the `api` workspace package:
+- [`docs/index.mdx`](docs/index.mdx)
+- [`docs/quickstart.mdx`](docs/quickstart.mdx)
+- [`docs/product/how-review-works.mdx`](docs/product/how-review-works.mdx)
+- [`docs/architecture/overview.mdx`](docs/architecture/overview.mdx)
 
-```tsx
-import type { App } from "api";
-```
-
-Do not import API types through a frontend-only path alias such as `@api/*`; that breaks package resolution in monorepos.
-
-## Adding shadcn/ui Components
-
-To add shadcn/ui components, run this at the repo root:
+## Common Commands
 
 ```bash
-pnpm dlx shadcn@latest add button -c apps/web
+pnpm typecheck
+pnpm build
+pnpm --filter api test
+pnpm --filter tools test
 ```
 
-This will place the ui components in the `packages/ui/src/components` directory.
+## Development Rules
 
-## Using Components
-
-To use the components in your app, import them from the `ui` package.
-
-```tsx
-import { Button } from "@workspace/ui/components/button";
-```
+- Use React Query for frontend data fetching.
+- Use the Eden treaty client from `apps/web/src/lib/api.ts`.
+- Import API types from the `api` workspace package.
+- Prefer shared shadcn/ui components from `@workspace/ui`.
+- Add shadcn/ui components with `pnpm dlx shadcn@latest add <component> -c apps/web`.

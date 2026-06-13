@@ -41,8 +41,8 @@ export function formatCreditTransactionType(
   return {
     reset: "Allowance reset",
     revoke: "Revoked",
-    usage_debit: "Review usage",
-    usage_week: "Review usage",
+    usage_debit: "Scopy usage",
+    usage_week: "Scopy usage",
   }[eventType]
 }
 
