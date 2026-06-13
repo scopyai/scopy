@@ -112,7 +112,7 @@ export const getGitHubInstallUrl = (state: string) => {
 };
 
 const getGitHubUserAuthorizationCallbackUrl = () =>
-  new URL("/github/authorization", env.FRONTEND_URL).toString();
+  new URL("/github/authorization", env.BETTER_AUTH_URL).toString();
 
 export const getGitHubUserAuthorizationUrl = (state: string) => {
   const config = requireGitHubUserAuthConfig();

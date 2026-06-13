@@ -152,6 +152,10 @@ const handleInstallationCallback = async ({
   query: Record<string, string | undefined>
   user: { id: string }
 }) => {
+  if (query.error) {
+    return redirectWithGitHubError("authorization_denied")
+  }
+
   const installationId = query.installation_id
   const state = query.state
   const code = query.code
@@ -267,6 +271,9 @@ export const githubRoutes = protectedRoute("/github")
     }
   })
   .get("/callback", ({ query, user }) =>
+    handleInstallationCallback({ query, user })
+  )
+  .get("/authorization", ({ query, user }) =>
     handleInstallationCallback({ query, user })
   )
   .get("/installation", ({ query, user }) =>

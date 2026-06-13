@@ -12,8 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as GithubInstallationRouteImport } from './routes/github.installation'
-import { Route as GithubAuthorizationRouteImport } from './routes/github.authorization'
 import { Route as AppConnectRouteImport } from './routes/_app.connect'
 import { Route as AppWorkspaceSlugRouteImport } from './routes/_app.$workspaceSlug'
 import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
@@ -40,16 +38,6 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GithubInstallationRoute = GithubInstallationRouteImport.update({
-  id: '/github/installation',
-  path: '/github/installation',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GithubAuthorizationRoute = GithubAuthorizationRouteImport.update({
-  id: '/github/authorization',
-  path: '/github/authorization',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppConnectRoute = AppConnectRouteImport.update({
@@ -131,8 +119,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/$workspaceSlug': typeof AppWorkspaceSlugRouteWithChildren
   '/connect': typeof AppConnectRoute
-  '/github/authorization': typeof GithubAuthorizationRoute
-  '/github/installation': typeof GithubInstallationRoute
   '/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
@@ -150,8 +136,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/$workspaceSlug': typeof AppWorkspaceSlugRouteWithChildren
   '/connect': typeof AppConnectRoute
-  '/github/authorization': typeof GithubAuthorizationRoute
-  '/github/installation': typeof GithubInstallationRoute
   '/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
@@ -170,8 +154,6 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/$workspaceSlug': typeof AppWorkspaceSlugRouteWithChildren
   '/_app/connect': typeof AppConnectRoute
-  '/github/authorization': typeof GithubAuthorizationRoute
-  '/github/installation': typeof GithubInstallationRoute
   '/_app/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
   '/_app/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/_app/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
@@ -191,8 +173,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/$workspaceSlug'
     | '/connect'
-    | '/github/authorization'
-    | '/github/installation'
     | '/$workspaceSlug/analytics'
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
@@ -210,8 +190,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/$workspaceSlug'
     | '/connect'
-    | '/github/authorization'
-    | '/github/installation'
     | '/$workspaceSlug/analytics'
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
@@ -229,8 +207,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/_app/$workspaceSlug'
     | '/_app/connect'
-    | '/github/authorization'
-    | '/github/installation'
     | '/_app/$workspaceSlug/analytics'
     | '/_app/$workspaceSlug/billing'
     | '/_app/$workspaceSlug/manage-team'
@@ -248,8 +224,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
-  GithubAuthorizationRoute: typeof GithubAuthorizationRoute
-  GithubInstallationRoute: typeof GithubInstallationRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -273,20 +247,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/github/installation': {
-      id: '/github/installation'
-      path: '/github/installation'
-      fullPath: '/github/installation'
-      preLoaderRoute: typeof GithubInstallationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/github/authorization': {
-      id: '/github/authorization'
-      path: '/github/authorization'
-      fullPath: '/github/authorization'
-      preLoaderRoute: typeof GithubAuthorizationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/connect': {
@@ -457,8 +417,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
-  GithubAuthorizationRoute: GithubAuthorizationRoute,
-  GithubInstallationRoute: GithubInstallationRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

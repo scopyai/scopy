@@ -11,12 +11,14 @@ FROM base AS deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY apps/api/package.json ./apps/api/package.json
+COPY apps/tools/package.json ./apps/tools/package.json
 
 RUN pnpm install --frozen-lockfile --filter api...
 
 FROM deps AS builder
 
 COPY apps/api ./apps/api
+COPY apps/tools ./apps/tools
 
 RUN pnpm --filter api build
 
@@ -31,6 +33,7 @@ FROM base AS prod-deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
+COPY apps/tools/package.json ./apps/tools/package.json
 
 RUN pnpm install --frozen-lockfile --prod --filter api...
 
@@ -45,6 +48,7 @@ ENV PORT=3001
 
 COPY --from=prod-deps --chown=app:app /repo/node_modules /repo/node_modules
 COPY --from=prod-deps --chown=app:app /repo/apps/api/node_modules /repo/apps/api/node_modules
+COPY --from=builder --chown=app:app /repo/apps/tools /repo/apps/tools
 COPY --from=builder --chown=app:app /repo/apps/api/dist ./dist
 COPY --from=builder --chown=app:app /repo/apps/api/package.json ./package.json
 
