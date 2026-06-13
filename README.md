@@ -12,7 +12,7 @@ It connects to GitHub, watches enabled repositories, reviews pull request diffs 
 - `apps/landing`: marketing site
 - `packages/ui`: shared shadcn/ui components
 
-Scopy developer and product docs live in [`docs/`](docs/) and are structured for Mintlify.
+Scopy developer and product docs live in the separate [`scopyai/docs`](https://github.com/scopyai/docs) repository and are structured for Mintlify.
 
 ## Quickstart
 
@@ -28,19 +28,6 @@ Default local URLs:
 - Web app: `http://localhost:3000`
 - API: `http://localhost:3001`
 - Landing app: `http://localhost:3002`
-
-## Docs
-
-```bash
-pnpm docs:dev
-```
-
-Start with:
-
-- [`docs/index.mdx`](docs/index.mdx)
-- [`docs/quickstart.mdx`](docs/quickstart.mdx)
-- [`docs/product/how-review-works.mdx`](docs/product/how-review-works.mdx)
-- [`docs/architecture/overview.mdx`](docs/architecture/overview.mdx)
 
 ## Common Commands
 
