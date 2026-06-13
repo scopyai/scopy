@@ -5,6 +5,8 @@ WORKDIR /repo
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
+RUN apk add --no-cache python3 make g++
+
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 FROM base AS deps
