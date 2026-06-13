@@ -8,11 +8,6 @@ on:
       - "apps/web/**"
       - "packages/ui/**"
       - "apps/api/src/app.ts"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "tsconfig.json"
-      - "turbo.json"
       - ".github/workflows/web-deploy.yml"
   workflow_dispatch:
 

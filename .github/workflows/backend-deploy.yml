@@ -7,11 +7,6 @@ on:
     paths:
       - "apps/api/**"
       - "apps/tools/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "tsconfig.json"
-      - "turbo.json"
       - ".dockerignore"
       - ".github/workflows/backend-deploy.yml"
   workflow_dispatch:

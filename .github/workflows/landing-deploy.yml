@@ -6,11 +6,6 @@ on:
       - main
     paths:
       - "apps/landing/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "tsconfig.json"
-      - "turbo.json"
       - ".github/workflows/landing-deploy.yml"
   workflow_dispatch:
 
