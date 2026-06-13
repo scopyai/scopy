@@ -66,10 +66,12 @@ jobs:
   trigger-deploy:
     name: Trigger deploy
     runs-on: ubuntu-latest
+    if: github.ref_name == 'main'
     needs:
       - build-and-push
     env:
       DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_BACKEND_WEBHOOK_URL }}
+      GITHUB_REF_NAME: ${{ github.ref_name }}
 
     steps:
       - name: Call webhook
@@ -77,8 +79,9 @@ jobs:
         run: |
           curl --fail --silent --show-error \
             --request POST \
+            --header "X-GitHub-Event: tag" \
             --header "content-type: application/json" \
-            --data "{\"image\":\"${{ needs.build-and-push.outputs.image }}:${{ github.sha }}\",\"sha\":\"${{ github.sha }}\"}" \
+            --data "{\"ref\":\"refs/heads/${GITHUB_REF_NAME}\"}" \
             "$DOKPLOY_WEBHOOK_URL"
 
       - name: Skip redeploy
