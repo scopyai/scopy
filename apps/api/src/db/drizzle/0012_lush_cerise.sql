@@ -1,2 +1,0 @@
-CREATE TYPE "public"."user_onboarding_status" AS ENUM('connect_github', 'select_repositories', 'done');--> statement-breakpoint
-ALTER TABLE "user" ADD COLUMN "onboarding_status" "user_onboarding_status" DEFAULT 'connect_github' NOT NULL;

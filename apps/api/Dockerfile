@@ -24,13 +24,6 @@ COPY apps/tools ./apps/tools
 
 RUN pnpm --filter api build
 
-FROM builder AS migrate
-
-RUN addgroup -S app && adduser -S app -G app \
-  && chown -R app:app /repo
-
-USER app
-
 FROM base AS prod-deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -52,10 +45,11 @@ COPY --from=prod-deps --chown=app:app /repo/node_modules /repo/node_modules
 COPY --from=prod-deps --chown=app:app /repo/apps/api/node_modules /repo/apps/api/node_modules
 COPY --from=builder --chown=app:app /repo/apps/tools /repo/apps/tools
 COPY --from=builder --chown=app:app /repo/apps/api/dist ./dist
+COPY --from=builder --chown=app:app /repo/apps/api/src/db/drizzle ./src/db/drizzle
 COPY --from=builder --chown=app:app /repo/apps/api/package.json ./package.json
 
 USER app
 
 EXPOSE 3001
 
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "node dist/migrate.js && node dist/index.js"]
