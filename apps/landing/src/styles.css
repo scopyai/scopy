@@ -81,19 +81,17 @@ body {
 .l-logo {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 16px;
+  gap: 2px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.025em;
   color: var(--l-fg);
   text-decoration: none;
 }
 
-.l-logo-mark {
-  width: 8px;
-  height: 8px;
-  background: var(--l-accent);
-  transform: rotate(45deg);
+.l-logo-img {
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
 }
 

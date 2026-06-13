@@ -6,7 +6,7 @@ export function LandingNav() {
       <div className="l-wrap">
         <div className="l-nav-row">
           <a href="/" className="l-logo">
-            <span className="l-logo-mark" aria-hidden="true" />
+            <img src="/logo.svg" alt="" className="l-logo-img" aria-hidden="true" />
             scopy
           </a>
           <div className="l-nav-right">
