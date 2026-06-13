@@ -1,27 +1,25 @@
-name: Web Deploy
+name: Landing Deploy
 
 on:
   push:
     branches:
       - main
     paths:
-      - "apps/web/**"
-      - "packages/ui/**"
-      - "apps/api/src/app.ts"
+      - "apps/landing/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "tsconfig.json"
       - "turbo.json"
-      - ".github/workflows/web-deploy.yml"
+      - ".github/workflows/landing-deploy.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  deploy-web:
-    name: Deploy Web
+  deploy-landing:
+    name: Deploy Landing
     runs-on: ubuntu-latest
     if: github.ref_name == 'main'
     timeout-minutes: 60
@@ -45,18 +43,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm --filter web typecheck
+        run: pnpm --filter landing typecheck
 
       - name: Build
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-          VITE_WEB_BASE_URL: ${{ vars.VITE_WEB_BASE_URL }}
-        run: pnpm --filter web build
+          VITE_GITHUB_URL: ${{ vars.VITE_LANDING_GITHUB_URL }}
+          VITE_APP_URL: ${{ vars.VITE_WEB_BASE_URL }}
+          VITE_DOCS_URL: ${{ vars.VITE_LANDING_DOCS_URL }}
+          VITE_PRIVACY_URL: ${{ vars.VITE_LANDING_PRIVACY_URL }}
+        run: pnpm --filter landing build
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/web
+          workingDirectory: apps/landing
           command: deploy

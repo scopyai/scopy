@@ -136,6 +136,9 @@ importers:
         specifier: ^4.1.18
         version: 4.2.1
     devDependencies:
+      '@cloudflare/vite-plugin':
+        specifier: ^1.40.2
+        version: 1.40.2(vite@8.0.14(@types/node@22.19.19)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))(workerd@1.20260611.1)(wrangler@4.100.0)
       '@tailwindcss/typography':
         specifier: ^0.5.16
         version: 0.5.20(tailwindcss@4.2.1)
@@ -175,6 +178,9 @@ importers:
       vitest:
         specifier: ^4.1.5
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.19.19)(jsdom@28.1.0(@noble/hashes@2.2.0))(msw@2.13.4(@types/node@22.19.19)(typescript@6.0.3))(vite@8.0.14(@types/node@22.19.19)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))
+      wrangler:
+        specifier: ^4.100.0
+        version: 4.100.0
 
   apps/tools:
     dependencies:
@@ -8454,6 +8460,19 @@ snapshots:
       unenv: 2.0.0-rc.24
     optionalDependencies:
       workerd: 1.20260611.1
+
+  '@cloudflare/vite-plugin@1.40.2(vite@8.0.14(@types/node@22.19.19)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))(workerd@1.20260611.1)(wrangler@4.100.0)':
+    dependencies:
+      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260611.1)
+      miniflare: 4.20260611.0
+      unenv: 2.0.0-rc.24
+      vite: 8.0.14(@types/node@22.19.19)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)
+      wrangler: 4.100.0
+      ws: 8.20.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+      - workerd
 
   '@cloudflare/vite-plugin@1.40.2(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))(workerd@1.20260611.1)(wrangler@4.100.0)':
     dependencies:
