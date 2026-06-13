@@ -57,15 +57,10 @@ const managementItems: NavItem[] = [
 ]
 
 const resourceItems = [
-  // {
-  //   label: "CLI",
-  //   icon: TerminalIcon,
-  //   href: "https://docs.example.com/cli",
-  // },
   {
     label: "Docs",
     icon: BookOpenIcon,
-    href: "https://docs.example.com",
+    href: "https://docs.scopy.dev",
     external: true as const,
   },
 ]
