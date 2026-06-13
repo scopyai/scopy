@@ -1,22 +1,20 @@
-import { defineConfig } from 'vite'
-import { devtools } from '@tanstack/devtools-vite'
+import { defineConfig } from "vite"
+// import { devtools } from "@tanstack/devtools-vite"
+import { tanstackStart } from "@tanstack/react-start/plugin/vite"
+import { cloudflare } from "@cloudflare/vite-plugin"
 
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-
-import viteReact from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import { nitro } from 'nitro/vite'
+import viteReact from "@vitejs/plugin-react"
+import tailwindcss from "@tailwindcss/vite"
 
 const config = defineConfig({
   resolve: {
-    // Vite 8 native support; types not published yet
     tsconfigPaths: true,
-  } as import('vite').UserConfig['resolve'],
+  } as import("vite").UserConfig["resolve"],
   plugins: [
-    devtools(),
+    // devtools(),
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     tailwindcss(),
     tanstackStart(),
-    nitro({ rollupConfig: { external: [/^@sentry\//] } }),
     viteReact(),
   ],
 })

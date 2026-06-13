@@ -79,7 +79,7 @@ jobs:
         run: |
           curl --fail --silent --show-error \
             --request POST \
-            --header "X-GitHub-Event: tag" \
+            --header "X-GitHub-Event: push" \
             --header "content-type: application/json" \
             --data "{\"ref\":\"refs/heads/${GITHUB_REF_NAME}\"}" \
             "$DOKPLOY_WEBHOOK_URL"
