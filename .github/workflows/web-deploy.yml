@@ -49,6 +49,9 @@ jobs:
         run: pnpm --filter web typecheck
 
       - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_WEB_BASE_URL: ${{ vars.VITE_WEB_BASE_URL }}
         run: pnpm --filter web build
 
       - name: Deploy
