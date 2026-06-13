@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite dev --port 3002 --strictPort",
     "build": "vite build",
-    "start": "node .output/server/index.mjs",
+    "start": "PORT=3002 node .output/server/index.mjs",
     "preview": "vite preview",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
@@ -43,11 +43,5 @@
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "vitest": "^4.1.5"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "lightningcss"
-    ]
   }
 }
