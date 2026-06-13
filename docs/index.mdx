@@ -1,0 +1,37 @@
+---
+title: "Review developer docs"
+description: "Developer documentation for the Review monorepo."
+---
+
+Review is an open-source AI code review tool for GitHub pull requests. It helps teams connect a GitHub organization, enable repositories, run AI review on pull requests, and track review outcomes over time.
+
+These docs cover both product usage and contributor development.
+
+## Start here
+
+- [How Review works](/product/how-review-works): understand the product workflow from GitHub installation to PR comments.
+- [Connect GitHub](/product/connect-github): install the GitHub App and finish onboarding.
+- [Manage repositories](/product/manage-repositories): choose where reviews run.
+- [Review pull requests](/product/review-pull-requests): inspect review results in the product and on GitHub.
+- [Quickstart](/quickstart): install dependencies, configure local env files, and run the app.
+
+## Repository at a glance
+
+```text
+apps/
+  api/       Elysia API, Better Auth, Drizzle schema, billing, GitHub webhooks, review worker entrypoints
+  web/       TanStack Start application for the authenticated product
+  landing/   TanStack Start marketing site
+  tools/     repository analysis, diff context, symbol lookup, text search, and semantic indexing utilities
+packages/
+  ui/        shared shadcn/ui components, styles, and utilities
+docs/        Mintlify documentation source
+```
+
+## Core development rules
+
+- Frontend data fetching should use React Query.
+- Frontend API calls should use the Eden treaty client from `apps/web/src/lib/api.ts`.
+- Frontend code should import API types from the `api` workspace package.
+- UI should prefer shared shadcn/ui components from `@workspace/ui`.
+- API routes should preserve Elysia type inference so the frontend treaty client stays useful.

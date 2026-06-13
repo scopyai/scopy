@@ -1,0 +1,47 @@
+---
+title: "Monorepo"
+description: "Workspace layout and package responsibilities."
+---
+
+The repository uses pnpm workspaces and Turbo. Workspace packages are declared in `pnpm-workspace.yaml`:
+
+```yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+```
+
+## Applications
+
+| Workspace | Package name | Responsibility |
+| --- | --- | --- |
+| `apps/api` | `api` | Elysia API, exported app type, Better Auth, Drizzle, Graphile Worker, GitHub integration, billing, and review orchestration. |
+| `apps/web` | `web` | Authenticated TanStack Start product app. |
+| `apps/landing` | `landing` | TanStack Start marketing site. |
+| `apps/tools` | `tools` | Repository analysis library and CLIs used by the review engine. |
+
+## Packages
+
+| Workspace | Package name | Responsibility |
+| --- | --- | --- |
+| `packages/ui` | `@workspace/ui` | Shared shadcn/ui components, global CSS, hooks, and utilities. |
+
+## Build orchestration
+
+Turbo tasks are configured in `turbo.json`.
+
+- `build` depends on upstream workspace builds and includes `.env*` files in its inputs.
+- `dev` is persistent and not cached.
+- `start` depends on `build`, is persistent, and is not cached.
+- `typecheck`, `lint`, and `format` run across workspaces that define matching scripts.
+
+## Type boundaries
+
+The API package exports the Elysia app type from `apps/api/src/app.ts`. Frontend code should only consume the API type through the package export:
+
+```ts
+import type { App } from "api"
+```
+
+Do not create frontend TypeScript path aliases into `apps/api/src`. Reaching into API source bypasses the package boundary and makes monorepo resolution more fragile.
+

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Review Docs",
+  "colors": {
+    "primary": "#2563eb",
+    "light": "#2563eb",
+    "dark": "#60a5fa"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": ["index", "quickstart", "product/how-review-works"]
+      },
+      {
+        "group": "Product guide",
+        "pages": [
+          "product/connect-github",
+          "product/manage-repositories",
+          "product/review-pull-requests",
+          "product/analytics",
+          "product/team-and-github-settings",
+          "product/billing"
+        ]
+      },
+      {
+        "group": "Development",
+        "pages": [
+          "development/local-setup",
+          "development/environment-variables"
+        ]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "architecture/overview",
+          "architecture/monorepo",
+          "architecture/review-engine"
+        ]
+      },
+      {
+        "group": "Contributing",
+        "pages": ["contributing/frontend-guidelines"]
+      }
+    ]
+  }
+}

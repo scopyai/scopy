@@ -1,12 +1,15 @@
-# TanStack Start + Elysia Monorepo Template
+# Review
 
-This is a reusable TypeScript monorepo template with:
+Review is an open-source AI code review tool for GitHub pull requests. It is built as a TypeScript monorepo with:
 
 - `apps/web`: TanStack Start, React, shadcn/ui, React Query, Eden treaty
-- `apps/api`: Elysia, Better Auth, Drizzle, PostgreSQL
+- `apps/api`: Elysia, Better Auth, Drizzle, PostgreSQL, Graphile Worker
+- `apps/tools`: repository analysis, diff context, symbol lookup, text search, and semantic indexing utilities
 - `packages/ui`: shared shadcn/ui components
 
-## Setup
+Developer documentation lives in [`docs/`](docs/) and is structured for Mintlify import.
+
+## Quickstart
 
 Install dependencies:
 
@@ -27,7 +30,17 @@ Run the app:
 pnpm dev
 ```
 
-## Eden
+The product web app runs on `http://localhost:3000` and the API defaults to `http://localhost:3001`.
+
+## Docs
+
+Run the Mintlify docs locally from the repo root:
+
+```bash
+pnpm docs:dev
+```
+
+## API Types
 
 The web app consumes the API type through the `api` workspace package:
 
@@ -37,7 +50,7 @@ import type { App } from "api";
 
 Do not import API types through a frontend-only path alias such as `@api/*`; that breaks package resolution in monorepos.
 
-## Adding Components
+## Adding shadcn/ui Components
 
 To add shadcn/ui components, run this at the repo root:
 

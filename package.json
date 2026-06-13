@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "turbo build",
+    "docs:dev": "cd docs && mint dev",
     "dev": "turbo dev",
     "start": "turbo start",
     "lint": "turbo lint",

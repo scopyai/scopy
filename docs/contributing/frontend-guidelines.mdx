@@ -1,0 +1,79 @@
+---
+title: "Frontend guidelines"
+description: "Rules for web app changes."
+---
+
+The product frontend lives in `apps/web` and uses TanStack Start, React Query, Eden treaty, and shared shadcn/ui components.
+
+## Data fetching
+
+Use React Query for product data fetching. Components should consume hooks from `apps/web/src/hooks` or new hooks that follow the same pattern.
+
+```tsx
+import { useQuery } from "@tanstack/react-query"
+import { api } from "@/lib/api"
+
+export function useRepositories(workspaceId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["workspaces", workspaceId, "repositories"],
+    queryFn: async () => {
+      const { data, error } = await api
+        .workspaces({ workspaceId: workspaceId! })
+        .repositories
+        .get()
+
+      if (error) throw error
+      return data
+    },
+    enabled: !!workspaceId,
+  })
+}
+```
+
+Do not use raw `fetch` or `axios` for normal API data loading in the web app.
+
+## API client
+
+Use the shared Eden treaty client from `apps/web/src/lib/api.ts`.
+
+```ts
+import { api } from "@/lib/api"
+```
+
+The treaty client is typed from the API package:
+
+```ts
+import type { App } from "api"
+```
+
+Do not import API types by reaching into `apps/api/src`.
+
+## Loading and mutation states
+
+Every query-driven view should account for loading, empty, success, and error states where those states are visible to the user.
+
+Buttons that trigger mutations should reflect pending state and prevent duplicate submissions where appropriate.
+
+## UI components
+
+Prefer shared shadcn/ui components from `@workspace/ui`:
+
+```tsx
+import { Button } from "@workspace/ui/components/button"
+import { Card } from "@workspace/ui/components/card"
+```
+
+Add new shadcn/ui components with the official CLI from the repository root:
+
+```bash
+pnpm dlx shadcn@latest add button -c apps/web
+```
+
+Keep reusable primitives in `packages/ui`. Keep product-specific composition in `apps/web/src/components`.
+
+## Routing
+
+Follow TanStack Start and TanStack Router conventions already used in `apps/web/src/routes`.
+
+Route files should stay focused on route composition, params, layout, and page-level data dependencies. Extract reusable UI and behavior into components and hooks.
+

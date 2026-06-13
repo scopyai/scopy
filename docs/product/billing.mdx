@@ -1,0 +1,34 @@
+---
+title: "Billing"
+description: "Understand workspace billing, plans, credits, and subscription actions."
+---
+
+Billing is managed per workspace.
+
+## Billing page
+
+The billing area shows the selected workspace's current plan, credit balance, usage history, and available subscription actions.
+
+Depending on workspace state, you may see actions to:
+
+- Start a checkout flow.
+- Open the billing portal.
+- Change plans.
+- Cancel a subscription.
+
+## Plans and credits
+
+Review tracks billing tier and credit balance on the workspace. Review usage can debit credits based on model and vector usage recorded during review runs.
+
+The API contains billing policy and usage accounting in `apps/api/src/modules/billing`.
+
+## Test mode
+
+Local and staging billing can run in Creem test mode with:
+
+```text
+CREEM_TEST_MODE=true
+```
+
+Use real product ids and webhook secrets for environments where subscription events should affect workspace billing state.
+

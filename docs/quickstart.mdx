@@ -1,0 +1,77 @@
+---
+title: "Quickstart"
+description: "Run the Review monorepo locally."
+---
+
+## Prerequisites
+
+- Node.js 20 or newer
+- pnpm 9.15.9
+- Docker, if you want to use the included local PostgreSQL service
+
+## Install dependencies
+
+```bash
+pnpm install
+```
+
+## Create local environment files
+
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+The default local ports are:
+
+| Service | Port |
+| --- | --- |
+| Web app | `3000` |
+| API | `3001` |
+| Landing app | `3002` |
+| PostgreSQL | `5432` |
+
+## Start PostgreSQL
+
+The local compose file includes PostgreSQL and production-like API containers. For day-to-day development, the lightest path is usually to start only the database and run the TypeScript services directly:
+
+```bash
+docker compose -f docker-compose.local.yml up db
+```
+
+## Prepare the database
+
+Run Drizzle migrations and initialize the Graphile Worker schema:
+
+```bash
+pnpm --filter api db:migrate
+pnpm --filter api worker:migrate
+```
+
+## Run the app
+
+```bash
+pnpm dev
+```
+
+The root `dev` script runs Turbo, which starts each workspace's development task. The API development task starts both the Elysia server and the Graphile Worker process.
+
+## Useful checks
+
+```bash
+pnpm typecheck
+pnpm build
+pnpm --filter api test
+pnpm --filter tools test
+```
+
+## Open the product
+
+Visit:
+
+```text
+http://localhost:3000
+```
+
+The web app talks to the API at `http://localhost:3001` by default.
+

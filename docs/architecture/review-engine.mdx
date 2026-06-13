@@ -1,0 +1,72 @@
+---
+title: "Review engine"
+description: "How pull request reviews are prepared, analyzed, verified, and published."
+---
+
+The review engine lives primarily in `apps/api/src/modules/reviews` and depends on repository analysis utilities from `apps/tools`.
+
+## Runtime stages
+
+The main orchestration function is `runReviewAgent` in `apps/api/src/modules/reviews/index.ts`.
+
+Its main stages are:
+
+1. Create or update the GitHub review summary comment.
+2. Fetch pull request files from GitHub.
+3. Filter files through review include and exclude settings.
+4. Serialize the GitHub file list into readable and unified diffs.
+5. Prepare a local review runtime and repository checkout.
+6. Build affected symbol and diff context.
+7. Optionally index repository chunks into Qdrant.
+8. Run the reviewer model with bounded tools.
+9. Validate and repair structured findings if needed.
+10. Run the verifier model over candidate findings.
+11. Publish confirmed findings back to GitHub.
+12. Record usage, billing, debug artifacts, and final run status.
+
+## Agent tools
+
+The reviewer gets controlled access to repository context through utilities exported by the `tools` workspace:
+
+| Tool capability | Export | Purpose |
+| --- | --- | --- |
+| Read a repository file | `readRepositoryFile` | Load source files with guardrails against excessive context. |
+| Search text | `searchRepositoryText` | Find exact or fuzzy text matches across the checked-out repository. |
+| Get symbol definition | `getSymbolDefinition` | Inspect a symbol definition using repository code indexing. |
+| Get symbol callers | `getSymbolCallers` | Inspect call sites for a symbol. |
+| Search semantic context | `searchReviewCode` | Retrieve similar indexed code chunks from Qdrant. |
+| Build diff context | `buildDiffContext` | Detect changed files, changed regions, and affected symbols from unified diffs. |
+
+## Review limits
+
+The diff layer currently guards review size in `apps/api/src/modules/reviews/diff.ts`:
+
+| Limit | Value |
+| --- | --- |
+| Maximum changed files | `300` |
+| Maximum serialized diff characters | `100000` |
+
+Oversized pull requests are skipped with a clear reason instead of forcing the model through an unreliable review.
+
+## Models
+
+The API reads model configuration from environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REVIEW_MODEL` | `z-ai/glm-5.1` | Main reviewer model. |
+| `REVIEW_VERIFIER_MODEL` | `openai/gpt-5.4-mini` | Verifier model for candidate findings. |
+| `OPENROUTER_API_KEY` | None | Required to run model calls through OpenRouter. |
+
+The verifier improves precision by checking candidate findings before they are published. It cannot recover issues that the main reviewer never proposes, so reviewer context quality is important for recall.
+
+## Semantic search
+
+Semantic search is optional. When `QDRANT_URL` is set, the review runtime can index repository chunks and query related code during review.
+
+The code indexing path is in `apps/tools/src/semantic-context.ts`, and the API runtime configuration is assembled in `apps/api/src/modules/reviews/runtime.ts`.
+
+## Debug artifacts
+
+Review runs write normalized debug artifacts under `REVIEW_RUNS_DIR`, default `.runs`. These artifacts include context files, model steps, tool calls, summary metadata, and raw run outputs. They are useful when comparing model behavior, prompt changes, context strategy, and billing impact.
+

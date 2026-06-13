@@ -1,0 +1,70 @@
+---
+title: "Environment variables"
+description: "Configuration reference for local and deployed services."
+---
+
+## API
+
+The API reads `.env` from the API process working directory and validates it in `apps/api/src/env.ts`.
+
+Create a local file with:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+```
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `PORT` | No | `3001` | API HTTP port. |
+| `DATABASE_URL` | Yes | None | PostgreSQL connection string for Drizzle and Graphile Worker. |
+| `BETTER_AUTH_SECRET` | Yes | None | Better Auth signing secret. |
+| `BETTER_AUTH_URL` | Yes | None | Public API auth origin, usually `http://localhost:3001` locally. |
+| `FRONTEND_URL` | Yes | None | Web origin used for CORS and redirects. |
+| `GOOGLE_CLIENT_ID` | Yes | None | Google OAuth client id. |
+| `GOOGLE_CLIENT_SECRET` | Yes | None | Google OAuth client secret. |
+| `CREEM_API_KEY` | Yes | None | Creem billing API key. |
+| `CREEM_WEBHOOK_SECRET` | Yes | None | Creem webhook signature secret. |
+| `CREEM_TEST_MODE` | No | `true` | Enables Creem test mode when set to `true`. |
+| `CREEM_PREMIUM_PRODUCT_ID` | Yes | None | Premium billing product id. |
+| `CREEM_ULTRA_PRODUCT_ID` | Yes | None | Ultra billing product id. |
+| `GITHUB_APP_ID` | No | None | GitHub App id. |
+| `GITHUB_APP_SLUG` | No | None | GitHub App slug used for install URLs. |
+| `GITHUB_APP_CLIENT_ID` | No | None | GitHub OAuth app client id. |
+| `GITHUB_APP_CLIENT_SECRET` | No | None | GitHub OAuth app client secret. |
+| `GITHUB_APP_PRIVATE_KEY` | No | None | GitHub App private key. |
+| `GITHUB_APP_WEBHOOK_SECRET` | No | None | GitHub webhook signing secret. |
+| `OPENROUTER_API_KEY` | No | None | Required when running the AI review agent. |
+| `REVIEW_MODEL` | No | `z-ai/glm-5.1` | Main review model id passed to OpenRouter. |
+| `REVIEW_VERIFIER_MODEL` | No | `openai/gpt-5.4-mini` | Verifier model id passed to OpenRouter. |
+| `REVIEW_WORKDIR` | No | `.data/reviews` | Working directory for checked-out review repositories. |
+| `REVIEW_RUNS_DIR` | No | `.runs` | Directory for review debug artifacts. |
+| `QDRANT_URL` | No | None | Enables semantic code search when set. |
+| `QDRANT_API_KEY` | No | None | Qdrant API key. |
+| `QDRANT_COLLECTION` | No | `review_code_chunks` | Qdrant collection name. |
+| `QDRANT_INFERENCE_MODEL` | No | `sentence-transformers/all-minilm-l6-v2` | Embedding model name for Qdrant inference. |
+| `QDRANT_VECTOR_SIZE` | No | `384` | Vector size expected by the collection. |
+| `VECTOR_WRITE_MICROUSD_PER_GIB` | No | `2500000` | Vector write cost model for billing estimates. |
+| `VECTOR_QUERY_MICROUSD_PER_TIB` | No | `7500` | Vector query cost model for billing estimates. |
+| `VECTOR_NETWORK_MICROUSD_PER_GIB` | No | `90000` | Vector network cost model for billing estimates. |
+| `TELEGRAM_BOT_TOKEN` | No | None | Optional feedback notification bot token. |
+| `TELEGRAM_FEEDBACK_CHAT_ID` | No | None | Optional Telegram chat id for feedback notifications. |
+
+<Note>
+Some variables are technically required by validation even when the related feature is not part of the flow you are working on. For local development, use placeholder values for provider integrations that are not being exercised.
+</Note>
+
+## Web
+
+The web app validates Vite environment variables in `apps/web/src/env.ts`.
+
+Create a local file with:
+
+```bash
+cp apps/web/.env.example apps/web/.env
+```
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | No | `http://localhost:3001` | Base URL for the Elysia API treaty client. |
+| `VITE_WEB_BASE_URL` | No | `http://localhost:3000` | Public web app base URL. |
+
