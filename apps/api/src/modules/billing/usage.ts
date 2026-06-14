@@ -4,17 +4,20 @@ import { db } from "../../db/client"
 import { workspace, workspaceCreditTransaction } from "../../db/schema"
 import { env } from "../../env"
 
-export const MICROCENTS_PER_USD = 1_000_000
+export const MICRO_USD_PER_USD = 1_000_000
+export const MICROCENTS_PER_USD = MICRO_USD_PER_USD
 const BYTES_PER_GIB = 1024 ** 3
 const BYTES_PER_TIB = 1024 ** 4
 
 const ceilDiv = (numerator: bigint, denominator: bigint) =>
   (numerator + denominator - 1n) / denominator
 
-export const usdToMicrocents = (usd: number) => {
+export const usdToMicroUsd = (usd: number) => {
   if (!Number.isFinite(usd) || usd < 0) return null
-  return Math.ceil(usd * MICROCENTS_PER_USD)
+  return Math.ceil(usd * MICRO_USD_PER_USD)
 }
+
+export const usdToMicrocents = usdToMicroUsd
 
 export const calculateVectorWriteCostMicrocents = (bytes: number) =>
   Number(
@@ -59,7 +62,7 @@ export const extractOpenRouterCost = (generation: unknown) => {
   const cost =
     numberAt(generation, ["providerMetadata", "openrouter", "usage", "cost"]) ??
     numberAt(generation, ["response", "body", "usage", "cost"])
-  const costMicrocents = cost === null ? null : usdToMicrocents(cost)
+  const costMicrocents = cost === null ? null : usdToMicroUsd(cost)
   return {
     cost,
     costMicrocents,
@@ -114,13 +117,70 @@ export const resolveOpenRouterCost = async (generation: unknown) => {
     numberAt(body, ["data", "cost"]) ??
     numberAt(body, ["total_cost"]) ??
     numberAt(body, ["cost"])
-  const costMicrocents = cost === null ? null : usdToMicrocents(cost)
+  const costMicrocents = cost === null ? null : usdToMicroUsd(cost)
   return {
     ...extracted,
     cost,
     costMicrocents,
     generationId,
     generationUsage: body,
+  }
+}
+
+const stepsFromGeneration = (generation: unknown) => {
+  if (
+    isRecord(generation) &&
+    Array.isArray(generation.steps) &&
+    generation.steps.length > 0
+  ) {
+    return generation.steps
+  }
+  return [generation]
+}
+
+const stepNumberOf = (step: unknown, fallback: number) =>
+  isRecord(step) && typeof step.stepNumber === "number"
+    ? step.stepNumber
+    : fallback
+
+const usageOf = (value: unknown) => {
+  if (!isRecord(value)) return undefined
+  return "usage" in value ? value.usage : undefined
+}
+
+export const resolveOpenRouterGenerationCost = async (generation: unknown) => {
+  const steps = stepsFromGeneration(generation)
+  const resolvedSteps = await Promise.all(
+    steps.map(async (step, index) => {
+      const cost = await resolveOpenRouterCost(step)
+      return {
+        stepNumber: stepNumberOf(step, index),
+        usage: usageOf(step),
+        costUsd: cost.cost,
+        costMicroUsd: cost.costMicrocents,
+        costMicrocents: cost.costMicrocents,
+        providerMetadata: cost.providerMetadata,
+        generationId: cost.generationId,
+        generationUsage: cost.generationUsage,
+      }
+    }),
+  )
+
+  if (resolvedSteps.some((step) => step.costMicrocents === null)) {
+    return {
+      cost: null,
+      costMicrocents: null,
+      steps: resolvedSteps,
+    }
+  }
+
+  return {
+    cost: resolvedSteps.reduce((total, step) => total + (step.costUsd ?? 0), 0),
+    costMicrocents: resolvedSteps.reduce(
+      (total, step) => total + (step.costMicrocents ?? 0),
+      0,
+    ),
+    steps: resolvedSteps,
   }
 }
 
@@ -195,14 +255,17 @@ export const debitReviewUsage = async (input: ReviewUsageDebitInput) =>
         idempotencyKey,
         reason: "review_usage",
         metadata: {
+          billingUnit: "micro_usd",
           reviewRunId: input.reviewRunId,
           pullRequestId: input.pullRequestId,
           repositoryId: input.repositoryId,
           modelId: input.modelId,
           verifierModelId: input.verifierModelId,
+          llmCostMicroUsd: input.llmCostMicrocents,
           llmCostMicrocents: input.llmCostMicrocents,
           llmUsage: input.llmUsage,
           vector: input.vector,
+          totalCostMicroUsd: totalCostMicrocents,
           totalCostMicrocents,
         },
       })

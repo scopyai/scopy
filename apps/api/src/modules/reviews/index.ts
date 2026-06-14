@@ -18,7 +18,7 @@ import {
   calculateVectorNetworkCostMicrocents,
   calculateVectorQueryCostMicrocents,
   calculateVectorWriteCostMicrocents,
-  resolveOpenRouterCost,
+  resolveOpenRouterGenerationCost,
 } from "../billing/usage"
 import {
   filterPullRequestFiles,
@@ -105,14 +105,20 @@ export type ReviewAgentResult = {
   findings?: ReviewReport["findings"]
   usage?: Record<string, unknown>
   billing?: {
+    billingUnit: "micro_usd"
+    llmCostMicroUsd: number
     llmCostMicrocents: number
     vectorWriteBytes: number
     vectorQueryBytes: number
     vectorNetworkBytes: number
     vectorQueryCount: number
+    vectorWriteCostMicroUsd: number
     vectorWriteCostMicrocents: number
+    vectorQueryCostMicroUsd: number
     vectorQueryCostMicrocents: number
+    vectorNetworkCostMicroUsd: number
     vectorNetworkCostMicrocents: number
+    totalCostMicroUsd: number
     totalCostMicrocents: number
     llm: Record<string, unknown>
     transactionId?: string
@@ -147,7 +153,7 @@ const recordLlmBilling = async (
   modelId: string,
   generation: unknown,
 ) => {
-  const cost = await resolveOpenRouterCost(generation)
+  const cost = await resolveOpenRouterGenerationCost(generation)
   if (cost.costMicrocents === null) {
     throw new Error(`OpenRouter cost is missing for ${stage}`)
   }
@@ -158,11 +164,18 @@ const recordLlmBilling = async (
   stages[stage] = {
     modelId,
     usage,
+    billingUnit: "micro_usd",
     costUsd: cost.cost,
+    costMicroUsd: cost.costMicrocents,
     costMicrocents: cost.costMicrocents,
-    providerMetadata: cost.providerMetadata,
-    generationId: cost.generationId,
-    generationUsage: cost.generationUsage,
+    steps: cost.steps,
+    stepCount: cost.steps.length,
+    providerMetadata:
+      typeof generation === "object" &&
+      generation !== null &&
+      "providerMetadata" in generation
+        ? (generation as { providerMetadata: unknown }).providerMetadata
+        : undefined,
   }
   return usage
 }
@@ -1036,14 +1049,24 @@ export const runReviewAgent = async ({
     ? calculateVectorNetworkCostMicrocents(vectorNetworkBytes)
     : 0
   const billing = {
+    billingUnit: "micro_usd" as const,
+    llmCostMicroUsd: llmCostMicrocents,
     llmCostMicrocents,
     vectorWriteBytes: qdrantLogicalWriteBytes,
     vectorQueryBytes,
     vectorNetworkBytes,
     vectorQueryCount,
+    vectorWriteCostMicroUsd: vectorWriteCostMicrocents,
     vectorWriteCostMicrocents,
+    vectorQueryCostMicroUsd: vectorQueryCostMicrocents,
     vectorQueryCostMicrocents,
+    vectorNetworkCostMicroUsd: vectorNetworkCostMicrocents,
     vectorNetworkCostMicrocents,
+    totalCostMicroUsd:
+      llmCostMicrocents +
+      vectorWriteCostMicrocents +
+      vectorQueryCostMicrocents +
+      vectorNetworkCostMicrocents,
     totalCostMicrocents:
       llmCostMicrocents +
       vectorWriteCostMicrocents +
