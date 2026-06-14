@@ -40,6 +40,7 @@ import {
   type ReviewReportEvidenceValidation,
 } from "./evidence"
 import {
+  buildReviewAgentCoverageRetryPrompt,
   buildReviewAgentInspectionRetryPrompt,
   buildReviewAgentPrompt,
   buildReviewAgentRepairPrompt,
@@ -56,12 +57,22 @@ import {
   type ReviewVerification,
 } from "./prompt"
 import { createReviewRunRecorder } from "./debug-run"
+import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 
 export const REVIEW_MODEL = env.REVIEW_MODEL
 export const REVIEW_VERIFIER_MODEL =
   env.REVIEW_VERIFIER_MODEL ?? env.REVIEW_MODEL
 const reviewModelProviderOptions = REVIEW_MODEL.startsWith("openai/")
+  ? {
+      openrouter: {
+        reasoning: {
+          effort: "low",
+        },
+      },
+    }
+  : undefined
+const verifierModelProviderOptions = REVIEW_VERIFIER_MODEL.startsWith("openai/")
   ? {
       openrouter: {
         reasoning: {
@@ -203,6 +214,46 @@ const applyVerification = (
   }
 }
 
+const isGeneratedOrTestFile = (file: string) =>
+  /(^|\/)(generated|__generated__)\//.test(file) ||
+  /\.gen\.[^.]+$/.test(file) ||
+  /\.(test|spec)\.[^.]+$/.test(file) ||
+  /(^|\/)__tests__\//.test(file)
+
+const changedSymbolCoverageCandidates = (
+  diffContext: Awaited<ReturnType<typeof buildDiffContext>>,
+  inspectedSymbols: Set<string>
+) => {
+  const candidates = diffContext.files.flatMap((file) =>
+    file.affectedSymbols
+      .filter((symbol) => !isGeneratedOrTestFile(symbol.file))
+      .filter((symbol) => !inspectedSymbols.has(symbol.name))
+      .filter((symbol) =>
+        ["function", "method", "object-method", "class"].includes(symbol.kind)
+      )
+      .map((symbol) => ({
+        label: `${symbol.name} (${symbol.file}:${symbol.startLine}-${symbol.endLine})`,
+        file: symbol.file,
+        touchedLines: symbol.touchedLines.length,
+        span: symbol.endLine - symbol.startLine,
+      }))
+  )
+
+  return candidates
+    .sort((a, b) => {
+      const aTsx = a.file.endsWith(".tsx") ? 1 : 0
+      const bTsx = b.file.endsWith(".tsx") ? 1 : 0
+      return (
+        aTsx - bTsx ||
+        b.touchedLines - a.touchedLines ||
+        b.span - a.span ||
+        a.file.localeCompare(b.file)
+      )
+    })
+    .slice(0, 12)
+    .map((candidate) => candidate.label)
+}
+
 export const runReviewAgent = async ({
   pullRequest,
   reviewRunId,
@@ -336,6 +387,8 @@ export const runReviewAgent = async ({
 
   logger.info("Review agent stage started", { ...context, stage: "runtime" })
   await recorder.appendEvent("stage.started", { stage: "runtime" })
+  const openrouter = createOpenRouter({ apiKey: requireOpenRouterApiKey() })
+  const llmBilling: Record<string, unknown> = {}
   const runtime = await prepareReviewRuntime({
     reviewRunId,
     repo: repository,
@@ -366,6 +419,13 @@ export const runReviewAgent = async ({
     : null
   await recorder.writeJson("runtime.json", {
     paths: runtime.paths,
+    base: {
+      sha: runtime.baseSha,
+      repositoryPath: runtime.paths.baseRepositoryPath,
+      diagnostics: runtime.baseCodeIndex.diagnostics.length,
+      repositoryFiles: runtime.baseCodeIndex.repositoryFiles.length,
+      parsedFiles: runtime.baseCodeIndex.files.length,
+    },
     semantic: {
       enabled: semanticEnabled,
     },
@@ -378,6 +438,7 @@ export const runReviewAgent = async ({
         }
       : { configured: false },
   })
+  await recorder.writeJson("context/base-code-index.json", runtime.baseCodeIndex)
   await recorder.writeJson("context/code-index.json", runtime.codeIndex)
   await recorder.writeJson("context/diff-context.json", diffContext)
   await recorder.writeText("context/affected-symbols.md", affectedSymbols)
@@ -430,13 +491,54 @@ export const runReviewAgent = async ({
     qdrantLogicalWriteBytes,
   })
 
+  logger.info("Review agent stage started", {
+    ...context,
+    stage: "repository-context",
+  })
+  await recorder.appendEvent("stage.started", { stage: "repository-context" })
+  const preparedRepositoryContext = await prepareRepositoryContextForReview({
+    repo: repository,
+    pullRequest,
+    baseRepositoryPath: runtime.paths.baseRepositoryPath,
+    baseIndex: runtime.baseCodeIndex,
+    baseSha: runtime.baseSha,
+    diff,
+    affectedSymbols,
+    semanticCoverage,
+    contextModel: openrouter.chat(REVIEW_MODEL),
+    contextModelId: REVIEW_MODEL,
+    classifierModel: openrouter.chat(REVIEW_VERIFIER_MODEL),
+    classifierModelId: REVIEW_VERIFIER_MODEL,
+    contextProviderOptions: reviewModelProviderOptions,
+    classifierProviderOptions: verifierModelProviderOptions,
+    recorder,
+    logger,
+  })
+  logger.info("Review agent stage completed", {
+    ...context,
+    stage: "repository-context",
+    source: preparedRepositoryContext.source,
+    contextId: preparedRepositoryContext.contextId,
+    baseSha: preparedRepositoryContext.baseSha,
+    changesArchitecture:
+      preparedRepositoryContext.architectureImpact.changesArchitecture,
+    markdownBytes: textBytes(preparedRepositoryContext.markdown),
+  })
+  await recorder.appendEvent("stage.completed", {
+    stage: "repository-context",
+    source: preparedRepositoryContext.source,
+    contextId: preparedRepositoryContext.contextId,
+    baseSha: preparedRepositoryContext.baseSha,
+    architectureImpact: preparedRepositoryContext.architectureImpact,
+    markdownBytes: textBytes(preparedRepositoryContext.markdown),
+  })
+
   logger.info("Review agent stage started", { ...context, stage: "generation" })
   await recorder.appendEvent("stage.started", { stage: "generation" })
-  const openrouter = createOpenRouter({ apiKey: requireOpenRouterApiKey() })
-  const llmBilling: Record<string, unknown> = {}
   let vectorQueryBytes = 0
   let vectorNetworkBytes = 0
   let vectorQueryCount = 0
+  const reviewInspectedSymbols = new Set<string>()
   const baseTools = {
     read_file: tool({
       description:
@@ -466,6 +568,7 @@ export const runReviewAgent = async ({
       }),
       execute: async ({ symbol }) => {
         const input = { symbol }
+        reviewInspectedSymbols.add(symbol)
         const result = await getSymbolDefinition({
           repository: runtime.paths.repositoryPath,
           index: runtime.codeIndex,
@@ -488,6 +591,7 @@ export const runReviewAgent = async ({
       }),
       execute: async ({ symbol }) => {
         const input = { symbol }
+        reviewInspectedSymbols.add(symbol)
         const result = await getSymbolCallers({
           repository: runtime.paths.repositoryPath,
           index: runtime.codeIndex,
@@ -604,17 +708,23 @@ export const runReviewAgent = async ({
     headRef: pullRequest.headRef,
     diff,
     affectedSymbols,
+    repositoryContext: preparedRepositoryContext.markdown,
     semanticCoverage,
   })
   await recorder.writeText("context/prompt.txt", prompt)
   await recorder.writeJson("context/prompt-stats.json", {
     diffBytes: textBytes(diff),
     affectedSymbolsBytes: textBytes(affectedSymbols),
+    repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
+    repositoryContextSource: preparedRepositoryContext.source,
+    repositoryContextId: preparedRepositoryContext.contextId,
+    repositoryContextBaseSha: preparedRepositoryContext.baseSha,
     semanticCoverageBytes: semanticCoverage ? textBytes(semanticCoverage) : 0,
     promptBytes: textBytes(prompt),
     semanticEnabled,
     semanticContextPreloaded: false,
   })
+  const reviewGenerationStartToolCalls = recorder.counts().toolCalls
   let generation = await reviewAgent.generate({ prompt })
   const initialGenerationUsage = await recordLlmBilling(
     llmBilling,
@@ -630,8 +740,10 @@ export const runReviewAgent = async ({
     output: generation.output,
     text: generation.text,
   })
-  const initialGenerationToolCalls = recorder.counts().toolCalls
+  const initialGenerationToolCalls =
+    recorder.counts().toolCalls - reviewGenerationStartToolCalls
   let inspectionRerunUsage: unknown
+  let coverageRerunUsage: unknown
   if (initialGenerationToolCalls === 0) {
     logger.info("Review agent stage started", {
       ...context,
@@ -649,6 +761,7 @@ export const runReviewAgent = async ({
     await recorder.writeJson("context/inspection-rerun-prompt-stats.json", {
       promptBytes: textBytes(retryPrompt),
     })
+    const inspectionRerunStartToolCalls = recorder.counts().toolCalls
     generation = await createReviewAgent().generate({ prompt: retryPrompt })
     inspectionRerunUsage = await recordLlmBilling(
       llmBilling,
@@ -669,15 +782,15 @@ export const runReviewAgent = async ({
       stage: "inspection-rerun",
       usage: generation.totalUsage,
       findings: initialReport.findings.length,
-      toolCalls: recorder.counts().toolCalls - initialGenerationToolCalls,
+      toolCalls: recorder.counts().toolCalls - inspectionRerunStartToolCalls,
     })
     await recorder.appendEvent("stage.completed", {
       stage: "inspection-rerun",
       usage: generation.totalUsage,
       findings: initialReport.findings.length,
-      toolCalls: recorder.counts().toolCalls - initialGenerationToolCalls,
+      toolCalls: recorder.counts().toolCalls - inspectionRerunStartToolCalls,
     })
-    if (recorder.counts().toolCalls === initialGenerationToolCalls) {
+    if (recorder.counts().toolCalls === inspectionRerunStartToolCalls) {
       logger.info("Review agent accepted no-tool rerun", {
         ...context,
         stage: "inspection-rerun",
@@ -687,6 +800,73 @@ export const runReviewAgent = async ({
         findings: initialReport.findings.length,
       })
     }
+  }
+  const missingCoverageSymbols = changedSymbolCoverageCandidates(
+    diffContext,
+    reviewInspectedSymbols
+  )
+  await recorder.writeJson("context/review-coverage.json", {
+    inspectedSymbols: [...reviewInspectedSymbols].sort(),
+    missingSymbols: missingCoverageSymbols,
+    missingSymbolCount: missingCoverageSymbols.length,
+  })
+  if (missingCoverageSymbols.length > 0) {
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "coverage-rerun",
+      missingSymbols: missingCoverageSymbols.length,
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "coverage-rerun",
+      missingSymbols: missingCoverageSymbols,
+    })
+    const coveragePrompt = buildReviewAgentCoverageRetryPrompt({
+      originalPrompt: prompt,
+      missingSymbols: missingCoverageSymbols,
+    })
+    await recorder.writeText("context/coverage-rerun-prompt.txt", coveragePrompt)
+    await recorder.writeJson("context/coverage-rerun-prompt-stats.json", {
+      promptBytes: textBytes(coveragePrompt),
+      missingSymbols: missingCoverageSymbols,
+      inspectedSymbols: [...reviewInspectedSymbols].sort(),
+    })
+    const coverageGeneration = await createReviewAgent().generate({
+      prompt: coveragePrompt,
+    })
+    coverageRerunUsage = await recordLlmBilling(
+      llmBilling,
+      "coverageRerun",
+      REVIEW_MODEL,
+      coverageGeneration
+    )
+    initialReport = reviewReportSchema.parse(coverageGeneration.output)
+    await recorder.writeJson("agent-coverage-rerun-output.json", {
+      finishReason: coverageGeneration.finishReason,
+      usage: coverageGeneration.totalUsage,
+      providerMetadata: coverageGeneration.providerMetadata,
+      output: coverageGeneration.output,
+      text: coverageGeneration.text,
+    })
+    await recorder.writeJson("context/review-coverage-after-rerun.json", {
+      inspectedSymbols: [...reviewInspectedSymbols].sort(),
+      stillMissingSymbols: changedSymbolCoverageCandidates(
+        diffContext,
+        reviewInspectedSymbols
+      ),
+    })
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "coverage-rerun",
+      usage: coverageGeneration.totalUsage,
+      findings: initialReport.findings.length,
+      inspectedSymbols: reviewInspectedSymbols.size,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "coverage-rerun",
+      usage: coverageGeneration.totalUsage,
+      findings: initialReport.findings.length,
+      inspectedSymbols: [...reviewInspectedSymbols].sort(),
+    })
   }
   await recorder.writeJson("candidate-review-report.json", initialReport)
   let report = initialReport
@@ -808,6 +988,7 @@ export const runReviewAgent = async ({
       model: openrouter.chat(REVIEW_VERIFIER_MODEL),
       instructions: reviewVerifierInstructions,
       tools,
+      providerOptions: verifierModelProviderOptions,
       output: Output.object({
         schema: reviewVerificationSchema,
         name: "review_verification",
@@ -825,6 +1006,7 @@ export const runReviewAgent = async ({
       headRef: pullRequest.headRef,
       diff,
       affectedSymbols,
+      repositoryContext: preparedRepositoryContext.markdown,
       semanticCoverage,
       candidates: candidateFindings,
     })
@@ -838,6 +1020,8 @@ export const runReviewAgent = async ({
     )
     await recorder.writeJson("context/verification-prompt-stats.json", {
       promptBytes: textBytes(verificationPrompt),
+      repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
+      repositoryContextId: preparedRepositoryContext.contextId,
       semanticCoverageBytes: semanticCoverage ? textBytes(semanticCoverage) : 0,
       semanticEnabled,
       findings: candidateFindings.length,
@@ -903,6 +1087,7 @@ export const runReviewAgent = async ({
     usage: {
       review: initialGenerationUsage,
       inspectionRerun: inspectionRerunUsage,
+      coverageRerun: coverageRerunUsage,
       repair: repairUsage,
       verification: verificationUsage,
     },
@@ -917,6 +1102,7 @@ export const runReviewAgent = async ({
     usage: {
       review: initialGenerationUsage,
       inspectionRerun: inspectionRerunUsage,
+      coverageRerun: coverageRerunUsage,
       repair: repairUsage,
       verification: verificationUsage,
     },
@@ -1100,6 +1286,7 @@ export const runReviewAgent = async ({
     usage: {
       review: initialGenerationUsage,
       inspectionRerun: inspectionRerunUsage,
+      coverageRerun: coverageRerunUsage,
       repair: repairUsage,
       verification: verificationUsage,
     } as unknown as Record<string, unknown>,

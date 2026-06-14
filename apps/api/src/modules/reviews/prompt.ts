@@ -255,6 +255,7 @@ export const buildReviewAgentPrompt = ({
   headRef,
   diff,
   affectedSymbols,
+  repositoryContext,
   semanticCoverage,
 }: {
   title: string
@@ -263,11 +264,15 @@ export const buildReviewAgentPrompt = ({
   headRef: string
   diff: string
   affectedSymbols: string
+  repositoryContext?: string | null
   semanticCoverage?: string | null
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
+
+Repository context:
+${repositoryContext ?? "(none)"}
 
 Changed files:
 ${diff}
@@ -327,6 +332,23 @@ Use a balanced inspection pass:
 
 Only return a final report after that inspection is complete.`
 
+export const buildReviewAgentCoverageRetryPrompt = ({
+  originalPrompt,
+  missingSymbols,
+}: {
+  originalPrompt: string
+  missingSymbols: string[]
+}) => `${originalPrompt}
+
+The previous review pass did not inspect several changed symbols that may affect the behavior of this pull request.
+
+Before returning the final report, inspect these changed symbols or their directly relevant callers/callees with the available tools:
+${missingSymbols.map((symbol) => `- ${symbol}`).join("\n")}
+
+Use this as a coverage pass, not as a hint that every listed symbol is buggy. Check whether each symbol introduces or composes with changed behavior that could create an actionable bug, regression, security issue, or production risk.
+
+Do not stop only because earlier findings are already serious. Return the complete final report after this coverage pass.`
+
 export const buildReviewVerifierPrompt = ({
   title,
   body,
@@ -334,6 +356,7 @@ export const buildReviewVerifierPrompt = ({
   headRef,
   diff,
   affectedSymbols,
+  repositoryContext,
   semanticCoverage,
   candidates,
 }: {
@@ -343,12 +366,16 @@ export const buildReviewVerifierPrompt = ({
   headRef: string
   diff: string
   affectedSymbols: string
+  repositoryContext?: string | null
   semanticCoverage?: string | null
   candidates: CandidateFinding[]
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
+
+Repository context:
+${repositoryContext ?? "(none)"}
 
 Changed files:
 ${diff}

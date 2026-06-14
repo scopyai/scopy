@@ -15,13 +15,17 @@ type PullRequest = typeof pullRequest.$inferSelect
 export type ReviewRuntimePaths = {
   runPath: string
   repositoryPath: string
+  baseRepositoryPath: string
   indexPath: string
+  baseIndexPath: string
   metadataPath: string
 }
 
 export type PreparedReviewRuntime = {
   paths: ReviewRuntimePaths
   codeIndex: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
+  baseCodeIndex: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
+  baseSha: string
   qdrant: QdrantInferenceConfig | null
 }
 
@@ -46,7 +50,9 @@ export const getReviewRuntimePaths = ({
   return {
     runPath,
     repositoryPath: path.join(runPath, "repo"),
+    baseRepositoryPath: path.join(runPath, "repo-base"),
     indexPath: path.join(runPath, "index", "ast.json"),
+    baseIndexPath: path.join(runPath, "index", "base-ast.json"),
     metadataPath: path.join(runPath, "metadata.json"),
   }
 }
@@ -69,6 +75,19 @@ const createAskPassScript = async (runPath: string) => {
   return scriptPath
 }
 
+const gitEnv = ({
+  askPass,
+  token,
+}: {
+  askPass: string
+  token: string
+}) => ({
+  ...process.env,
+  GIT_ASKPASS: askPass,
+  GIT_TERMINAL_PROMPT: "0",
+  REVIEW_GITHUB_TOKEN: token,
+})
+
 const cloneRepository = async ({
   repo,
   pullRequest,
@@ -81,8 +100,10 @@ const cloneRepository = async ({
   paths: ReviewRuntimePaths
 }) => {
   await rm(paths.repositoryPath, { recursive: true, force: true })
+  await rm(paths.baseRepositoryPath, { recursive: true, force: true })
   const token = await createGitHubInstallationAccessToken(installationId)
   const askPass = await createAskPassScript(paths.runPath)
+  const env = gitEnv({ askPass, token })
   await execFileAsync(
     "git",
     [
@@ -94,12 +115,32 @@ const cloneRepository = async ({
       paths.repositoryPath,
     ],
     {
-      env: {
-        ...process.env,
-        GIT_ASKPASS: askPass,
-        GIT_TERMINAL_PROMPT: "0",
-        REVIEW_GITHUB_TOKEN: token,
-      },
+      env,
+      maxBuffer: 20 * 1024 * 1024,
+    },
+  )
+  await execFileAsync(
+    "git",
+    ["fetch", "--quiet", "origin", pullRequest.baseRef],
+    {
+      cwd: paths.repositoryPath,
+      env,
+      maxBuffer: 20 * 1024 * 1024,
+    },
+  )
+  await execFileAsync(
+    "git",
+    [
+      "worktree",
+      "add",
+      "--quiet",
+      "--detach",
+      paths.baseRepositoryPath,
+      `origin/${pullRequest.baseRef}`,
+    ],
+    {
+      cwd: paths.repositoryPath,
+      env,
       maxBuffer: 20 * 1024 * 1024,
     },
   )
@@ -108,25 +149,23 @@ const cloneRepository = async ({
     ["fetch", "--quiet", "origin", `pull/${pullRequest.number}/head`],
     {
       cwd: paths.repositoryPath,
-      env: {
-        ...process.env,
-        GIT_ASKPASS: askPass,
-        GIT_TERMINAL_PROMPT: "0",
-        REVIEW_GITHUB_TOKEN: token,
-      },
+      env,
       maxBuffer: 20 * 1024 * 1024,
     },
   )
   await execFileAsync("git", ["checkout", "--quiet", pullRequest.headSha], {
     cwd: paths.repositoryPath,
-    env: {
-      ...process.env,
-      GIT_ASKPASS: askPass,
-      GIT_TERMINAL_PROMPT: "0",
-      REVIEW_GITHUB_TOKEN: token,
-    },
+    env,
     maxBuffer: 20 * 1024 * 1024,
   })
+}
+
+const revParseHead = async (repositoryPath: string) => {
+  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+    cwd: repositoryPath,
+    maxBuffer: 1024 * 1024,
+  })
+  return stdout.trim()
 }
 
 const serializeCodeIndex = (
@@ -174,10 +213,19 @@ export const prepareReviewRuntime = async ({
   await mkdir(path.dirname(paths.indexPath), { recursive: true })
   await cloneRepository({ repo, pullRequest, installationId, paths })
 
+  const baseSha = await revParseHead(paths.baseRepositoryPath)
+  const baseCodeIndex = await buildRepositoryCodeIndex({
+    repository: paths.baseRepositoryPath,
+  })
   const codeIndex = await buildRepositoryCodeIndex({
     repository: paths.repositoryPath,
     changedFiles,
   })
+  await writeFile(
+    paths.baseIndexPath,
+    JSON.stringify(serializeCodeIndex(baseCodeIndex), null, 2),
+    "utf8",
+  )
   await writeFile(
     paths.indexPath,
     JSON.stringify(serializeCodeIndex(codeIndex), null, 2),
@@ -192,6 +240,8 @@ export const prepareReviewRuntime = async ({
         repository: repo.fullName,
         pullRequestId: pullRequest.id,
         pullRequestNumber: pullRequest.number,
+        baseRef: pullRequest.baseRef,
+        baseSha,
         headSha: pullRequest.headSha,
         preparedAt: new Date().toISOString(),
       },
@@ -204,6 +254,8 @@ export const prepareReviewRuntime = async ({
   return {
     paths,
     codeIndex,
+    baseCodeIndex,
+    baseSha,
     qdrant: qdrantConfig(),
   }
 }

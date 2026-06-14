@@ -392,6 +392,34 @@ export const reviewConfig = pgTable(
   ]
 )
 
+export const repositoryContext = pgTable(
+  "repository_context",
+  {
+    id: text("id").primaryKey(),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repository.id, { onDelete: "cascade" }),
+    baseSha: text("base_sha").notNull(),
+    modelId: text("model_id").notNull(),
+    markdown: text("markdown").notNull(),
+    summary: text("summary").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    generatedAt: timestamp("generated_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("repository_context_repository_id_idx").on(table.repositoryId),
+    index("repository_context_base_sha_idx").on(table.baseSha),
+  ]
+)
+
 export const reviewRun = pgTable(
   "review_run",
   {
@@ -562,6 +590,7 @@ export const repositoryRelations = relations(repository, ({ one, many }) => ({
     references: [workspace.id],
   }),
   reviewConfig: one(reviewConfig),
+  context: one(repositoryContext),
   pullRequests: many(pullRequest),
 }))
 
@@ -590,6 +619,16 @@ export const reviewConfigRelations = relations(reviewConfig, ({ one }) => ({
     references: [repository.id],
   }),
 }))
+
+export const repositoryContextRelations = relations(
+  repositoryContext,
+  ({ one }) => ({
+    repository: one(repository, {
+      fields: [repositoryContext.repositoryId],
+      references: [repository.id],
+    }),
+  })
+)
 
 export const reviewRunRelations = relations(reviewRun, ({ one, many }) => ({
   pullRequest: one(pullRequest, {
