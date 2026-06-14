@@ -153,14 +153,15 @@ function ChartTooltipContent({
     const key = `${labelKey ?? item?.dataKey ?? item?.name ?? "value"}`
     const itemConfig = getPayloadConfigFromPayload(config, item, key)
     const value =
-      !labelKey && typeof label === "string"
-        ? (config[label]?.label ?? label)
+      !labelKey
+        ? ((typeof label === "string" ? config[label]?.label : undefined) ??
+          label)
         : itemConfig?.label
 
     if (labelFormatter) {
       return (
         <div className={cn("font-medium", labelClassName)}>
-          {labelFormatter(value, payload)}
+          {labelFormatter(label, payload)}
         </div>
       )
     }

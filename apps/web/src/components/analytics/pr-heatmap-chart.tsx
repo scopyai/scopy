@@ -13,7 +13,12 @@ import {
   type ChartConfig,
 } from "@workspace/ui/components/chart"
 import { CalendarIcon } from "lucide-react"
-import { chartAxisTick, chartSeriesColor } from "./chart-utils"
+import {
+  analyticsDateTooltipLabel,
+  chartAxisTick,
+  chartSeriesColor,
+  formatAnalyticsDate,
+} from "./chart-utils"
 
 type DataPoint = { date: string; count: number }
 
@@ -23,13 +28,6 @@ const chartConfig = {
     color: chartSeriesColor(3),
   },
 } satisfies ChartConfig
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  })
-}
 
 function pickXAxisTicks(data: DataPoint[]): string[] {
   if (data.length <= 10) return data.map((d) => d.date)
@@ -63,7 +61,7 @@ export function PrHeatmapChart({ data }: { data: DataPoint[] }) {
               <XAxis
                 dataKey="date"
                 ticks={ticks}
-                tickFormatter={formatDate}
+                tickFormatter={formatAnalyticsDate}
                 tickLine={false}
                 axisLine={false}
                 tick={chartAxisTick}
@@ -77,7 +75,7 @@ export function PrHeatmapChart({ data }: { data: DataPoint[] }) {
               <ChartTooltip
                 content={
                   <ChartTooltipContent
-                    labelFormatter={(v) => formatDate(String(v))}
+                    labelFormatter={analyticsDateTooltipLabel}
                   />
                 }
               />

@@ -13,7 +13,12 @@ import {
   type ChartConfig,
 } from "@workspace/ui/components/chart"
 import { GitPullRequestIcon } from "lucide-react"
-import { chartAxisTick, chartSeriesColor } from "./chart-utils"
+import {
+  analyticsDateTooltipLabel,
+  chartAxisTick,
+  chartSeriesColor,
+  formatAnalyticsDate,
+} from "./chart-utils"
 
 type DataPoint = { date: string; count: number }
 
@@ -23,13 +28,6 @@ const chartConfig = {
     color: chartSeriesColor(1),
   },
 } satisfies ChartConfig
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  })
-}
 
 function pickXAxisTicks(data: DataPoint[]): string[] {
   if (data.length <= 7) return data.map((d) => d.date)
@@ -69,7 +67,7 @@ export function PrReviewsChart({ data }: { data: DataPoint[] }) {
               <XAxis
                 dataKey="date"
                 ticks={ticks}
-                tickFormatter={formatDate}
+                tickFormatter={formatAnalyticsDate}
                 tickLine={false}
                 axisLine={false}
                 tick={chartAxisTick}
@@ -83,7 +81,7 @@ export function PrReviewsChart({ data }: { data: DataPoint[] }) {
               <ChartTooltip
                 content={
                   <ChartTooltipContent
-                    labelFormatter={(v) => formatDate(String(v))}
+                    labelFormatter={analyticsDateTooltipLabel}
                   />
                 }
               />
