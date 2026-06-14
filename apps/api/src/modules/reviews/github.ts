@@ -17,11 +17,21 @@ export type PullRequestReviewEvent = "COMMENT" | "REQUEST_CHANGES"
 const getOctokit = async (installationId: string) =>
   createGitHubApp().getInstallationOctokit(Number(installationId))
 
-const getMarker = (pullRequestId: string) =>
-  `<!-- reviewbot:summary:${encodeURIComponent(pullRequestId)} -->`
+export type ReviewCommentScope = {
+  pullRequestId: string
+  reviewRunId?: string
+}
 
-const withMarker = (body: string, pullRequestId: string) =>
-  `${body}\n\n${getMarker(pullRequestId)}`
+export const getReviewCommentMarker = ({
+  pullRequestId,
+  reviewRunId,
+}: ReviewCommentScope) =>
+  reviewRunId
+    ? `<!-- reviewbot:summary:${encodeURIComponent(pullRequestId)}:${encodeURIComponent(reviewRunId)} -->`
+    : `<!-- reviewbot:summary:${encodeURIComponent(pullRequestId)} -->`
+
+const withMarker = (body: string, scope: ReviewCommentScope) =>
+  `${body}\n\n${getReviewCommentMarker(scope)}`
 
 export const reviewStartedBody =
   "Review started. I am analyzing the changes in this pull request."
@@ -116,14 +126,17 @@ export const findOrCreateReviewComment = async ({
   installationId,
   pullRequestNumber,
   pullRequestId,
+  reviewRunId,
 }: {
   repo: Repository
   installationId: string
   pullRequestNumber: number
   pullRequestId: string
+  reviewRunId?: string
 }) => {
   const octokit = await getOctokit(installationId)
-  const marker = getMarker(pullRequestId)
+  const scope = { pullRequestId, reviewRunId }
+  const marker = getReviewCommentMarker(scope)
   const comments = await octokit.paginate(
     "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
     {
@@ -144,6 +157,7 @@ export const findOrCreateReviewComment = async ({
       installationId,
       commentId: existing.id,
       pullRequestId,
+      reviewRunId,
       body: reviewStartedBody,
     })
     return existing.id
@@ -155,7 +169,7 @@ export const findOrCreateReviewComment = async ({
       owner: repo.owner,
       repo: repo.name,
       issue_number: pullRequestNumber,
-      body: withMarker(reviewStartedBody, pullRequestId),
+      body: withMarker(reviewStartedBody, scope),
     },
   )
 
@@ -167,12 +181,14 @@ export const updateReviewComment = async ({
   installationId,
   commentId,
   pullRequestId,
+  reviewRunId,
   body,
 }: {
   repo: Repository
   installationId: string
   commentId: number
   pullRequestId: string
+  reviewRunId?: string
   body: string
 }) => {
   const octokit = await getOctokit(installationId)
@@ -182,7 +198,7 @@ export const updateReviewComment = async ({
       owner: repo.owner,
       repo: repo.name,
       comment_id: commentId,
-      body: withMarker(body, pullRequestId),
+      body: withMarker(body, { pullRequestId, reviewRunId }),
     },
   )
 }

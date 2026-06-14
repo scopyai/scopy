@@ -222,6 +222,8 @@ export const runReviewAgent = async ({
     modelId: REVIEW_MODEL,
     verifierModelId: REVIEW_VERIFIER_MODEL,
   }
+  const reviewCommentRunId =
+    triggerSource === "mention" ? reviewRunId : undefined
   const recorder = await createReviewRunRecorder({
     reviewRunId,
     repo: repository,
@@ -237,6 +239,7 @@ export const runReviewAgent = async ({
     installationId,
     pullRequestNumber: pullRequest.number,
     pullRequestId: pullRequest.id,
+    reviewRunId: reviewCommentRunId,
   })
   logger.info("Review agent stage completed", {
     ...context,
@@ -291,6 +294,7 @@ export const runReviewAgent = async ({
       installationId,
       commentId,
       pullRequestId: pullRequest.id,
+      reviewRunId: reviewCommentRunId,
       body: `## Review summary\n\n${skipReason}`,
     })
     const result = {
@@ -931,6 +935,7 @@ export const runReviewAgent = async ({
     installationId,
     commentId,
     pullRequestId: pullRequest.id,
+    reviewRunId: reviewCommentRunId,
     body: publishedReport,
   })
   let reviewId: number | undefined
@@ -984,6 +989,7 @@ export const runReviewAgent = async ({
           installationId,
           commentId,
           pullRequestId: pullRequest.id,
+          reviewRunId: reviewCommentRunId,
           body: publishedReport,
         })
       } catch (fallbackError) {
@@ -1013,6 +1019,7 @@ export const runReviewAgent = async ({
           installationId,
           commentId,
           pullRequestId: pullRequest.id,
+          reviewRunId: reviewCommentRunId,
           body: publishedReport,
         })
       } catch (summaryError) {
@@ -1161,18 +1168,31 @@ export const publishReviewFailure = async ({
   pullRequest,
   repository,
   installationId,
-}: Pick<RunInput, "pullRequest" | "repository" | "installationId">) => {
+  reviewRunId,
+  triggerSource,
+}: Pick<
+  RunInput,
+  | "pullRequest"
+  | "repository"
+  | "installationId"
+  | "reviewRunId"
+  | "triggerSource"
+>) => {
+  const reviewCommentRunId =
+    triggerSource === "mention" ? reviewRunId : undefined
   const commentId = await findOrCreateReviewComment({
     repo: repository,
     installationId,
     pullRequestNumber: pullRequest.number,
     pullRequestId: pullRequest.id,
+    reviewRunId: reviewCommentRunId,
   })
   await updateReviewComment({
     repo: repository,
     installationId,
     commentId,
     pullRequestId: pullRequest.id,
+    reviewRunId: reviewCommentRunId,
     body: reviewFailedBody,
   })
   return commentId

@@ -108,6 +108,11 @@ export const executeReviewPullRequest = async (
   }
 
   const workspaceId = run.pullRequest.repository.workspace.id
+  const triggerSource =
+    typeof run.result?.triggerSource === "string"
+      ? run.result.triggerSource
+      : "automatic"
+  const reviewCommentRunId = triggerSource === "mention" ? run.id : undefined
   if (!(await hasPositiveUsageBalance(workspaceId))) {
     let commentId: number | undefined
     try {
@@ -117,6 +122,7 @@ export const executeReviewPullRequest = async (
           run.pullRequest.repository.workspace.providerInstallationId,
         pullRequestNumber: run.pullRequest.number,
         pullRequestId: run.pullRequest.id,
+        reviewRunId: reviewCommentRunId,
       })
       await updateReviewComment({
         repo: run.pullRequest.repository,
@@ -124,6 +130,7 @@ export const executeReviewPullRequest = async (
           run.pullRequest.repository.workspace.providerInstallationId,
         commentId,
         pullRequestId: run.pullRequest.id,
+        reviewRunId: reviewCommentRunId,
         body: reviewBalanceBlockedBody,
       })
     } catch (publishError) {
@@ -141,10 +148,7 @@ export const executeReviewPullRequest = async (
         status: "skipped",
         result: {
           kind: "billing_blocked",
-          triggerSource:
-            typeof run.result?.triggerSource === "string"
-              ? run.result.triggerSource
-              : "automatic",
+          triggerSource,
           modelId: REVIEW_MODEL,
           commentId,
           skipReason: "workspace_balance_empty",
@@ -173,10 +177,6 @@ export const executeReviewPullRequest = async (
     .where(eq(reviewRun.id, run.id))
 
   try {
-    const triggerSource =
-      typeof run.result?.triggerSource === "string"
-        ? run.result.triggerSource
-        : "automatic"
     const result = await runReviewAgent({
       reviewRunId: run.id,
       pullRequest: run.pullRequest,
@@ -261,10 +261,6 @@ export const executeReviewPullRequest = async (
     const message =
       error instanceof Error ? error.message : "Unknown review workflow error"
     const isFinalAttempt = attempt >= maxAttempts
-    const triggerSource =
-      typeof run.result?.triggerSource === "string"
-        ? run.result.triggerSource
-        : "automatic"
     let commentId: number | undefined
     try {
       const recorder = await createReviewRunRecorder({
@@ -302,6 +298,8 @@ export const executeReviewPullRequest = async (
           repository: run.pullRequest.repository,
           installationId:
             run.pullRequest.repository.workspace.providerInstallationId,
+          reviewRunId: run.id,
+          triggerSource,
         })
       } catch (publishError) {
         logger.error("Failed to publish review failure notice", {
