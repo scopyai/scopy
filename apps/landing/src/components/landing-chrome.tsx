@@ -55,7 +55,7 @@ export function LandingFooter() {
               Docs
             </a>
             <a href={env.privacyUrl} className="l-footer-a">
-              Privacy
+              Terms &amp; Privacy
             </a>
             <a href={`mailto:${env.supportEmail}`} className="l-footer-a">
               Support
