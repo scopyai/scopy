@@ -1,39 +1,6 @@
 import { t } from 'elysia'
 import { protectedRoute } from '../auth'
-import { env } from '../../env'
-
-function escapeHtml(text: string) {
-	return text
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-}
-
-async function sendTelegramMessage(text: string) {
-	const token = env.TELEGRAM_BOT_TOKEN
-	const chatId = env.TELEGRAM_FEEDBACK_CHAT_ID
-
-	if (!token || !chatId) {
-		console.warn('[feedback] Telegram is not configured; feedback was not delivered')
-		return
-	}
-
-	const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			chat_id: chatId,
-			text,
-			parse_mode: 'HTML',
-		}),
-	})
-
-	if (!response.ok) {
-		const body = await response.text()
-		console.error('[feedback] Telegram delivery failed:', body)
-		throw new Error('Failed to deliver feedback')
-	}
-}
+import { escapeHtml, sendTelegramMessage } from '../../lib/telegram'
 
 export const feedbackRoutes = protectedRoute('/feedback').post(
 	'/',

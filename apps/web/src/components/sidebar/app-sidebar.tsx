@@ -1,6 +1,7 @@
 import { WorkspaceSwitcher } from "./workspace-switcher"
 import { SidebarNav } from "./sidebar-nav"
 import { SidebarFeedback } from "./sidebar-feedback"
+import { SidebarSupport } from "./sidebar-support"
 import { UserMenu } from "./user-menu"
 
 export function AppSidebar() {
@@ -16,6 +17,7 @@ export function AppSidebar() {
 
       <div className="flex shrink-0 flex-col gap-2 p-2">
         <SidebarFeedback />
+        <SidebarSupport />
         <UserMenu />
       </div>
     </aside>

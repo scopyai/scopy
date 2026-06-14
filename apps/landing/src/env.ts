@@ -8,6 +8,7 @@ export const env = {
   appUrl: envVar("VITE_APP_URL", "http://localhost:3000"),
   docsUrl: envVar("VITE_DOCS_URL", "/docs"),
   privacyUrl: envVar("VITE_PRIVACY_URL", "/privacy"),
+  supportEmail: "support@scopy.dev",
 } as const
 
 export function isExternalUrl(url: string): boolean {

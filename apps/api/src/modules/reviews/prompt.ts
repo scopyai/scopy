@@ -315,13 +315,15 @@ export const buildReviewAgentInspectionRetryPrompt = ({
 
 This review pass must inspect repository context with tools before returning the final report.
 
-Inspect the changed backend/security-relevant symbols and their callers with the available tools before returning the final report.
+Inspect the changed symbols, their callers, and directly connected code paths with the available tools before returning the final report.
 
-Pay special attention to:
-- authorization helpers and routes that accept alternate credentials such as share tokens, API keys, session cookies, or tenant ids
-- endpoints that accept both a path resource id and a token/query/body credential
-- whether the authorization check binds the credential to the exact resource id used by later data-loading code
-- changed helper functions reused by multiple endpoints
+Use a balanced inspection pass:
+- For each changed entry point, inspect the changed implementation and the code that calls or exposes it.
+- Follow data as it enters, is transformed, is stored, and is returned or sent onward.
+- Check whether assumptions made at one step are still valid at later steps.
+- Check changed reads, writes, state transitions, external calls, and returned data for unintended behavior.
+- Check both the direct behavior and the behavior created by composing changed helpers with existing code.
+- Treat every changed area as potentially important; do not stop after confirming the first serious issue.
 
 Only return a final report after that inspection is complete.`
 

@@ -1,8 +1,14 @@
 import { betterAuth } from "better-auth"
+import { createAuthMiddleware } from "better-auth/api"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { db } from "../../db/client"
 import * as schema from "../../db/schema"
 import { env } from "../../env"
+import {
+	isLoginPath,
+	notifyUserLogin,
+	notifyUserSignup,
+} from "./notifications"
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -17,5 +23,42 @@ export const auth = betterAuth({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
     },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user, ctx) => {
+          void notifyUserSignup(
+            {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+            },
+            ctx?.path,
+          )
+        },
+      },
+    },
+  },
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path.startsWith("/sign-up")) {
+        return
+      }
+
+      const newSession = ctx.context.newSession
+      if (!newSession || !isLoginPath(ctx.path)) {
+        return
+      }
+
+      void notifyUserLogin(
+        {
+          id: newSession.user.id,
+          name: newSession.user.name,
+          email: newSession.user.email,
+        },
+        ctx.path,
+      )
+    }),
   },
 })

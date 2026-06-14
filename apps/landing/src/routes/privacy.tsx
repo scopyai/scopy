@@ -152,7 +152,8 @@ function PrivacyPage() {
                 <a href={env.githubUrl} {...externalLinkProps(env.githubUrl)}>
                   GitHub
                 </a>{" "}
-                or reach out through your workspace support channel.
+                or email{" "}
+                <a href={`mailto:${env.supportEmail}`}>{env.supportEmail}</a>.
               </p>
             </section>
           </div>
