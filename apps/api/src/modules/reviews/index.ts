@@ -40,19 +40,26 @@ import {
   type ReviewReportEvidenceValidation,
 } from "./evidence"
 import {
-  buildReviewAgentCoverageRetryPrompt,
-  buildReviewAgentInspectionRetryPrompt,
-  buildReviewAgentPrompt,
+  buildFileScoutPrompt,
+  buildFileScoutPlan,
+  buildReviewJudgePrompt,
   buildReviewAgentRepairPrompt,
   buildReviewVerifierPrompt,
+  aggregateScoutFindings,
+  fileScoutInstructions,
+  fileScoutOutputSchema,
+  renderAffectedSymbolsForFile,
   renderAffectedSymbols,
   renderReviewSummaryComment,
   renderSemanticCoverage,
-  reviewAgentInstructions,
+  reviewJudgeInstructions,
+  reviewJudgeOutputSchema,
   reviewReportSchema,
   reviewVerifierInstructions,
   reviewVerificationSchema,
   type CandidateFinding,
+  type FileScoutOutput,
+  type ReviewJudgeOutput,
   type ReviewReport,
   type ReviewVerification,
 } from "./prompt"
@@ -162,17 +169,19 @@ const recordLlmBilling = async (
   stages: Record<string, unknown>,
   stage: string,
   modelId: string,
-  generation: unknown,
+  generation: unknown
 ) => {
   const cost = await resolveOpenRouterGenerationCost(generation)
   if (cost.costMicrocents === null) {
     throw new Error(`OpenRouter cost is missing for ${stage}`)
   }
   const usage =
-    typeof generation === "object" && generation !== null && "totalUsage" in generation
+    typeof generation === "object" &&
+    generation !== null &&
+    "totalUsage" in generation
       ? (generation as { totalUsage: unknown }).totalUsage
       : undefined
-  stages[stage] = {
+  const entry = {
     modelId,
     usage,
     billingUnit: "micro_usd",
@@ -187,6 +196,34 @@ const recordLlmBilling = async (
       "providerMetadata" in generation
         ? (generation as { providerMetadata: unknown }).providerMetadata
         : undefined,
+  }
+  const existing = stages[stage]
+  if (
+    existing &&
+    typeof existing === "object" &&
+    "costMicrocents" in existing &&
+    typeof (existing as { costMicrocents?: unknown }).costMicrocents ===
+      "number"
+  ) {
+    const existingEntry = existing as {
+      costUsd?: number
+      costMicroUsd: number
+      costMicrocents: number
+      stepCount?: number
+      steps?: unknown[]
+      calls?: unknown[]
+    }
+    stages[stage] = {
+      ...existingEntry,
+      costUsd: (existingEntry.costUsd ?? 0) + cost.cost,
+      costMicroUsd: existingEntry.costMicroUsd + cost.costMicrocents,
+      costMicrocents: existingEntry.costMicrocents + cost.costMicrocents,
+      steps: [...(existingEntry.steps ?? []), ...cost.steps],
+      stepCount: (existingEntry.stepCount ?? 0) + cost.steps.length,
+      calls: [...(existingEntry.calls ?? []), entry],
+    }
+  } else {
+    stages[stage] = { ...entry, calls: [entry] }
   }
   return usage
 }
@@ -214,44 +251,44 @@ const applyVerification = (
   }
 }
 
-const isGeneratedOrTestFile = (file: string) =>
-  /(^|\/)(generated|__generated__)\//.test(file) ||
-  /\.gen\.[^.]+$/.test(file) ||
-  /\.(test|spec)\.[^.]+$/.test(file) ||
-  /(^|\/)__tests__\//.test(file)
+const serializeJsonl = (records: unknown[]) =>
+  records.map((record) => JSON.stringify(record)).join("\n")
 
-const changedSymbolCoverageCandidates = (
-  diffContext: Awaited<ReturnType<typeof buildDiffContext>>,
-  inspectedSymbols: Set<string>
+const reportFromJudgeOutput = (output: ReviewJudgeOutput): ReviewReport => ({
+  summary: output.summary,
+  mergeSafetyScore: output.mergeSafetyScore,
+  mergeSafetyReason: output.mergeSafetyReason,
+  findings: output.findings,
+})
+
+const validateJudgeDecisionLedger = (
+  output: ReviewJudgeOutput,
+  scoutFindings: { candidateId: string }[]
 ) => {
-  const candidates = diffContext.files.flatMap((file) =>
-    file.affectedSymbols
-      .filter((symbol) => !isGeneratedOrTestFile(symbol.file))
-      .filter((symbol) => !inspectedSymbols.has(symbol.name))
-      .filter((symbol) =>
-        ["function", "method", "object-method", "class"].includes(symbol.kind)
-      )
-      .map((symbol) => ({
-        label: `${symbol.name} (${symbol.file}:${symbol.startLine}-${symbol.endLine})`,
-        file: symbol.file,
-        touchedLines: symbol.touchedLines.length,
-        span: symbol.endLine - symbol.startLine,
-      }))
-  )
+  const expected = new Set(scoutFindings.map((finding) => finding.candidateId))
+  const seen = new Set<string>()
+  const duplicateDecisionIds = new Set<string>()
+  const unknownDecisionIds = new Set<string>()
 
-  return candidates
-    .sort((a, b) => {
-      const aTsx = a.file.endsWith(".tsx") ? 1 : 0
-      const bTsx = b.file.endsWith(".tsx") ? 1 : 0
-      return (
-        aTsx - bTsx ||
-        b.touchedLines - a.touchedLines ||
-        b.span - a.span ||
-        a.file.localeCompare(b.file)
-      )
-    })
-    .slice(0, 12)
-    .map((candidate) => candidate.label)
+  for (const decision of output.decisions) {
+    if (seen.has(decision.candidateId)) {
+      duplicateDecisionIds.add(decision.candidateId)
+    }
+    seen.add(decision.candidateId)
+    if (!expected.has(decision.candidateId)) {
+      unknownDecisionIds.add(decision.candidateId)
+    }
+  }
+
+  return {
+    expected: expected.size,
+    actual: output.decisions.length,
+    missingDecisionIds: [...expected].filter(
+      (candidateId) => !seen.has(candidateId)
+    ),
+    unknownDecisionIds: [...unknownDecisionIds],
+    duplicateDecisionIds: [...duplicateDecisionIds],
+  }
 }
 
 export const runReviewAgent = async ({
@@ -438,7 +475,10 @@ export const runReviewAgent = async ({
         }
       : { configured: false },
   })
-  await recorder.writeJson("context/base-code-index.json", runtime.baseCodeIndex)
+  await recorder.writeJson(
+    "context/base-code-index.json",
+    runtime.baseCodeIndex
+  )
   await recorder.writeJson("context/code-index.json", runtime.codeIndex)
   await recorder.writeJson("context/diff-context.json", diffContext)
   await recorder.writeText("context/affected-symbols.md", affectedSymbols)
@@ -502,15 +542,9 @@ export const runReviewAgent = async ({
     baseRepositoryPath: runtime.paths.baseRepositoryPath,
     baseIndex: runtime.baseCodeIndex,
     baseSha: runtime.baseSha,
-    diff,
-    affectedSymbols,
-    semanticCoverage,
     contextModel: openrouter.chat(REVIEW_MODEL),
     contextModelId: REVIEW_MODEL,
-    classifierModel: openrouter.chat(REVIEW_VERIFIER_MODEL),
-    classifierModelId: REVIEW_VERIFIER_MODEL,
     contextProviderOptions: reviewModelProviderOptions,
-    classifierProviderOptions: verifierModelProviderOptions,
     recorder,
     logger,
   })
@@ -538,7 +572,65 @@ export const runReviewAgent = async ({
   let vectorQueryBytes = 0
   let vectorNetworkBytes = 0
   let vectorQueryCount = 0
-  const reviewInspectedSymbols = new Set<string>()
+  const judgeInspectedSymbols = new Set<string>()
+  const createScoutTools = (sourceFile: string, localToolCalls: unknown[]) => ({
+    get_symbol_definition: tool({
+      description:
+        "Given only a symbol name, returns matching definitions with signature, parameters, return type, file/line range, enclosing scope metadata, and definition source.",
+      inputSchema: z.object({
+        symbol: z.string().min(1),
+      }),
+      execute: async ({ symbol }) => {
+        const input = { sourceFile, symbol }
+        const result = await getSymbolDefinition({
+          repository: runtime.paths.repositoryPath,
+          index: runtime.codeIndex,
+          symbol,
+        })
+        const output = { ...result.json, stats: result.stats }
+        localToolCalls.push({
+          at: new Date().toISOString(),
+          name: "get_symbol_definition",
+          input,
+          output,
+        })
+        await recorder.recordToolCall({
+          name: "file_scout.get_symbol_definition",
+          input,
+          output,
+        })
+        return output
+      },
+    }),
+    get_symbol_callers: tool({
+      description:
+        "Given only a symbol name, returns direct call locations with call lines and enclosing caller symbol metadata.",
+      inputSchema: z.object({
+        symbol: z.string().min(1),
+      }),
+      execute: async ({ symbol }) => {
+        const input = { sourceFile, symbol }
+        const result = await getSymbolCallers({
+          repository: runtime.paths.repositoryPath,
+          index: runtime.codeIndex,
+          symbol,
+        })
+        const output = { ...result.json, stats: result.stats }
+        localToolCalls.push({
+          at: new Date().toISOString(),
+          name: "get_symbol_callers",
+          input,
+          output,
+        })
+        await recorder.recordToolCall({
+          name: "file_scout.get_symbol_callers",
+          input,
+          output,
+        })
+        return output
+      },
+    }),
+  })
   const baseTools = {
     read_file: tool({
       description:
@@ -568,7 +660,7 @@ export const runReviewAgent = async ({
       }),
       execute: async ({ symbol }) => {
         const input = { symbol }
-        reviewInspectedSymbols.add(symbol)
+        judgeInspectedSymbols.add(symbol)
         const result = await getSymbolDefinition({
           repository: runtime.paths.repositoryPath,
           index: runtime.codeIndex,
@@ -591,7 +683,7 @@ export const runReviewAgent = async ({
       }),
       execute: async ({ symbol }) => {
         const input = { symbol }
-        reviewInspectedSymbols.add(symbol)
+        judgeInspectedSymbols.add(symbol)
         const result = await getSymbolCallers({
           repository: runtime.paths.repositoryPath,
           index: runtime.codeIndex,
@@ -680,10 +772,27 @@ export const runReviewAgent = async ({
         }),
       }
     : baseTools
-  const createReviewAgent = () =>
+  const createJudgeAgent = () =>
     new ToolLoopAgent({
       model: openrouter.chat(REVIEW_MODEL),
-      instructions: reviewAgentInstructions,
+      instructions: reviewJudgeInstructions,
+      tools,
+      providerOptions: reviewModelProviderOptions,
+      output: Output.object({
+        schema: reviewJudgeOutputSchema,
+        name: "review_judge_output",
+        description:
+          "Structured pull request review report with scout candidate decisions",
+      }),
+      maxRetries: 2,
+      onStepFinish: async (step) => {
+        await recorder.recordStep(step)
+      },
+    })
+  const createReviewReportAgent = () =>
+    new ToolLoopAgent({
+      model: openrouter.chat(REVIEW_MODEL),
+      instructions: reviewJudgeInstructions,
       tools,
       providerOptions: reviewModelProviderOptions,
       output: Output.object({
@@ -696,12 +805,127 @@ export const runReviewAgent = async ({
         await recorder.recordStep(step)
       },
     })
-  const reviewAgent = createReviewAgent()
   await recorder.writeText(
-    "context/review-instructions.txt",
-    reviewAgentInstructions
+    "context/judge-instructions.txt",
+    reviewJudgeInstructions
   )
-  const prompt = buildReviewAgentPrompt({
+  await recorder.writeText(
+    "context/file-scout-instructions.txt",
+    fileScoutInstructions
+  )
+  const scoutOutputs: FileScoutOutput[] = []
+  const fileScoutUsages: unknown[] = []
+  const skippedScouts: { file: string; reason: string }[] = []
+  const scoutPlan = buildFileScoutPlan(filteredFiles)
+  logger.info("Review agent stage started", {
+    ...context,
+    stage: "fileScout",
+    files: scoutPlan.length,
+  })
+  await recorder.appendEvent("stage.started", {
+    stage: "fileScout",
+    files: scoutPlan.length,
+  })
+  for (const item of scoutPlan) {
+    if (item.skipped) {
+      skippedScouts.push({ file: item.file, reason: item.skipped.reason })
+      await recorder.writeJson(`file-scouts/${item.safeFile}/skipped.json`, {
+        file: item.file,
+        reason: item.skipped.reason,
+      })
+      continue
+    }
+    const localToolCalls: unknown[] = []
+    const scoutPrompt = buildFileScoutPrompt({
+      title: pullRequest.title,
+      body: pullRequest.body,
+      baseRef: pullRequest.baseRef,
+      headRef: pullRequest.headRef,
+      file: item.file,
+      status: item.status,
+      patch: item.patch,
+      affectedSymbols: renderAffectedSymbolsForFile(diffContext, item.file),
+    })
+    await recorder.writeText(
+      `file-scouts/${item.safeFile}/prompt.txt`,
+      scoutPrompt
+    )
+    await recorder.writeJson(`file-scouts/${item.safeFile}/prompt-stats.json`, {
+      promptBytes: textBytes(scoutPrompt),
+      patchBytes: textBytes(item.patch),
+    })
+    const scoutStartToolCalls = recorder.counts().toolCalls
+    const scoutAgent = new ToolLoopAgent({
+      model: openrouter.chat(REVIEW_VERIFIER_MODEL),
+      instructions: fileScoutInstructions,
+      tools: createScoutTools(item.file, localToolCalls),
+      providerOptions: verifierModelProviderOptions,
+      output: Output.object({
+        schema: fileScoutOutputSchema,
+        name: "file_security_scout",
+        description: "Noisy security candidates for one changed file",
+      }),
+      maxRetries: 2,
+      onStepFinish: async (step) => {
+        await recorder.recordStep(step)
+      },
+    })
+    const scoutGeneration = await scoutAgent.generate({ prompt: scoutPrompt })
+    fileScoutUsages.push(scoutGeneration.totalUsage)
+    await recordLlmBilling(
+      llmBilling,
+      "fileScout",
+      REVIEW_VERIFIER_MODEL,
+      scoutGeneration
+    )
+    const scoutOutput = fileScoutOutputSchema.parse(scoutGeneration.output)
+    scoutOutputs.push(scoutOutput)
+    await recorder.writeJson(`file-scouts/${item.safeFile}/output.json`, {
+      finishReason: scoutGeneration.finishReason,
+      usage: scoutGeneration.totalUsage,
+      providerMetadata: scoutGeneration.providerMetadata,
+      output: scoutGeneration.output,
+      text: scoutGeneration.text,
+    })
+    await recorder.writeText(
+      `file-scouts/${item.safeFile}/tool-calls.jsonl`,
+      `${serializeJsonl(localToolCalls)}${localToolCalls.length > 0 ? "\n" : ""}`
+    )
+    await recorder.appendEvent("file_scout.completed", {
+      file: item.file,
+      findings: scoutOutput.candidates.length,
+      inspectedSymbols: scoutOutput.inspectedSymbols,
+      toolCalls: recorder.counts().toolCalls - scoutStartToolCalls,
+    })
+  }
+  const scoutFindings = aggregateScoutFindings(scoutOutputs)
+  await recorder.writeJson("candidate-scout-findings.json", scoutFindings)
+  await recorder.writeJson("file-scouts/summary.json", {
+    files: filteredFiles.length,
+    completed: scoutOutputs.length,
+    skipped: skippedScouts,
+    candidateFindings: scoutFindings.length,
+    perFile: scoutOutputs.map((output) => ({
+      file: output.file,
+      candidates: output.candidates.length,
+      inspectedSymbols: output.inspectedSymbols,
+      notes: output.notes,
+    })),
+  })
+  logger.info("Review agent stage completed", {
+    ...context,
+    stage: "fileScout",
+    completed: scoutOutputs.length,
+    skipped: skippedScouts.length,
+    candidateFindings: scoutFindings.length,
+  })
+  await recorder.appendEvent("stage.completed", {
+    stage: "fileScout",
+    completed: scoutOutputs.length,
+    skipped: skippedScouts.length,
+    candidateFindings: scoutFindings.length,
+  })
+  const judgePrompt = buildReviewJudgePrompt({
     title: pullRequest.title,
     body: pullRequest.body,
     baseRef: pullRequest.baseRef,
@@ -709,165 +933,78 @@ export const runReviewAgent = async ({
     diff,
     affectedSymbols,
     repositoryContext: preparedRepositoryContext.markdown,
-    semanticCoverage,
+    scoutFindings,
   })
-  await recorder.writeText("context/prompt.txt", prompt)
-  await recorder.writeJson("context/prompt-stats.json", {
+  await recorder.writeText("context/judge-prompt.txt", judgePrompt)
+  await recorder.writeJson("context/judge-prompt-stats.json", {
     diffBytes: textBytes(diff),
     affectedSymbolsBytes: textBytes(affectedSymbols),
     repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
     repositoryContextSource: preparedRepositoryContext.source,
     repositoryContextId: preparedRepositoryContext.contextId,
     repositoryContextBaseSha: preparedRepositoryContext.baseSha,
-    semanticCoverageBytes: semanticCoverage ? textBytes(semanticCoverage) : 0,
-    promptBytes: textBytes(prompt),
+    scoutCandidateFindings: scoutFindings.length,
+    promptBytes: textBytes(judgePrompt),
     semanticEnabled,
     semanticContextPreloaded: false,
   })
-  const reviewGenerationStartToolCalls = recorder.counts().toolCalls
-  let generation = await reviewAgent.generate({ prompt })
-  const initialGenerationUsage = await recordLlmBilling(
+  logger.info("Review agent stage started", {
+    ...context,
+    stage: "judge",
+    scoutCandidateFindings: scoutFindings.length,
+  })
+  await recorder.appendEvent("stage.started", {
+    stage: "judge",
+    scoutCandidateFindings: scoutFindings.length,
+  })
+  const judgeGeneration = await createJudgeAgent().generate({
+    prompt: judgePrompt,
+  })
+  const judgeUsage = await recordLlmBilling(
     llmBilling,
-    "review",
+    "judge",
     REVIEW_MODEL,
-    generation,
+    judgeGeneration
   )
-  let initialReport = reviewReportSchema.parse(generation.output)
-  await recorder.writeJson("agent-output.json", {
-    finishReason: generation.finishReason,
-    usage: generation.totalUsage,
-    providerMetadata: generation.providerMetadata,
-    output: generation.output,
-    text: generation.text,
-  })
-  const initialGenerationToolCalls =
-    recorder.counts().toolCalls - reviewGenerationStartToolCalls
-  let inspectionRerunUsage: unknown
-  let coverageRerunUsage: unknown
-  if (initialGenerationToolCalls === 0) {
-    logger.info("Review agent stage started", {
-      ...context,
-      stage: "inspection-rerun",
-      reason: "report_without_tool_calls",
-    })
-    await recorder.appendEvent("stage.started", {
-      stage: "inspection-rerun",
-      reason: "report_without_tool_calls",
-    })
-    const retryPrompt = buildReviewAgentInspectionRetryPrompt({
-      originalPrompt: prompt,
-    })
-    await recorder.writeText("context/inspection-rerun-prompt.txt", retryPrompt)
-    await recorder.writeJson("context/inspection-rerun-prompt-stats.json", {
-      promptBytes: textBytes(retryPrompt),
-    })
-    const inspectionRerunStartToolCalls = recorder.counts().toolCalls
-    generation = await createReviewAgent().generate({ prompt: retryPrompt })
-    inspectionRerunUsage = await recordLlmBilling(
-      llmBilling,
-      "inspectionRerun",
-      REVIEW_MODEL,
-      generation,
-    )
-    initialReport = reviewReportSchema.parse(generation.output)
-    await recorder.writeJson("agent-inspection-rerun-output.json", {
-      finishReason: generation.finishReason,
-      usage: generation.totalUsage,
-      providerMetadata: generation.providerMetadata,
-      output: generation.output,
-      text: generation.text,
-    })
-    logger.info("Review agent stage completed", {
-      ...context,
-      stage: "inspection-rerun",
-      usage: generation.totalUsage,
-      findings: initialReport.findings.length,
-      toolCalls: recorder.counts().toolCalls - inspectionRerunStartToolCalls,
-    })
-    await recorder.appendEvent("stage.completed", {
-      stage: "inspection-rerun",
-      usage: generation.totalUsage,
-      findings: initialReport.findings.length,
-      toolCalls: recorder.counts().toolCalls - inspectionRerunStartToolCalls,
-    })
-    if (recorder.counts().toolCalls === inspectionRerunStartToolCalls) {
-      logger.info("Review agent accepted no-tool rerun", {
-        ...context,
-        stage: "inspection-rerun",
-        findings: initialReport.findings.length,
-      })
-      await recorder.appendEvent("inspection-rerun.accepted_without_tools", {
-        findings: initialReport.findings.length,
-      })
-    }
-  }
-  const missingCoverageSymbols = changedSymbolCoverageCandidates(
-    diffContext,
-    reviewInspectedSymbols
+  const judgeOutput = reviewJudgeOutputSchema.parse(judgeGeneration.output)
+  const judgeDecisionLedger = validateJudgeDecisionLedger(
+    judgeOutput,
+    scoutFindings
   )
-  await recorder.writeJson("context/review-coverage.json", {
-    inspectedSymbols: [...reviewInspectedSymbols].sort(),
-    missingSymbols: missingCoverageSymbols,
-    missingSymbolCount: missingCoverageSymbols.length,
+  const initialReport = reportFromJudgeOutput(judgeOutput)
+  await recorder.writeJson("agent-judge-output.json", {
+    finishReason: judgeGeneration.finishReason,
+    usage: judgeGeneration.totalUsage,
+    providerMetadata: judgeGeneration.providerMetadata,
+    output: judgeGeneration.output,
+    text: judgeGeneration.text,
   })
-  if (missingCoverageSymbols.length > 0) {
-    logger.info("Review agent stage started", {
-      ...context,
-      stage: "coverage-rerun",
-      missingSymbols: missingCoverageSymbols.length,
-    })
-    await recorder.appendEvent("stage.started", {
-      stage: "coverage-rerun",
-      missingSymbols: missingCoverageSymbols,
-    })
-    const coveragePrompt = buildReviewAgentCoverageRetryPrompt({
-      originalPrompt: prompt,
-      missingSymbols: missingCoverageSymbols,
-    })
-    await recorder.writeText("context/coverage-rerun-prompt.txt", coveragePrompt)
-    await recorder.writeJson("context/coverage-rerun-prompt-stats.json", {
-      promptBytes: textBytes(coveragePrompt),
-      missingSymbols: missingCoverageSymbols,
-      inspectedSymbols: [...reviewInspectedSymbols].sort(),
-    })
-    const coverageGeneration = await createReviewAgent().generate({
-      prompt: coveragePrompt,
-    })
-    coverageRerunUsage = await recordLlmBilling(
-      llmBilling,
-      "coverageRerun",
-      REVIEW_MODEL,
-      coverageGeneration
-    )
-    initialReport = reviewReportSchema.parse(coverageGeneration.output)
-    await recorder.writeJson("agent-coverage-rerun-output.json", {
-      finishReason: coverageGeneration.finishReason,
-      usage: coverageGeneration.totalUsage,
-      providerMetadata: coverageGeneration.providerMetadata,
-      output: coverageGeneration.output,
-      text: coverageGeneration.text,
-    })
-    await recorder.writeJson("context/review-coverage-after-rerun.json", {
-      inspectedSymbols: [...reviewInspectedSymbols].sort(),
-      stillMissingSymbols: changedSymbolCoverageCandidates(
-        diffContext,
-        reviewInspectedSymbols
-      ),
-    })
-    logger.info("Review agent stage completed", {
-      ...context,
-      stage: "coverage-rerun",
-      usage: coverageGeneration.totalUsage,
-      findings: initialReport.findings.length,
-      inspectedSymbols: reviewInspectedSymbols.size,
-    })
-    await recorder.appendEvent("stage.completed", {
-      stage: "coverage-rerun",
-      usage: coverageGeneration.totalUsage,
-      findings: initialReport.findings.length,
-      inspectedSymbols: [...reviewInspectedSymbols].sort(),
-    })
-  }
+  await recorder.writeJson("judge-decisions.json", judgeOutput.decisions)
+  await recorder.writeJson(
+    "judge-decision-ledger-validation.json",
+    judgeDecisionLedger
+  )
+  logger.info("Review agent stage completed", {
+    ...context,
+    stage: "judge",
+    usage: judgeGeneration.totalUsage,
+    findings: initialReport.findings.length,
+    decisions: judgeOutput.decisions.length,
+    missingDecisions: judgeDecisionLedger.missingDecisionIds.length,
+    unknownDecisions: judgeDecisionLedger.unknownDecisionIds.length,
+    duplicateDecisions: judgeDecisionLedger.duplicateDecisionIds.length,
+    inspectedSymbols: [...judgeInspectedSymbols].sort(),
+  })
+  await recorder.appendEvent("stage.completed", {
+    stage: "judge",
+    usage: judgeGeneration.totalUsage,
+    findings: initialReport.findings.length,
+    decisions: judgeOutput.decisions.length,
+    missingDecisions: judgeDecisionLedger.missingDecisionIds.length,
+    unknownDecisions: judgeDecisionLedger.unknownDecisionIds.length,
+    duplicateDecisions: judgeDecisionLedger.duplicateDecisionIds.length,
+    inspectedSymbols: [...judgeInspectedSymbols].sort(),
+  })
   await recorder.writeJson("candidate-review-report.json", initialReport)
   let report = initialReport
   let reportValidation: ReviewReportEvidenceValidation =
@@ -896,7 +1033,7 @@ export const runReviewAgent = async ({
       ).length,
     })
     const repairPrompt = buildReviewAgentRepairPrompt({
-      originalPrompt: prompt,
+      originalPrompt: judgePrompt,
       report,
       validation: {
         ...reportValidation,
@@ -910,14 +1047,14 @@ export const runReviewAgent = async ({
         (finding) => !finding.valid
       ).length,
     })
-    const repairGeneration = await reviewAgent.generate({
+    const repairGeneration = await createReviewReportAgent().generate({
       prompt: repairPrompt,
     })
     repairUsage = await recordLlmBilling(
       llmBilling,
       "repair",
       REVIEW_MODEL,
-      repairGeneration,
+      repairGeneration
     )
     report = reviewReportSchema.parse(repairGeneration.output)
     await recorder.writeJson("agent-repair-output.json", {
@@ -1007,7 +1144,6 @@ export const runReviewAgent = async ({
       diff,
       affectedSymbols,
       repositoryContext: preparedRepositoryContext.markdown,
-      semanticCoverage,
       candidates: candidateFindings,
     })
     await recorder.writeText(
@@ -1022,7 +1158,7 @@ export const runReviewAgent = async ({
       promptBytes: textBytes(verificationPrompt),
       repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
       repositoryContextId: preparedRepositoryContext.contextId,
-      semanticCoverageBytes: semanticCoverage ? textBytes(semanticCoverage) : 0,
+      semanticCoverageBytes: 0,
       semanticEnabled,
       findings: candidateFindings.length,
     })
@@ -1034,7 +1170,7 @@ export const runReviewAgent = async ({
       llmBilling,
       "verification",
       REVIEW_VERIFIER_MODEL,
-      verificationGeneration,
+      verificationGeneration
     )
     await recorder.writeJson("verification-output.json", {
       finishReason: verificationGeneration.finishReason,
@@ -1085,9 +1221,8 @@ export const runReviewAgent = async ({
     ...context,
     stage: "generation",
     usage: {
-      review: initialGenerationUsage,
-      inspectionRerun: inspectionRerunUsage,
-      coverageRerun: coverageRerunUsage,
+      fileScout: fileScoutUsages,
+      judge: judgeUsage,
       repair: repairUsage,
       verification: verificationUsage,
     },
@@ -1100,9 +1235,8 @@ export const runReviewAgent = async ({
   await recorder.appendEvent("stage.completed", {
     stage: "generation",
     usage: {
-      review: initialGenerationUsage,
-      inspectionRerun: inspectionRerunUsage,
-      coverageRerun: coverageRerunUsage,
+      fileScout: fileScoutUsages,
+      judge: judgeUsage,
       repair: repairUsage,
       verification: verificationUsage,
     },
@@ -1221,17 +1355,21 @@ export const runReviewAgent = async ({
       }
     }
   }
-  const llmCostMicrocents = Object.values(llmBilling).reduce<number>((total, value) => {
-    if (
-      typeof value === "object" &&
-      value !== null &&
-      "costMicrocents" in value &&
-      typeof (value as { costMicrocents?: unknown }).costMicrocents === "number"
-    ) {
-      return total + (value as { costMicrocents: number }).costMicrocents
-    }
-    return total
-  }, 0)
+  const llmCostMicrocents = Object.values(llmBilling).reduce<number>(
+    (total, value) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "costMicrocents" in value &&
+        typeof (value as { costMicrocents?: unknown }).costMicrocents ===
+          "number"
+      ) {
+        return total + (value as { costMicrocents: number }).costMicrocents
+      }
+      return total
+    },
+    0
+  )
   const vectorWriteCostMicrocents = semanticEnabled
     ? calculateVectorWriteCostMicrocents(qdrantLogicalWriteBytes)
     : 0
@@ -1284,9 +1422,8 @@ export const runReviewAgent = async ({
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings,
     usage: {
-      review: initialGenerationUsage,
-      inspectionRerun: inspectionRerunUsage,
-      coverageRerun: coverageRerunUsage,
+      fileScout: fileScoutUsages,
+      judge: judgeUsage,
       repair: repairUsage,
       verification: verificationUsage,
     } as unknown as Record<string, unknown>,

@@ -14,6 +14,24 @@ export const reviewFindingSchema = z.object({
 
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>
 
+export const scoutCandidateSchema = reviewFindingSchema.extend({
+  sourceFile: z.string().min(1),
+  evidence: z.string().min(1),
+  uncertainty: z.string().min(1),
+})
+
+export type ScoutCandidate = z.infer<typeof scoutCandidateSchema>
+
+export const fileScoutOutputSchema = z.object({
+  file: z.string().min(1),
+  summary: z.string().min(1),
+  inspectedSymbols: z.array(z.string().min(1)),
+  candidates: z.array(scoutCandidateSchema),
+  notes: z.array(z.string()),
+})
+
+export type FileScoutOutput = z.infer<typeof fileScoutOutputSchema>
+
 export const reviewReportSchema = z.object({
   summary: z.string().min(1),
   mergeSafetyScore: z.union([
@@ -28,6 +46,27 @@ export const reviewReportSchema = z.object({
 })
 
 export type ReviewReport = z.infer<typeof reviewReportSchema>
+
+export const reviewJudgeDecisionSchema = z.object({
+  candidateId: z.string().min(1),
+  decision: z.enum([
+    "accepted",
+    "duplicate",
+    "false_positive",
+    "unsupported",
+    "not_security",
+    "invalid_range",
+  ]),
+  reason: z.string().min(1),
+})
+
+export type ReviewJudgeDecision = z.infer<typeof reviewJudgeDecisionSchema>
+
+export const reviewJudgeOutputSchema = reviewReportSchema.extend({
+  decisions: z.array(reviewJudgeDecisionSchema),
+})
+
+export type ReviewJudgeOutput = z.infer<typeof reviewJudgeOutputSchema>
 
 export const reviewVerificationSchema = z.object({
   summary: z.string().min(1),
@@ -45,7 +84,7 @@ export const reviewVerificationSchema = z.object({
       confirmed: z.boolean(),
       confidence: z.number().min(0).max(1),
       reason: z.string().min(1),
-    }),
+    })
   ),
 })
 
@@ -54,6 +93,64 @@ export type ReviewVerification = z.infer<typeof reviewVerificationSchema>
 export type CandidateFinding = ReviewFinding & {
   candidateId: string
 }
+
+export type ScoutFinding = ScoutCandidate & {
+  candidateId: string
+  scoutFile: string
+}
+
+export const safeScoutPathSegment = (value: string) =>
+  value.replace(/[^A-Za-z0-9_.-]/g, "_")
+
+export const aggregateScoutFindings = (
+  scoutOutputs: FileScoutOutput[]
+): ScoutFinding[] =>
+  scoutOutputs.flatMap((output, scoutIndex) =>
+    output.candidates.map((candidate, candidateIndex) => ({
+      candidateId: `scout-${String(scoutIndex + 1).padStart(3, "0")}-${String(
+        candidateIndex + 1
+      ).padStart(3, "0")}`,
+      scoutFile: output.file,
+      ...candidate,
+    }))
+  )
+
+export type FileScoutPlanItem =
+  | {
+      file: string
+      safeFile: string
+      status: string
+      patch: string
+      skipped: null
+    }
+  | {
+      file: string
+      safeFile: string
+      status: string
+      skipped: { reason: "patch_unavailable" }
+    }
+
+export const buildFileScoutPlan = (
+  files: PullRequestFile[]
+): FileScoutPlanItem[] =>
+  files.map((file) => {
+    const base = {
+      file: file.filename,
+      safeFile: safeScoutPathSegment(file.filename),
+      status: file.status,
+    }
+    if (!file.patch) {
+      return {
+        ...base,
+        skipped: { reason: "patch_unavailable" },
+      }
+    }
+    return {
+      ...base,
+      patch: file.patch,
+      skipped: null,
+    }
+  })
 
 const symbolLabel = ({
   kind,
@@ -85,7 +182,10 @@ export const renderSemanticCoverage = ({
   const parsedFiles = new Set(codeIndex.files.map((file) => file.path))
   const chunksByFile = new Map<string, CodeChunk[]>()
   for (const chunk of chunks) {
-    chunksByFile.set(chunk.file, [...(chunksByFile.get(chunk.file) ?? []), chunk])
+    chunksByFile.set(chunk.file, [
+      ...(chunksByFile.get(chunk.file) ?? []),
+      chunk,
+    ])
   }
   const diagnosticsByFile = new Map<string, string[]>()
   for (const diagnostic of diffContext.diagnostics) {
@@ -114,7 +214,9 @@ export const renderSemanticCoverage = ({
     if (!indexedFiles.has(file.file)) {
       warnings.push("not included by review index policy")
     } else if (!parsedFiles.has(file.file)) {
-      warnings.push("not parsed by AST adapter; semantic search has no code chunk")
+      warnings.push(
+        "not parsed by AST adapter; semantic search has no code chunk"
+      )
     }
     if (file.affectedSymbols.length === 0) {
       warnings.push("no affected AST symbols detected")
@@ -137,7 +239,9 @@ export const renderSemanticCoverage = ({
     lines.push(`  - status: ${file.status}`)
     if (file.language) lines.push(`  - language: ${file.language}`)
     lines.push(`  - affected symbols: ${file.affectedSymbols.length}`)
-    lines.push(`  - top-level changed lines: ${file.topLevelChangedLines.length}`)
+    lines.push(
+      `  - top-level changed lines: ${file.topLevelChangedLines.length}`
+    )
     lines.push(`  - semantic chunks: ${fileChunks.length}`)
     if (strategies.length > 0) {
       lines.push(`  - chunk strategies: ${strategies.join(", ")}`)
@@ -179,7 +283,7 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
       lines.push("- symbols:")
       for (const symbol of file.affectedSymbols) {
         lines.push(
-          `  - ${symbolLabel(symbol)} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`,
+          `  - ${symbolLabel(symbol)} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`
         )
         if (symbol.parameters?.length) {
           lines.push(`    params: ${symbol.parameters.join(", ")}`)
@@ -192,7 +296,7 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
 
     if (file.topLevelChangedLines.length > 0) {
       lines.push(
-        `- top-level changed lines: ${file.topLevelChangedLines.join(", ")}`,
+        `- top-level changed lines: ${file.topLevelChangedLines.join(", ")}`
       )
     }
     lines.push("")
@@ -201,36 +305,77 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
   return lines.join("\n").trim()
 }
 
-export const reviewAgentInstructions = `Review pull requests for bugs, regressions, security issues, and production risks.
+export const renderAffectedSymbolsForFile = (
+  context: DiffContextResult,
+  filePath: string
+) => {
+  const file = context.files.find((item) => item.file === filePath)
+  if (!file) return "No affected symbols detected for this file."
 
-Focus on changed behavior and directly related context. Do not report style-only feedback.
-Every finding must point to a changed file and a concrete head-side line range that the author can act on.
-If there are no actionable issues, return an empty findings array.
+  const lines = [
+    `File: ${file.file}`,
+    `Status: ${file.status}`,
+    file.language ? `Language: ${file.language}` : undefined,
+    `Top-level changed lines: ${
+      file.topLevelChangedLines.length > 0
+        ? file.topLevelChangedLines.join(", ")
+        : "none"
+    }`,
+    "Affected symbols:",
+  ].filter((line): line is string => Boolean(line))
 
-Finding output rules:
-- Use file, startLine, and endLine as the exact primary code range where the review comment should attach.
-- startLine and endLine must be line numbers in the pull request head version of the file.
-- The range must be small and specific. Prefer 1-8 lines. Never use a broad function or file range when a narrower range supports the finding.
-- The range must overlap an added or modified line in the diff.
-- The body is the review comment for that code range. Explain the concrete bug, regression, security risk, or production risk and the practical impact.
-- Do not report a finding unless you can identify a valid file/startLine/endLine range.
+  if (file.affectedSymbols.length === 0) {
+    lines.push("- none detected")
+  } else {
+    for (const symbol of file.affectedSymbols) {
+      lines.push(
+        `- ${symbolLabel(symbol)} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`
+      )
+      if (symbol.parameters?.length) {
+        lines.push(`  params: ${symbol.parameters.join(", ")}`)
+      }
+      if (symbol.returnType) lines.push(`  returns: ${symbol.returnType}`)
+    }
+  }
 
-Required review workflow:
-1. Triage the full diff first. Identify changed behavior, affected symbols, and plausible failure modes before calling tools.
-2. Use the changed symbol index and symbol tools first. They are the preferred way to inspect code.
-3. If a possible finding depends on implementation details not visible in the diff, call get_symbol_definition for the relevant symbol before reporting it.
-4. If a possible finding depends on how other code calls a changed symbol, call get_symbol_callers before reporting it.
-5. Use locate_text only as a literal locator for exact identifiers, route paths, config keys, env vars, table or column names, imports, or error strings when you do not know which symbol to inspect. After locate_text finds locations, prefer symbol tools for details.
-6. Use semantic code search for behavior/concept searches when exact identifiers are unknown. Use a short behavior phrase plus relevant symbol or file names. Do not paste code into semantic search queries.
-7. read_file is expensive and broad. Use it only for specific small line ranges when symbol tools, semantic search, and locate_text do not expose the needed context, or when a file has no usable AST coverage.
-8. Before returning the report, discard any finding that is not directly supported by the diff or by tool results you inspected.
+  return lines.join("\n").trim()
+}
 
-Merge safety score:
-1 = extremely unsafe to merge; critical issues can cause real production damage.
-2 = unsafe to merge; serious issues should block merge.
-3 = risky; merge only after review or fixes.
-4 = mostly safe; minor concerns or low-risk follow-up.
-5 = safe to merge; no actionable issues found.`
+export const fileScoutInstructions = `Find possible security vulnerabilities introduced or exposed by one changed file.
+
+Optimize for recall over precision.
+
+Rules:
+- Review only security-relevant risks from this file change and directly connected code.
+- Consider whether this file changes authorization, authentication, data exposure, input validation, external calls, secrets, signatures, persistence, state transitions, deserialization, file/network access, trust boundaries, or other security-relevant aspects.
+- Use get_symbol_definition and get_symbol_callers when a candidate depends on behavior outside the visible file patch.
+- Return every plausible security candidate, including low-confidence candidates, as long as it has a concrete changed-file line range.
+- Do not suppress one candidate because another candidate is more severe.
+- If there are no plausible security candidates, return an empty candidates array and explain that in notes.
+- Each candidate range must be in the pull request head version and should overlap this file change when the issue is caused by this file.`
+
+export const reviewJudgeInstructions = `Judge noisy security candidates for a pull request.
+
+Your job is to verify and deduplicate candidate findings generated by per-file scout agents.
+
+Rules:
+- Use the scout candidates as the primary review surface.
+- Verify candidate claims against the diff, repository context, and tool-inspected code before including them.
+- Return one decision for every scout candidateId you received. Do not silently drop a candidate.
+- Use decision "accepted" when the candidate is included as a final finding.
+- Use decision "duplicate" only when another accepted finding covers the same root cause and fix.
+- Use decision "false_positive" only when the claim is factually false.
+- Use decision "unsupported" when the claim might be true but cannot be supported from the diff, repository context, or inspected code.
+- Use decision "not_security" only when the claim is real but has no security impact.
+- Use decision "invalid_range" only when the candidate is attached to a non-reviewable or clearly wrong changed-line range and you cannot correct it.
+- Keep true findings even if they are less severe than other true findings.
+- Reject false positives, duplicate findings, unsupported claims, and invalid review ranges.
+- You may add independent findings discovered while verifying candidates, especially cross-file or data-flow security issues.
+- Do not report style-only feedback or non-security issues.
+- Do not drop a true candidate because the behavior might be intentional. If it crosses a trust boundary, expands public data exposure, weakens authentication or authorization, mutates persisted state from untrusted input, or creates replay/forgery risk, include it at the appropriate severity.
+- Different root causes or different fixes should remain separate findings even when they appear in the same feature area.
+- Every final finding must point to a changed file and a concrete head-side line range that the author can act on.
+- The range must be small and specific, preferably 1-8 lines, and overlap an added or modified line in the diff.`
 
 export const reviewVerifierInstructions = `Verify candidate pull request findings for truthfulness only.
 
@@ -248,7 +393,39 @@ Rules:
 When a candidate depends on code outside the visible diff, inspect the relevant symbol, callers, or file range before rejecting it.
 Use tools only to decide whether the candidate claim is true.`
 
-export const buildReviewAgentPrompt = ({
+export const buildFileScoutPrompt = ({
+  title,
+  body,
+  baseRef,
+  headRef,
+  file,
+  status,
+  patch,
+  affectedSymbols,
+}: {
+  title: string
+  body: string | null
+  baseRef: string
+  headRef: string
+  file: string
+  status: string
+  patch: string
+  affectedSymbols: string
+}) => `Pull request title: ${title}
+Pull request description: ${body ?? "(none)"}
+Base branch: ${baseRef}
+Head branch: ${headRef}
+
+Scout file: ${file}
+File status: ${status}
+
+File patch:
+${patch}
+
+Affected symbols in this file:
+${affectedSymbols}`
+
+export const buildReviewJudgePrompt = ({
   title,
   body,
   baseRef,
@@ -256,7 +433,7 @@ export const buildReviewAgentPrompt = ({
   diff,
   affectedSymbols,
   repositoryContext,
-  semanticCoverage,
+  scoutFindings,
 }: {
   title: string
   body: string | null
@@ -265,7 +442,7 @@ export const buildReviewAgentPrompt = ({
   diff: string
   affectedSymbols: string
   repositoryContext?: string | null
-  semanticCoverage?: string | null
+  scoutFindings: ScoutFinding[]
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
@@ -278,14 +455,30 @@ Changed files:
 ${diff}
 
 Changed symbol index:
-${affectedSymbols}${
-  semanticCoverage
-    ? `
+${affectedSymbols}
 
-Semantic search coverage:
-${semanticCoverage}`
-    : ""
-}`
+Grouped scout candidate findings JSON:
+${JSON.stringify(groupScoutFindingsByFile(scoutFindings), null, 2)}
+
+Decision ledger requirement:
+- The decisions array must contain exactly one entry for each candidateId in the grouped scout candidate findings JSON.
+- A final finding accepted from a scout candidate should preserve the candidate's core claim, but you may correct severity, wording, and line range.
+- Independent findings you add do not need decision entries because they have no scout candidateId.`
+
+export const groupScoutFindingsByFile = (findings: ScoutFinding[]) => {
+  const grouped = new Map<string, ScoutFinding[]>()
+  for (const finding of findings) {
+    grouped.set(finding.scoutFile, [
+      ...(grouped.get(finding.scoutFile) ?? []),
+      finding,
+    ])
+  }
+
+  return [...grouped.entries()].map(([file, candidates]) => ({
+    file,
+    candidates,
+  }))
+}
 
 export const buildReviewAgentRepairPrompt = ({
   originalPrompt,
@@ -311,43 +504,6 @@ ${JSON.stringify(report, null, 2)}
 
 Location validation failures:
 ${JSON.stringify(validation, null, 2)}`
-
-export const buildReviewAgentInspectionRetryPrompt = ({
-  originalPrompt,
-}: {
-  originalPrompt: string
-}) => `${originalPrompt}
-
-This review pass must inspect repository context with tools before returning the final report.
-
-Inspect the changed symbols, their callers, and directly connected code paths with the available tools before returning the final report.
-
-Use a balanced inspection pass:
-- For each changed entry point, inspect the changed implementation and the code that calls or exposes it.
-- Follow data as it enters, is transformed, is stored, and is returned or sent onward.
-- Check whether assumptions made at one step are still valid at later steps.
-- Check changed reads, writes, state transitions, external calls, and returned data for unintended behavior.
-- Check both the direct behavior and the behavior created by composing changed helpers with existing code.
-- Treat every changed area as potentially important; do not stop after confirming the first serious issue.
-
-Only return a final report after that inspection is complete.`
-
-export const buildReviewAgentCoverageRetryPrompt = ({
-  originalPrompt,
-  missingSymbols,
-}: {
-  originalPrompt: string
-  missingSymbols: string[]
-}) => `${originalPrompt}
-
-The previous review pass did not inspect several changed symbols that may affect the behavior of this pull request.
-
-Before returning the final report, inspect these changed symbols or their directly relevant callers/callees with the available tools:
-${missingSymbols.map((symbol) => `- ${symbol}`).join("\n")}
-
-Use this as a coverage pass, not as a hint that every listed symbol is buggy. Check whether each symbol introduces or composes with changed behavior that could create an actionable bug, regression, security issue, or production risk.
-
-Do not stop only because earlier findings are already serious. Return the complete final report after this coverage pass.`
 
 export const buildReviewVerifierPrompt = ({
   title,
@@ -429,7 +585,7 @@ export const renderReviewReport = (report: ReviewReport) => {
         `Confidence: ${Math.round(finding.confidence * 100)}%`,
         "",
         finding.body,
-        "",
+        ""
       )
     }
   }
@@ -450,7 +606,7 @@ const renderChangedFiles = (files: PullRequestFile[]) => {
   return files
     .map(
       (file) =>
-        `- \`${file.filename}\` (${file.status}, +${file.additions} -${file.deletions})`,
+        `- \`${file.filename}\` (${file.status}, +${file.additions} -${file.deletions})`
     )
     .join("\n")
 }
@@ -463,7 +619,7 @@ const renderInlineFindingSummary = (report: ReviewReport) => {
   return report.findings
     .map(
       (finding) =>
-        `- [${finding.severity}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``,
+        `- [${finding.severity}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``
     )
     .join("\n")
 }
@@ -500,7 +656,7 @@ export const renderReviewSummaryComment = ({
     sections.push(
       `${inlineReview.inlineCommentCount} inline review comment${
         inlineReview.inlineCommentCount === 1 ? " was" : "s were"
-      } published in a GitHub review.`,
+      } published in a GitHub review.`
     )
   } else if (inlineReview.kind === "failed") {
     sections.push(
@@ -508,7 +664,7 @@ export const renderReviewSummaryComment = ({
       "",
       renderInlineFindingSummary(report),
       "",
-      `Publish error: ${inlineReview.error}`,
+      `Publish error: ${inlineReview.error}`
     )
   } else if (report.findings.length === 0) {
     sections.push("No actionable findings.")
@@ -516,7 +672,7 @@ export const renderReviewSummaryComment = ({
     sections.push(
       `${report.findings.length} inline review comment${
         report.findings.length === 1 ? " is" : "s are"
-      } ready to publish.`,
+      } ready to publish.`
     )
   }
 

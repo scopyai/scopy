@@ -38,11 +38,11 @@ const repositoryContextOutputSchema = z.object({
   markdown: z.string().min(1),
 })
 
-const architectureImpactSchema = z.object({
+const repositoryContextDecisionSchema = z.object({
   changesArchitecture: z.boolean(),
   confidence: z.number().min(0).max(1),
   reason: z.string().min(1),
-  changedAreas: z.array(z.string()).default([]),
+  changedAreas: z.array(z.string()),
 })
 
 export type PreparedRepositoryContext = {
@@ -51,7 +51,7 @@ export type PreparedRepositoryContext = {
   source: "generated" | "reused"
   contextId: string
   baseSha: string
-  architectureImpact: z.infer<typeof architectureImpactSchema>
+  architectureImpact: z.infer<typeof repositoryContextDecisionSchema>
 }
 
 const toolText = (text: string, maxBytes = 90_000) => {
@@ -328,38 +328,6 @@ ${JSON.stringify(architectureSnapshot, null, 2)}
 
 Create the persistent markdown repository context now. Use tools only if you need source details for important modules, workflows, state, boundaries, conventions, invariants, or integrations.`
 
-const architectureImpactInstructions = `Decide whether a pull request materially changes the repository architecture context document.
-
-Return changesArchitecture=true only when the persistent context should be regenerated because the PR changes high-level structure, main modules, important workflows, persistent state model.`
-
-const buildArchitectureImpactPrompt = ({
-  existingContext,
-  diff,
-  affectedSymbols,
-  semanticCoverage,
-}: {
-  existingContext: string
-  diff: string
-  affectedSymbols: string
-  semanticCoverage?: string | null
-}) => `Existing repository context summary:
-${existingContext}
-
-Pull request diff:
-${diff}
-
-Changed symbol index:
-${affectedSymbols}${
-  semanticCoverage
-    ? `
-
-Semantic/index coverage:
-${semanticCoverage}`
-    : ""
-}
-
-Does this PR materially change the persistent repository context document?`
-
 const generateRepositoryContext = async ({
   repo,
   pullRequest,
@@ -504,114 +472,15 @@ const generateRepositoryContext = async ({
   return saved
 }
 
-const classifyArchitectureImpact = async ({
-  existingContext,
-  diff,
-  affectedSymbols,
-  semanticCoverage,
-  model,
-  modelId,
-  providerOptions,
-  recorder,
-  logger,
-  repo,
-}: {
-  existingContext: string
-  diff: string
-  affectedSymbols: string
-  semanticCoverage?: string | null
-  model: LanguageModel
-  modelId: string
-  providerOptions?: ProviderOptions
-  recorder: ReviewRunRecorder
-  logger: Logger
-  repo: Repository
-}) => {
-  const prompt = buildArchitectureImpactPrompt({
-    existingContext,
-    diff,
-    affectedSymbols,
-    semanticCoverage,
-  })
-  await recorder.writeText(
-    "context/repository-context-impact-instructions.txt",
-    architectureImpactInstructions
-  )
-  await recorder.writeText(
-    "context/repository-context-impact-prompt.txt",
-    prompt
-  )
-  await recorder.writeJson(
-    "context/repository-context-impact-prompt-stats.json",
-    {
-      promptBytes: textBytes(prompt),
-      existingContextBytes: textBytes(existingContext),
-      diffBytes: textBytes(diff),
-      affectedSymbolsBytes: textBytes(affectedSymbols),
-      semanticCoverageBytes: semanticCoverage ? textBytes(semanticCoverage) : 0,
-      modelId,
-    }
-  )
-  await recorder.appendEvent("repository_context.impact.started", { modelId })
-  logger.info("Repository context architecture impact classification started", {
-    repositoryId: repo.id,
-    repository: repo.fullName,
-    modelId,
-  })
-
-  const agent = new ToolLoopAgent({
-    model,
-    instructions: architectureImpactInstructions,
-    providerOptions,
-    output: Output.object({
-      schema: architectureImpactSchema,
-      name: "repository_context_architecture_impact",
-      description: "Whether a PR should regenerate repository context",
-    }),
-    maxRetries: 2,
-    onStepFinish: async (step) => {
-      await recorder.recordStep(step)
-    },
-  })
-  const generation = await agent.generate({ prompt })
-  const impact = architectureImpactSchema.parse(generation.output)
-  await recorder.writeJson("repository-context-impact-output.json", {
-    finishReason: generation.finishReason,
-    usage: generation.totalUsage,
-    providerMetadata: generation.providerMetadata,
-    output: generation.output,
-    text: generation.text,
-  })
-  await recorder.writeJson("context/repository-context-impact.json", impact)
-  await recorder.appendEvent("repository_context.impact.completed", impact)
-  logger.info(
-    "Repository context architecture impact classification completed",
-    {
-      repositoryId: repo.id,
-      repository: repo.fullName,
-      modelId,
-      changesArchitecture: impact.changesArchitecture,
-      confidence: impact.confidence,
-    }
-  )
-  return impact
-}
-
 export const prepareRepositoryContextForReview = async ({
   repo,
   pullRequest,
   baseRepositoryPath,
   baseIndex,
   baseSha,
-  diff,
-  affectedSymbols,
-  semanticCoverage,
   contextModel,
   contextModelId,
-  classifierModel,
-  classifierModelId,
   contextProviderOptions,
-  classifierProviderOptions,
   recorder,
   logger,
 }: {
@@ -620,65 +489,40 @@ export const prepareRepositoryContextForReview = async ({
   baseRepositoryPath: string
   baseIndex: RepositoryCodeIndex
   baseSha: string
-  diff: string
-  affectedSymbols: string
-  semanticCoverage?: string | null
   contextModel: LanguageModel
   contextModelId: string
-  classifierModel: LanguageModel
-  classifierModelId: string
   contextProviderOptions?: ProviderOptions
-  classifierProviderOptions?: ProviderOptions
   recorder: ReviewRunRecorder
   logger: Logger
 }): Promise<PreparedRepositoryContext> => {
   await recorder.appendEvent("repository_context.prepare.started", {
     contextModelId,
-    classifierModelId,
   })
   const existing = await db.query.repositoryContext.findFirst({
     where: eq(repositoryContext.repositoryId, repo.id),
   })
   await recorder.writeJson("context/repository-context-existing.json", existing)
-  const existingMatchesBase = existing?.baseSha === baseSha
 
-  const architectureImpact = existingMatchesBase && existing
-    ? await classifyArchitectureImpact({
-        existingContext: existing.markdown,
-        diff,
-        affectedSymbols,
-        semanticCoverage,
-        model: classifierModel,
-        modelId: classifierModelId,
-        providerOptions: classifierProviderOptions,
-        recorder,
-        logger,
-        repo,
-      })
+  const architectureImpact = existing
+    ? {
+        changesArchitecture: false,
+        confidence: 1,
+        reason:
+          "Persistent repository context updates are disabled during pull request review; reusing existing context.",
+        changedAreas: [],
+      }
     : {
         changesArchitecture: true,
         confidence: 1,
-        reason: existing
-          ? `Existing repository context was generated for ${existing.baseSha}, but the current base is ${baseSha}.`
-          : "No persistent repository context exists yet.",
-        changedAreas: [
-          existing ? "repository_context_base_sha_mismatch" : "missing_repository_context",
-        ],
+        reason: "No persistent repository context exists yet.",
+        changedAreas: ["missing_repository_context"],
       }
-
-  if (!existingMatchesBase) {
-    await recorder.writeJson(
-      "context/repository-context-impact.json",
-      architectureImpact
-    )
-  }
-
-  const shouldGenerate = !existing || architectureImpact.changesArchitecture
+  const shouldGenerate = !existing
+  await recorder.writeJson("context/repository-context-impact.json", architectureImpact)
   await recorder.appendEvent("repository_context.prepare.decision", {
     hasExistingContext: Boolean(existing),
     existingBaseSha: existing?.baseSha,
     currentBaseSha: baseSha,
-    existingMatchesBase,
     shouldGenerate,
     architectureImpact,
   })
@@ -688,7 +532,6 @@ export const prepareRepositoryContextForReview = async ({
     hasExistingContext: Boolean(existing),
     existingBaseSha: existing?.baseSha,
     currentBaseSha: baseSha,
-    existingMatchesBase,
     shouldGenerate,
     changesArchitecture: architectureImpact.changesArchitecture,
     reason: architectureImpact.reason,
@@ -706,7 +549,7 @@ export const prepareRepositoryContextForReview = async ({
       providerOptions: contextProviderOptions,
       recorder,
       logger,
-      reason: existingMatchesBase ? "architecture_impact" : "base_context_missing_or_stale",
+      reason: "missing_repository_context",
     })
     await recorder.appendEvent("repository_context.prepare.completed", {
       source: "generated",
