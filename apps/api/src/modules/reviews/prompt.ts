@@ -94,6 +94,29 @@ export type CandidateFinding = ReviewFinding & {
   candidateId: string
 }
 
+export const reviewEvidenceRepairSchema = z.object({
+  repairs: z.array(
+    z
+      .object({
+        findingIndex: z.number().int().nonnegative(),
+        action: z.enum(["replace", "drop"]),
+        finding: reviewFindingSchema.optional(),
+        reason: z.string().min(1),
+      })
+      .superRefine((repair, context) => {
+        if (repair.action === "replace" && !repair.finding) {
+          context.addIssue({
+            code: "custom",
+            path: ["finding"],
+            message: "Replacement repairs must include a finding.",
+          })
+        }
+      })
+  ),
+})
+
+export type ReviewEvidenceRepair = z.infer<typeof reviewEvidenceRepairSchema>
+
 export type ScoutFinding = ScoutCandidate & {
   candidateId: string
   scoutFile: string
@@ -480,30 +503,32 @@ export const groupScoutFindingsByFile = (findings: ScoutFinding[]) => {
   }))
 }
 
-export const buildReviewAgentRepairPrompt = ({
-  originalPrompt,
-  report,
-  validation,
+export const reviewEvidenceRepairInstructions = `Repair invalid evidence ranges in an existing pull request review report.
+
+Your job is narrow: only fix findings that failed local evidence validation.
+
+Rules:
+- Return one repair entry for each invalid findingIndex you receive.
+- Use action "replace" when the finding is true and can be attached to a valid changed-line range.
+- Use action "drop" when the finding cannot be attached to a valid changed-line range from the provided file context.
+- For "replace", preserve the finding's core claim, severity, title, body, and confidence unless a small edit is needed for accuracy.
+- For "replace", choose a small concrete file/startLine/endLine range in the pull request head version.
+- The replacement range must overlap an added or modified line shown in the provided patch.
+- Prefer 1-8 lines. Never exceed 30 lines.
+- Do not add new findings.
+- Do not rewrite valid findings; they are not included here.`
+
+export const buildReviewEvidenceRepairPrompt = ({
+  invalidFindings,
+  fileContexts,
 }: {
-  originalPrompt: string
-  report: ReviewReport
-  validation: unknown
-}) => `${originalPrompt}
+  invalidFindings: unknown
+  fileContexts: unknown
+}) => `Invalid findings needing evidence repair:
+${JSON.stringify(invalidFindings, null, 2)}
 
-The previous review report had invalid finding locations. Return a corrected complete review report.
-
-Rules for this correction pass:
-- Keep only actionable findings that have valid file/startLine/endLine ranges.
-- Correct invalid ranges when the finding is still supported by the diff or inspected context.
-- Drop any finding whose correct range is uncertain.
-- Do not invent new findings just to replace invalid ones.
-- Return the full report JSON again, not a patch.
-
-Previous report JSON:
-${JSON.stringify(report, null, 2)}
-
-Location validation failures:
-${JSON.stringify(validation, null, 2)}`
+Relevant changed-file context:
+${JSON.stringify(fileContexts, null, 2)}`
 
 export const buildReviewVerifierPrompt = ({
   title,

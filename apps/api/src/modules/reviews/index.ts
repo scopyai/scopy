@@ -25,6 +25,7 @@ import {
   getDiffSkipReason,
   serializePullRequestFilesAsUnifiedDiff,
   serializePullRequestFiles,
+  type PullRequestFile,
 } from "./diff"
 import {
   findOrCreateReviewComment,
@@ -42,8 +43,8 @@ import {
 import {
   buildFileScoutPrompt,
   buildFileScoutPlan,
+  buildReviewEvidenceRepairPrompt,
   buildReviewJudgePrompt,
-  buildReviewAgentRepairPrompt,
   buildReviewVerifierPrompt,
   aggregateScoutFindings,
   fileScoutInstructions,
@@ -54,11 +55,13 @@ import {
   renderSemanticCoverage,
   reviewJudgeInstructions,
   reviewJudgeOutputSchema,
-  reviewReportSchema,
+  reviewEvidenceRepairInstructions,
+  reviewEvidenceRepairSchema,
   reviewVerifierInstructions,
   reviewVerificationSchema,
   type CandidateFinding,
   type FileScoutOutput,
+  type ReviewEvidenceRepair,
   type ReviewJudgeOutput,
   type ReviewReport,
   type ReviewVerification,
@@ -288,6 +291,62 @@ const validateJudgeDecisionLedger = (
     ),
     unknownDecisionIds: [...unknownDecisionIds],
     duplicateDecisionIds: [...duplicateDecisionIds],
+  }
+}
+
+const buildEvidenceRepairFileContexts = ({
+  invalidFindings,
+  files,
+}: {
+  invalidFindings: ReviewReportEvidenceValidation["findings"]
+  files: PullRequestFile[]
+}) => {
+  const filesByName = new Map(files.map((file) => [file.filename, file]))
+  const neededFiles = [...new Set(invalidFindings.map((finding) => finding.file))]
+
+  return neededFiles.map((file) => {
+    const pullRequestFile = filesByName.get(file)
+    return {
+      file,
+      status: pullRequestFile?.status ?? "unknown",
+      patch: pullRequestFile?.patch ?? null,
+      patchAvailable: Boolean(pullRequestFile?.patch),
+      invalidFindings: invalidFindings
+        .filter((finding) => finding.file === file)
+        .map((finding) => ({
+          findingIndex: finding.findingIndex,
+          title: finding.title,
+          startLine: finding.startLine,
+          endLine: finding.endLine,
+          reasons: finding.reasons,
+          selectedSource: finding.selectedSource,
+          changedLineOverlap: finding.changedLineOverlap,
+        })),
+    }
+  })
+}
+
+const applyEvidenceRepairs = (
+  report: ReviewReport,
+  repair: ReviewEvidenceRepair
+): ReviewReport => {
+  const replacements = new Map(
+    repair.repairs
+      .filter((item) => item.action === "replace" && item.finding)
+      .map((item) => [item.findingIndex, item.finding!])
+  )
+  const drops = new Set(
+    repair.repairs
+      .filter((item) => item.action === "drop")
+      .map((item) => item.findingIndex)
+  )
+
+  return {
+    ...report,
+    findings: report.findings.flatMap((finding, index) => {
+      if (drops.has(index)) return []
+      return [replacements.get(index) ?? finding]
+    }),
   }
 }
 
@@ -789,16 +848,16 @@ export const runReviewAgent = async ({
         await recorder.recordStep(step)
       },
     })
-  const createReviewReportAgent = () =>
+  const createEvidenceRepairAgent = () =>
     new ToolLoopAgent({
       model: openrouter.chat(REVIEW_MODEL),
-      instructions: reviewJudgeInstructions,
-      tools,
+      instructions: reviewEvidenceRepairInstructions,
+      tools: {},
       providerOptions: reviewModelProviderOptions,
       output: Output.object({
-        schema: reviewReportSchema,
-        name: "review_report",
-        description: "Structured pull request review report",
+        schema: reviewEvidenceRepairSchema,
+        name: "review_evidence_repair",
+        description: "Repairs invalid review finding evidence ranges",
       }),
       maxRetries: 2,
       onStepFinish: async (step) => {
@@ -812,6 +871,10 @@ export const runReviewAgent = async ({
   await recorder.writeText(
     "context/file-scout-instructions.txt",
     fileScoutInstructions
+  )
+  await recorder.writeText(
+    "context/evidence-repair-instructions.txt",
+    reviewEvidenceRepairInstructions
   )
   const scoutOutputs: FileScoutOutput[] = []
   const fileScoutUsages: unknown[] = []
@@ -1032,22 +1095,34 @@ export const runReviewAgent = async ({
         (finding) => !finding.valid
       ).length,
     })
-    const repairPrompt = buildReviewAgentRepairPrompt({
-      originalPrompt: judgePrompt,
-      report,
-      validation: {
-        ...reportValidation,
-        findings: reportValidation.findings.filter((finding) => !finding.valid),
-      },
+    const invalidValidationFindings = reportValidation.findings.filter(
+      (finding) => !finding.valid
+    )
+    const invalidFindings = invalidValidationFindings.map((validation) => ({
+      findingIndex: validation.findingIndex,
+      finding: report.findings[validation.findingIndex],
+      validation,
+    }))
+    const repairFileContexts = buildEvidenceRepairFileContexts({
+      invalidFindings: invalidValidationFindings,
+      files: filteredFiles,
+    })
+    const repairPrompt = buildReviewEvidenceRepairPrompt({
+      invalidFindings,
+      fileContexts: repairFileContexts,
     })
     await recorder.writeText("context/repair-prompt.txt", repairPrompt)
     await recorder.writeJson("context/repair-prompt-stats.json", {
       promptBytes: textBytes(repairPrompt),
-      invalidFindings: reportValidation.findings.filter(
-        (finding) => !finding.valid
-      ).length,
+      invalidFindings: invalidValidationFindings.length,
+      files: repairFileContexts.length,
+      fileContextBytes: textBytes(JSON.stringify(repairFileContexts)),
     })
-    const repairGeneration = await createReviewReportAgent().generate({
+    await recorder.writeJson("evidence-repair-input.json", {
+      invalidFindings,
+      fileContexts: repairFileContexts,
+    })
+    const repairGeneration = await createEvidenceRepairAgent().generate({
       prompt: repairPrompt,
     })
     repairUsage = await recordLlmBilling(
@@ -1056,7 +1131,8 @@ export const runReviewAgent = async ({
       REVIEW_MODEL,
       repairGeneration
     )
-    report = reviewReportSchema.parse(repairGeneration.output)
+    const repairOutput = reviewEvidenceRepairSchema.parse(repairGeneration.output)
+    report = applyEvidenceRepairs(report, repairOutput)
     await recorder.writeJson("agent-repair-output.json", {
       finishReason: repairGeneration.finishReason,
       usage: repairGeneration.totalUsage,
@@ -1064,6 +1140,7 @@ export const runReviewAgent = async ({
       output: repairGeneration.output,
       text: repairGeneration.text,
     })
+    await recorder.writeJson("evidence-repairs.json", repairOutput)
     await recorder.writeJson("repaired-candidate-review-report.json", report)
     reportValidation = await validateReviewReportEvidence({
       repository: runtime.paths.repositoryPath,
