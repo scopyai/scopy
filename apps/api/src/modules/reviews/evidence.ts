@@ -168,8 +168,7 @@ export const filterReportToValidEvidence = (
   const findings = report.findings.filter((_, index) => validIndexes.has(index))
   if (report.findings.length > 0 && findings.length === 0) {
     return {
-      summary:
-        "No candidate findings had valid changed-line ranges after evidence validation.",
+      ...report,
       mergeSafetyScore: 5,
       mergeSafetyReason:
         "All candidate findings were dropped because their file/startLine/endLine evidence ranges were invalid.",

@@ -924,7 +924,6 @@ ${affectedSymbols}`
   await recorder.writeJson("review-report.json", finalReport)
   const renderedReport = renderReviewSummaryComment({
     report: finalReport,
-    files: filteredFiles,
     inlineReview: { kind: "not_needed" },
   })
   await recorder.writeText("rendered-comment.md", renderedReport)
@@ -1001,7 +1000,6 @@ ${affectedSymbols}`
       })
       publishedReport = renderReviewSummaryComment({
         report: finalReport,
-        files: filteredFiles,
         inlineReview: {
           kind: "failed",
           error: inlineReviewPublishError,
@@ -1029,34 +1027,6 @@ ${affectedSymbols}`
       reviewId = inlineReview.reviewId
       reviewEvent = inlineReview.event
       inlineCommentCount = inlineReview.inlineCommentCount
-      publishedReport = renderReviewSummaryComment({
-        report: finalReport,
-        files: filteredFiles,
-        inlineReview: {
-          kind: "published",
-          inlineCommentCount: inlineReview.inlineCommentCount,
-        },
-      })
-      try {
-        await updateReviewComment({
-          repo: repository,
-          installationId,
-          commentId,
-          pullRequestId: pullRequest.id,
-          reviewRunId: reviewCommentRunId,
-          body: publishedReport,
-        })
-      } catch (summaryError) {
-        logger.error("Failed to update summary after inline review publish", {
-          ...context,
-          stage: "publish",
-          commentId,
-          reviewId,
-          reviewEvent,
-          inlineCommentCount,
-          error: summaryError,
-        })
-      }
     }
   }
   const llmCostMicrocents = Object.values(llmBilling).reduce<number>(

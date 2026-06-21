@@ -1,6 +1,5 @@
 import { z } from "zod"
 import type { CodeChunk, DiffContextResult, RepositoryCodeIndex } from "tools"
-import type { PullRequestFile } from "./diff"
 
 export const reviewFindingSchema = z.object({
   severity: z.enum(["critical", "high", "medium", "low"]),
@@ -34,6 +33,13 @@ export const reviewSuspicionDecisionSchema = z.object({
 
 export const reviewReportSchema = z.object({
   summary: z.string().min(1),
+  changedFiles: z.array(
+    z.object({
+      file: z.string().min(1),
+      summary: z.string().min(1),
+    })
+  ),
+  reviewerAttention: z.array(z.string().min(1)),
   mergeSafetyScore: z.union([
     z.literal(1),
     z.literal(2),
@@ -233,6 +239,9 @@ Rules:
 - Every final finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version.
 - Final ranges should preferably span 1-8 lines, never more than 30, and overlap an added or modified line.
 - Do not publish speculative claims as findings, but do not silently discard any suspicion.
+- Write summary as a concise description of the pull request's purpose and behavior added, changed, or removed. Do not focus it on findings or bugs.
+- Include every changed file in changedFiles using its exact repository-relative path and one concise sentence describing the meaningful change, not Git status or line counts.
+- Add reviewerAttention items only when a specific area genuinely needs human judgment or verification beyond the findings. Do not duplicate findings, add generic advice, or force this section; return an empty array when it is not needed.
 - The decisions array must contain exactly one decision for every suspicionId returned by spawn_review_agents across all batches. Every decision needs a concrete reason grounded in inspected behavior.`
 
 export const buildMainReviewPrompt = ({
@@ -310,20 +319,14 @@ export const renderReviewReport = (report: ReviewReport) => {
 
 type InlineReviewPublishStatus =
   | { kind: "not_needed" }
-  | { kind: "published"; inlineCommentCount: number }
   | { kind: "failed"; error: string }
 
-const renderChangedFiles = (files: PullRequestFile[]) => {
+const renderChangedFiles = (files: ReviewReport["changedFiles"]) => {
   if (files.length === 0) {
     return "No reviewable changed files."
   }
 
-  return files
-    .map(
-      (file) =>
-        `- \`${file.filename}\` (${file.status}, +${file.additions} -${file.deletions})`
-    )
-    .join("\n")
+  return files.map((file) => `- \`${file.file}\` - ${file.summary}`).join("\n")
 }
 
 const renderInlineFindingSummary = (report: ReviewReport) => {
@@ -341,11 +344,9 @@ const renderInlineFindingSummary = (report: ReviewReport) => {
 
 export const renderReviewSummaryComment = ({
   report,
-  files,
   inlineReview,
 }: {
   report: ReviewReport
-  files: PullRequestFile[]
   inlineReview: InlineReviewPublishStatus
 }) => {
   const sections = [
@@ -355,39 +356,37 @@ export const renderReviewSummaryComment = ({
     "",
     "## Changed files",
     "",
-    renderChangedFiles(files),
+    renderChangedFiles(report.changedFiles),
+  ]
+
+  if (report.reviewerAttention.length > 0) {
+    sections.push(
+      "",
+      "## Reviewer attention",
+      "",
+      ...report.reviewerAttention.map((item) => `- ${item}`)
+    )
+  }
+
+  sections.push(
     "",
     "## Merge safety",
     "",
     `**${scoreLabel(report.mergeSafetyScore)}**`,
     "",
-    report.mergeSafetyReason,
-    "",
-    "## Inline findings",
-    "",
-  ]
+    report.mergeSafetyReason
+  )
 
-  if (inlineReview.kind === "published") {
+  if (inlineReview.kind === "failed") {
     sections.push(
-      `${inlineReview.inlineCommentCount} inline review comment${
-        inlineReview.inlineCommentCount === 1 ? " was" : "s were"
-      } published in a GitHub review.`
-    )
-  } else if (inlineReview.kind === "failed") {
-    sections.push(
+      "",
+      "## Findings",
+      "",
       "I could not publish the inline GitHub review comments. Findings are listed here so they are not lost.",
       "",
       renderInlineFindingSummary(report),
       "",
       `Publish error: ${inlineReview.error}`
-    )
-  } else if (report.findings.length === 0) {
-    sections.push("No actionable findings.")
-  } else {
-    sections.push(
-      `${report.findings.length} inline review comment${
-        report.findings.length === 1 ? " is" : "s are"
-      } ready to publish.`
     )
   }
 
