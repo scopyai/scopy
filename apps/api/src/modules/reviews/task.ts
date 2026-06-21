@@ -8,9 +8,14 @@ import {
   hasPositiveUsageBalance,
 } from "../billing/usage"
 import {
+  buildCompletedReviewCheckOutput,
+  completeReviewCheck,
   findOrCreateReviewComment,
   reviewBalanceBlockedBody,
+  startReviewCheck,
   updateReviewComment,
+  type ReviewCheckConclusion,
+  type ReviewCheckOutput,
 } from "./github"
 import {
   publishReviewFailure,
@@ -26,6 +31,95 @@ type JobContext = {
   }
   attempt: number
   maxAttempts: number
+}
+
+type LoadedReviewRun = NonNullable<
+  Awaited<ReturnType<typeof loadReviewRun>>
+>
+
+const loadReviewRun = (reviewRunId: string) =>
+  db.query.reviewRun.findFirst({
+    where: eq(reviewRun.id, reviewRunId),
+    with: {
+      pullRequest: {
+        with: {
+          repository: {
+            with: {
+              workspace: true,
+              reviewConfig: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+const syncReviewCheck = async ({
+  run,
+  logger,
+  completion,
+}: {
+  run: LoadedReviewRun
+  logger: JobContext["logger"]
+  completion?: {
+    conclusion: ReviewCheckConclusion
+    output: ReviewCheckOutput
+  }
+}) => {
+  const repo = run.pullRequest.repository
+  const installationId = repo.workspace.providerInstallationId
+  const intendedState = completion ? "completed" : "in_progress"
+
+  try {
+    const checkRunId =
+      completion && run.providerCheckRunId
+        ? run.providerCheckRunId
+        : await startReviewCheck({
+            repo,
+            installationId,
+            reviewRunId: run.id,
+            headSha: run.headSha,
+            checkRunId: run.providerCheckRunId,
+            detailsUrl: run.pullRequest.htmlUrl,
+          })
+
+    if (completion) {
+      await completeReviewCheck({
+        repo,
+        installationId,
+        checkRunId,
+        conclusion: completion.conclusion,
+        output: completion.output,
+        detailsUrl: run.pullRequest.htmlUrl,
+      })
+    }
+
+    await db
+      .update(reviewRun)
+      .set({
+        providerCheckRunId: checkRunId,
+        checkSyncError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(reviewRun.id, run.id))
+
+    run.providerCheckRunId = checkRunId
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown GitHub Check sync error"
+    await db
+      .update(reviewRun)
+      .set({ checkSyncError: message, updatedAt: new Date() })
+      .where(eq(reviewRun.id, run.id))
+    logger.error("Failed to synchronize GitHub Check", {
+      reviewRunId: run.id,
+      repository: repo.fullName,
+      headSha: run.headSha,
+      checkRunId: run.providerCheckRunId,
+      intendedState,
+      error,
+    })
+  }
 }
 
 const languageByExtension: Record<string, string> = {
@@ -60,21 +154,7 @@ export const executeReviewPullRequest = async (
   { reviewRunId }: { reviewRunId: string },
   { logger, attempt, maxAttempts }: JobContext,
 ) => {
-  const run = await db.query.reviewRun.findFirst({
-    where: eq(reviewRun.id, reviewRunId),
-    with: {
-      pullRequest: {
-        with: {
-          repository: {
-            with: {
-              workspace: true,
-              reviewConfig: true,
-            },
-          },
-        },
-      },
-    },
-  })
+  const run = await loadReviewRun(reviewRunId)
 
   if (!run || run.status === "completed" || run.status === "superseded") {
     return
@@ -106,6 +186,8 @@ export const executeReviewPullRequest = async (
     })
     return
   }
+
+  await syncReviewCheck({ run, logger })
 
   const workspaceId = run.pullRequest.repository.workspace.id
   const triggerSource =
@@ -162,6 +244,18 @@ export const executeReviewPullRequest = async (
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
       workspaceId,
+    })
+    await syncReviewCheck({
+      run,
+      logger,
+      completion: {
+        conclusion: "action_required",
+        output: {
+          title: "Review requires billing action",
+          summary:
+            "The review could not start because this workspace has no remaining usage balance. See the pull request comment for details.",
+        },
+      },
     })
     return
   }
@@ -257,6 +351,29 @@ export const executeReviewPullRequest = async (
       status: result.kind === "skipped" ? "skipped" : "completed",
       durationMs: result.durationMs,
     })
+    const partialPublication = Boolean(result.inlineReviewPublishError)
+    await syncReviewCheck({
+      run,
+      logger,
+      completion: {
+        conclusion:
+          result.kind === "skipped" || partialPublication
+            ? "neutral"
+            : "success",
+        output:
+          result.kind === "skipped"
+            ? {
+                title: "Review skipped",
+                summary: `${result.skipReason ?? "No review was required."}\n\nSee the pull request summary for details.`,
+              }
+            : buildCompletedReviewCheckOutput({
+                durationMs: result.durationMs,
+                reviewedFileCount: result.filteredFileCount,
+                findings: result.findings,
+                partialPublication,
+              }),
+      },
+    })
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown review workflow error"
@@ -339,6 +456,21 @@ export const executeReviewPullRequest = async (
       isFinalAttempt,
       error,
     })
+
+    if (isFinalAttempt) {
+      await syncReviewCheck({
+        run,
+        logger,
+        completion: {
+          conclusion: "failure",
+          output: {
+            title: "Review failed",
+            summary:
+              "The review could not be completed after several retries. See the pull request comment for details.",
+          },
+        },
+      })
+    }
 
     if (!isFinalAttempt) {
       throw error

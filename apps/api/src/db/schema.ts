@@ -432,6 +432,8 @@ export const reviewRun = pgTable(
       { onDelete: "set null" }
     ),
     headSha: text("head_sha").notNull(),
+    providerCheckRunId: text("provider_check_run_id"),
+    checkSyncError: text("check_sync_error"),
     status: reviewRunStatus("status").default("queued").notNull(),
     result: jsonb("result").$type<Record<string, unknown>>(),
     error: text("error"),
