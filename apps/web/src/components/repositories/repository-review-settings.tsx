@@ -141,9 +141,9 @@ export function RepositoryReviewSettings({
 
   return (
     <div className="flex-1 overflow-auto p-6">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <div className="flex flex-col gap-6">
         {!repositoryEnabled ? (
-          <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3">
             <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium">Repository tracking is disabled</p>
@@ -156,7 +156,7 @@ export function RepositoryReviewSettings({
         ) : null}
 
         {readOnly ? (
-          <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+          <div className="rounded-lg border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
             Only workspace admins can change review settings.
           </div>
         ) : null}
@@ -270,10 +270,10 @@ function SettingRow({
 function RepositoryReviewSettingsSkeleton() {
   return (
     <div className="flex-1 overflow-auto p-6">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-        <Skeleton className="h-32 w-full rounded-xl" />
-        <Skeleton className="h-80 w-full rounded-xl" />
-        <Skeleton className="h-96 w-full rounded-xl" />
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-32 w-full rounded-lg" />
+        <Skeleton className="h-80 w-full rounded-lg" />
+        <Skeleton className="h-96 w-full rounded-lg" />
       </div>
     </div>
   )

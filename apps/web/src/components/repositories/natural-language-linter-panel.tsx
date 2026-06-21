@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { PlusIcon, SparklesIcon, XIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
-import { Label } from "@workspace/ui/components/label"
+import { Separator } from "@workspace/ui/components/separator"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { cn } from "@workspace/ui/lib/utils"
 import { SettingsSection } from "@/components/repositories/settings-section"
@@ -45,29 +45,20 @@ export function NaturalLanguageLinterPanel({
       <fieldset
         disabled={disabled}
         className={cn(
-          "flex min-w-0 flex-col gap-2 border-0 p-0 m-0",
+          "flex min-w-0 flex-col gap-4 border-0 p-0 m-0",
           disabled && "opacity-60",
         )}
       >
-        <Label htmlFor="natural-language-linter-rule">Rules</Label>
-        <p className="text-xs text-muted-foreground">
-          Add a rule to enforce it on pull requests. Press Enter or click away
-          to save each one.
-        </p>
-
         {rules.length > 0 ? (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-3">
             {rules.map((rule) => (
-              <li
-                key={rule}
-                className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2.5"
-              >
+              <li key={rule} className="flex items-start gap-2">
                 <SparklesIcon className="mt-0.5 size-3.5 shrink-0 text-primary/70" />
                 <p className="min-w-0 flex-1 text-sm leading-relaxed">{rule}</p>
                 <button
                   type="button"
                   onClick={() => handleRemoveRule(rule)}
-                  className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none"
+                  className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground disabled:pointer-events-none"
                   aria-label={`Remove rule: ${rule}`}
                 >
                   <XIcon className="size-3.5" />
@@ -78,6 +69,8 @@ export function NaturalLanguageLinterPanel({
         ) : (
           <p className="text-xs text-muted-foreground">No rules added yet.</p>
         )}
+
+        {rules.length > 0 ? <Separator /> : null}
 
         <div className="flex flex-col gap-2">
           <Textarea
@@ -95,7 +88,7 @@ export function NaturalLanguageLinterPanel({
             rows={3}
             className="min-h-20 resize-y text-sm"
           />
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end">
             <Button
               type="button"
               variant="outline"
