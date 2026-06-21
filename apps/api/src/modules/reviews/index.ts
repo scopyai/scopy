@@ -25,7 +25,6 @@ import {
   getDiffSkipReason,
   serializePullRequestFilesAsUnifiedDiff,
   serializePullRequestFiles,
-  type PullRequestFile,
 } from "./diff"
 import {
   findOrCreateReviewComment,
@@ -35,38 +34,22 @@ import {
   reviewFailedBody,
   updateReviewComment,
 } from "./github"
+import { validateReviewReportEvidence } from "./evidence"
 import {
-  filterReportToValidEvidence,
-  validateReviewReportEvidence,
-  type ReviewReportEvidenceValidation,
-} from "./evidence"
-import {
-  buildFileScoutPrompt,
-  buildFileScoutPlan,
-  buildReviewEvidenceRepairPrompt,
-  buildReviewJudgePrompt,
-  buildReviewVerifierPrompt,
-  aggregateScoutFindings,
-  fileScoutInstructions,
-  fileScoutOutputSchema,
-  renderAffectedSymbolsForFile,
+  buildMainReviewPrompt,
+  mainReviewAgentInstructions,
   renderAffectedSymbols,
   renderReviewSummaryComment,
   renderSemanticCoverage,
-  reviewJudgeInstructions,
-  reviewJudgeOutputSchema,
-  reviewEvidenceRepairInstructions,
-  reviewEvidenceRepairSchema,
-  reviewVerifierInstructions,
-  reviewVerificationSchema,
-  type CandidateFinding,
-  type FileScoutOutput,
-  type ReviewEvidenceRepair,
-  type ReviewJudgeOutput,
+  reviewReportSchema,
+  reviewSubagentInstructions,
+  reviewSubagentOutputSchema,
+  reviewSuspicionDecisionSchema,
+  safePathSegment,
   type ReviewReport,
-  type ReviewVerification,
 } from "./prompt"
 import { createReviewRunRecorder } from "./debug-run"
+import { reviewAgentConfig } from "./config"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 
@@ -77,7 +60,7 @@ const reviewModelProviderOptions = REVIEW_MODEL.startsWith("openai/")
   ? {
       openrouter: {
         reasoning: {
-          effort: "low",
+          effort: reviewAgentConfig.main.reasoningEffort,
         },
       },
     }
@@ -86,7 +69,7 @@ const verifierModelProviderOptions = REVIEW_VERIFIER_MODEL.startsWith("openai/")
   ? {
       openrouter: {
         reasoning: {
-          effort: "low",
+          effort: reviewAgentConfig.subagent.reasoningEffort,
         },
       },
     }
@@ -231,125 +214,6 @@ const recordLlmBilling = async (
   return usage
 }
 
-const applyVerification = (
-  report: ReviewReport,
-  candidates: CandidateFinding[],
-  verification: ReviewVerification | null
-): ReviewReport => {
-  if (!verification) return report
-  const confirmed = new Set(
-    verification.verifications
-      .filter((item) => item.confirmed)
-      .map((item) => item.candidateId)
-  )
-  const findings = candidates.filter((finding) =>
-    confirmed.has(finding.candidateId)
-  )
-
-  return {
-    summary: report.summary,
-    mergeSafetyScore: report.mergeSafetyScore,
-    mergeSafetyReason: report.mergeSafetyReason,
-    findings,
-  }
-}
-
-const serializeJsonl = (records: unknown[]) =>
-  records.map((record) => JSON.stringify(record)).join("\n")
-
-const reportFromJudgeOutput = (output: ReviewJudgeOutput): ReviewReport => ({
-  summary: output.summary,
-  mergeSafetyScore: output.mergeSafetyScore,
-  mergeSafetyReason: output.mergeSafetyReason,
-  findings: output.findings,
-})
-
-const validateJudgeDecisionLedger = (
-  output: ReviewJudgeOutput,
-  scoutFindings: { candidateId: string }[]
-) => {
-  const expected = new Set(scoutFindings.map((finding) => finding.candidateId))
-  const seen = new Set<string>()
-  const duplicateDecisionIds = new Set<string>()
-  const unknownDecisionIds = new Set<string>()
-
-  for (const decision of output.decisions) {
-    if (seen.has(decision.candidateId)) {
-      duplicateDecisionIds.add(decision.candidateId)
-    }
-    seen.add(decision.candidateId)
-    if (!expected.has(decision.candidateId)) {
-      unknownDecisionIds.add(decision.candidateId)
-    }
-  }
-
-  return {
-    expected: expected.size,
-    actual: output.decisions.length,
-    missingDecisionIds: [...expected].filter(
-      (candidateId) => !seen.has(candidateId)
-    ),
-    unknownDecisionIds: [...unknownDecisionIds],
-    duplicateDecisionIds: [...duplicateDecisionIds],
-  }
-}
-
-const buildEvidenceRepairFileContexts = ({
-  invalidFindings,
-  files,
-}: {
-  invalidFindings: ReviewReportEvidenceValidation["findings"]
-  files: PullRequestFile[]
-}) => {
-  const filesByName = new Map(files.map((file) => [file.filename, file]))
-  const neededFiles = [...new Set(invalidFindings.map((finding) => finding.file))]
-
-  return neededFiles.map((file) => {
-    const pullRequestFile = filesByName.get(file)
-    return {
-      file,
-      status: pullRequestFile?.status ?? "unknown",
-      patch: pullRequestFile?.patch ?? null,
-      patchAvailable: Boolean(pullRequestFile?.patch),
-      invalidFindings: invalidFindings
-        .filter((finding) => finding.file === file)
-        .map((finding) => ({
-          findingIndex: finding.findingIndex,
-          title: finding.title,
-          startLine: finding.startLine,
-          endLine: finding.endLine,
-          reasons: finding.reasons,
-          selectedSource: finding.selectedSource,
-          changedLineOverlap: finding.changedLineOverlap,
-        })),
-    }
-  })
-}
-
-const applyEvidenceRepairs = (
-  report: ReviewReport,
-  repair: ReviewEvidenceRepair
-): ReviewReport => {
-  const replacements = new Map(
-    repair.repairs
-      .filter((item) => item.action === "replace" && item.finding)
-      .map((item) => [item.findingIndex, item.finding!])
-  )
-  const drops = new Set(
-    repair.repairs
-      .filter((item) => item.action === "drop")
-      .map((item) => item.findingIndex)
-  )
-
-  return {
-    ...report,
-    findings: report.findings.flatMap((finding, index) => {
-      if (drops.has(index)) return []
-      return [replacements.get(index) ?? finding]
-    }),
-  }
-}
-
 export const runReviewAgent = async ({
   pullRequest,
   reviewRunId,
@@ -484,6 +348,16 @@ export const runReviewAgent = async ({
   logger.info("Review agent stage started", { ...context, stage: "runtime" })
   await recorder.appendEvent("stage.started", { stage: "runtime" })
   const openrouter = createOpenRouter({ apiKey: requireOpenRouterApiKey() })
+  const mainModel = REVIEW_MODEL.startsWith("openai/")
+    ? openrouter.chat(REVIEW_MODEL, {
+        extraBody: { service_tier: reviewAgentConfig.openai.serviceTier },
+      })
+    : openrouter.chat(REVIEW_MODEL)
+  const subagentModel = REVIEW_VERIFIER_MODEL.startsWith("openai/")
+    ? openrouter.chat(REVIEW_VERIFIER_MODEL, {
+        extraBody: { service_tier: reviewAgentConfig.openai.serviceTier },
+      })
+    : openrouter.chat(REVIEW_VERIFIER_MODEL)
   const llmBilling: Record<string, unknown> = {}
   const runtime = await prepareReviewRuntime({
     reviewRunId,
@@ -601,7 +475,7 @@ export const runReviewAgent = async ({
     baseRepositoryPath: runtime.paths.baseRepositoryPath,
     baseIndex: runtime.baseCodeIndex,
     baseSha: runtime.baseSha,
-    contextModel: openrouter.chat(REVIEW_MODEL),
+    contextModel: mainModel,
     contextModelId: REVIEW_MODEL,
     contextProviderOptions: reviewModelProviderOptions,
     recorder,
@@ -631,364 +505,282 @@ export const runReviewAgent = async ({
   let vectorQueryBytes = 0
   let vectorNetworkBytes = 0
   let vectorQueryCount = 0
-  const judgeInspectedSymbols = new Set<string>()
-  const createScoutTools = (sourceFile: string, localToolCalls: unknown[]) => ({
-    get_symbol_definition: tool({
-      description:
-        "Given only a symbol name, returns matching definitions with signature, parameters, return type, file/line range, enclosing scope metadata, and definition source.",
-      inputSchema: z.object({
-        symbol: z.string().min(1),
-      }),
-      execute: async ({ symbol }) => {
-        const input = { sourceFile, symbol }
-        const result = await getSymbolDefinition({
-          repository: runtime.paths.repositoryPath,
-          index: runtime.codeIndex,
-          symbol,
-        })
-        const output = { ...result.json, stats: result.stats }
-        localToolCalls.push({
-          at: new Date().toISOString(),
-          name: "get_symbol_definition",
-          input,
-          output,
-        })
-        await recorder.recordToolCall({
-          name: "file_scout.get_symbol_definition",
-          input,
-          output,
-        })
-        return output
-      },
-    }),
-    get_symbol_callers: tool({
-      description:
-        "Given only a symbol name, returns direct call locations with call lines and enclosing caller symbol metadata.",
-      inputSchema: z.object({
-        symbol: z.string().min(1),
-      }),
-      execute: async ({ symbol }) => {
-        const input = { sourceFile, symbol }
-        const result = await getSymbolCallers({
-          repository: runtime.paths.repositoryPath,
-          index: runtime.codeIndex,
-          symbol,
-        })
-        const output = { ...result.json, stats: result.stats }
-        localToolCalls.push({
-          at: new Date().toISOString(),
-          name: "get_symbol_callers",
-          input,
-          output,
-        })
-        await recorder.recordToolCall({
-          name: "file_scout.get_symbol_callers",
-          input,
-          output,
-        })
-        return output
-      },
-    }),
-  })
-  const baseTools = {
-    read_file: tool({
-      description:
-        "Expensive fallback. Returns numbered lines from a repository file by repo-relative path. Use only for a small explicit range when symbol tools, semantic search, and locate_text do not provide enough context, or when AST coverage is unavailable. Defaults to 80 lines and returns at most 200 lines.",
-      inputSchema: z.object({
-        file: z.string().min(1),
-        startLine: z.number().int().positive().optional(),
-        maxLines: z.number().int().positive().max(200).optional(),
-      }),
-      execute: async ({ file, startLine, maxLines }) => {
-        const input = { file, startLine, maxLines }
-        const output = await readRepositoryFile({
-          repository: runtime.paths.repositoryPath,
-          file,
-          startLine,
-          maxLines,
-        })
-        await recorder.recordToolCall({ name: "read_file", input, output })
-        return output
-      },
-    }),
-    get_symbol_definition: tool({
-      description:
-        "Preferred code-inspection tool. Given only a symbol name, returns matching definitions with signature, parameters, return type, file/line range, enclosing scope metadata, and definition source.",
-      inputSchema: z.object({
-        symbol: z.string().min(1),
-      }),
-      execute: async ({ symbol }) => {
-        const input = { symbol }
-        judgeInspectedSymbols.add(symbol)
-        const result = await getSymbolDefinition({
-          repository: runtime.paths.repositoryPath,
-          index: runtime.codeIndex,
-          symbol,
-        })
-        const output = { ...result.json, stats: result.stats }
-        await recorder.recordToolCall({
-          name: "get_symbol_definition",
-          input,
-          output,
-        })
-        return output
-      },
-    }),
-    get_symbol_callers: tool({
-      description:
-        "Preferred call-graph tool. Given only a symbol name, returns direct call locations with call lines and enclosing caller symbol metadata.",
-      inputSchema: z.object({
-        symbol: z.string().min(1),
-      }),
-      execute: async ({ symbol }) => {
-        const input = { symbol }
-        judgeInspectedSymbols.add(symbol)
-        const result = await getSymbolCallers({
-          repository: runtime.paths.repositoryPath,
-          index: runtime.codeIndex,
-          symbol,
-        })
-        const output = { ...result.json, stats: result.stats }
-        await recorder.recordToolCall({
-          name: "get_symbol_callers",
-          input,
-          output,
-        })
-        return output
-      },
-    }),
-    locate_text: tool({
-      description:
-        "Niche literal locator, not a code-reading tool. Use only to find where an exact identifier, route path, config key, env var, table/column name, import, filename, or error string appears when symbol tools are not enough. Returns file/line/column and enclosing symbol metadata only; call symbol tools next for code context.",
-      inputSchema: z.object({
-        query: z.string().min(1),
-      }),
-      execute: async ({ query }) => {
-        const input = { query }
-        const result = await searchRepositoryText({
-          repository: runtime.paths.repositoryPath,
-          index: runtime.codeIndex,
-          query,
-          maxResults: 50,
-        })
-        const output = {
-          ...result.stats,
-          markdown: toolText(result.markdown),
-        }
-        await recorder.recordToolCall({ name: "locate_text", input, output })
-        return output
-      },
-    }),
-  }
-  const tools = semanticEnabled
-    ? {
-        ...baseTools,
-        search_code: tool({
-          description:
-            "Semantic code search. Use this for behavior/concept searches when exact identifiers are unknown, such as finding related implementations, similar logic, or broader context. Do not use it for exact strings, route paths, env names, table columns, or symbol names when literal matching is needed.",
-          inputSchema: z.object({
-            query: z.string().min(1),
-            limit: z.number().int().positive().max(20).optional(),
-          }),
-          execute: async ({ query, limit = 10 }) => {
-            const input = { query, limit }
-            if (!runtime.qdrant) {
-              const output = {
-                chunks: 0,
-                markdown:
-                  "Semantic code search is unavailable because Qdrant is not configured.",
-              }
-              await recorder.recordToolCall({
-                name: "search_code",
-                input,
-                output,
-              })
-              return output
-            }
-            const result = await searchReviewCode({
-              repositoryId: repository.id,
-              headSha: pullRequest.headSha,
-              reviewRunId,
-              qdrant: runtime.qdrant,
-              query,
-              indexedLogicalBytes: qdrantLogicalWriteBytes,
-              limit,
-            })
-            vectorQueryBytes += result.stats.queriedBytes
-            vectorNetworkBytes += result.stats.returnedBytes
-            vectorQueryCount += result.stats.queryUnits
-            const output = {
-              ...result.stats,
-              markdown: toolText(result.markdown),
-            }
-            await recorder.recordToolCall({
-              name: "search_code",
-              input,
-              output,
-            })
-            return output
-          },
+  const createRepositoryTools = (scope: string) => {
+    const base = {
+      read_file: tool({
+        description: "Read numbered lines from any repository file.",
+        inputSchema: z.object({
+          file: z.string().min(1),
+          startLine: z.number().int().positive().optional(),
+          maxLines: z.number().int().positive().max(200).optional(),
         }),
-      }
-    : baseTools
-  const createJudgeAgent = () =>
-    new ToolLoopAgent({
-      model: openrouter.chat(REVIEW_MODEL),
-      instructions: reviewJudgeInstructions,
-      tools,
-      providerOptions: reviewModelProviderOptions,
-      output: Output.object({
-        schema: reviewJudgeOutputSchema,
-        name: "review_judge_output",
+        execute: async ({ file, startLine, maxLines }) => {
+          const input = { file, startLine, maxLines }
+          const output = await readRepositoryFile({
+            repository: runtime.paths.repositoryPath,
+            file,
+            startLine,
+            maxLines,
+          })
+          await recorder.recordToolCall({
+            name: `${scope}.read_file`,
+            input,
+            output,
+          })
+          return output
+        },
+      }),
+      get_symbol_definition: tool({
         description:
-          "Structured pull request review report with scout candidate decisions",
+          "Get symbol definitions, signatures, locations, scopes, and source.",
+        inputSchema: z.object({ symbol: z.string().min(1) }),
+        execute: async ({ symbol }) => {
+          const input = { symbol }
+          const result = await getSymbolDefinition({
+            repository: runtime.paths.repositoryPath,
+            index: runtime.codeIndex,
+            symbol,
+          })
+          const output = { ...result.json, stats: result.stats }
+          await recorder.recordToolCall({
+            name: `${scope}.get_symbol_definition`,
+            input,
+            output,
+          })
+          return output
+        },
       }),
-      maxRetries: 2,
-      onStepFinish: async (step) => {
-        await recorder.recordStep(step)
-      },
-    })
-  const createEvidenceRepairAgent = () =>
-    new ToolLoopAgent({
-      model: openrouter.chat(REVIEW_MODEL),
-      instructions: reviewEvidenceRepairInstructions,
-      tools: {},
-      providerOptions: reviewModelProviderOptions,
-      output: Output.object({
-        schema: reviewEvidenceRepairSchema,
-        name: "review_evidence_repair",
-        description: "Repairs invalid review finding evidence ranges",
+      get_symbol_callers: tool({
+        description: "Get direct call locations and enclosing caller metadata.",
+        inputSchema: z.object({ symbol: z.string().min(1) }),
+        execute: async ({ symbol }) => {
+          const input = { symbol }
+          const result = await getSymbolCallers({
+            repository: runtime.paths.repositoryPath,
+            index: runtime.codeIndex,
+            symbol,
+          })
+          const output = { ...result.json, stats: result.stats }
+          await recorder.recordToolCall({
+            name: `${scope}.get_symbol_callers`,
+            input,
+            output,
+          })
+          return output
+        },
       }),
-      maxRetries: 2,
-      onStepFinish: async (step) => {
-        await recorder.recordStep(step)
-      },
-    })
-  await recorder.writeText(
-    "context/judge-instructions.txt",
-    reviewJudgeInstructions
-  )
-  await recorder.writeText(
-    "context/file-scout-instructions.txt",
-    fileScoutInstructions
-  )
-  await recorder.writeText(
-    "context/evidence-repair-instructions.txt",
-    reviewEvidenceRepairInstructions
-  )
-  const scoutOutputs: FileScoutOutput[] = []
-  const fileScoutUsages: unknown[] = []
-  const skippedScouts: { file: string; reason: string }[] = []
-  const scoutPlan = buildFileScoutPlan(filteredFiles)
-  logger.info("Review agent stage started", {
-    ...context,
-    stage: "fileScout",
-    files: scoutPlan.length,
-  })
-  await recorder.appendEvent("stage.started", {
-    stage: "fileScout",
-    files: scoutPlan.length,
-  })
-  for (const item of scoutPlan) {
-    if (item.skipped) {
-      skippedScouts.push({ file: item.file, reason: item.skipped.reason })
-      await recorder.writeJson(`file-scouts/${item.safeFile}/skipped.json`, {
-        file: item.file,
-        reason: item.skipped.reason,
-      })
-      continue
+      locate_text: tool({
+        description: "Search exact text across repository files.",
+        inputSchema: z.object({ query: z.string().min(1) }),
+        execute: async ({ query }) => {
+          const input = { query }
+          const result = await searchRepositoryText({
+            repository: runtime.paths.repositoryPath,
+            index: runtime.codeIndex,
+            query,
+            maxResults: 50,
+          })
+          const output = {
+            ...result.stats,
+            markdown: toolText(result.markdown),
+          }
+          await recorder.recordToolCall({
+            name: `${scope}.locate_text`,
+            input,
+            output,
+          })
+          return output
+        },
+      }),
     }
-    const localToolCalls: unknown[] = []
-    const scoutPrompt = buildFileScoutPrompt({
-      title: pullRequest.title,
-      body: pullRequest.body,
-      baseRef: pullRequest.baseRef,
-      headRef: pullRequest.headRef,
-      file: item.file,
-      status: item.status,
-      patch: item.patch,
-      affectedSymbols: renderAffectedSymbolsForFile(diffContext, item.file),
-    })
-    await recorder.writeText(
-      `file-scouts/${item.safeFile}/prompt.txt`,
-      scoutPrompt
-    )
-    await recorder.writeJson(`file-scouts/${item.safeFile}/prompt-stats.json`, {
-      promptBytes: textBytes(scoutPrompt),
-      patchBytes: textBytes(item.patch),
-    })
-    const scoutStartToolCalls = recorder.counts().toolCalls
-    const scoutAgent = new ToolLoopAgent({
-      model: openrouter.chat(REVIEW_VERIFIER_MODEL),
-      instructions: fileScoutInstructions,
-      tools: createScoutTools(item.file, localToolCalls),
-      providerOptions: verifierModelProviderOptions,
-      output: Output.object({
-        schema: fileScoutOutputSchema,
-        name: "file_security_scout",
-        description: "Noisy security candidates for one changed file",
+    if (!semanticEnabled) return base
+    return {
+      ...base,
+      search_code: tool({
+        description:
+          "Search code by behavior or concept when exact identifiers are unknown.",
+        inputSchema: z.object({
+          query: z.string().min(1),
+          limit: z.number().int().positive().max(20).optional(),
+        }),
+        execute: async ({ query, limit = 10 }) => {
+          const input = { query, limit }
+          if (!runtime.qdrant)
+            return {
+              chunks: 0,
+              markdown: "Semantic code search is unavailable.",
+            }
+          const result = await searchReviewCode({
+            repositoryId: repository.id,
+            headSha: pullRequest.headSha,
+            reviewRunId,
+            qdrant: runtime.qdrant,
+            query,
+            indexedLogicalBytes: qdrantLogicalWriteBytes,
+            limit,
+          })
+          vectorQueryBytes += result.stats.queriedBytes
+          vectorNetworkBytes += result.stats.returnedBytes
+          vectorQueryCount += result.stats.queryUnits
+          const output = {
+            ...result.stats,
+            markdown: toolText(result.markdown),
+          }
+          await recorder.recordToolCall({
+            name: `${scope}.search_code`,
+            input,
+            output,
+          })
+          return output
+        },
       }),
-      maxRetries: 2,
-      onStepFinish: async (step) => {
-        await recorder.recordStep(step)
-      },
-    })
-    const scoutGeneration = await scoutAgent.generate({ prompt: scoutPrompt })
-    fileScoutUsages.push(scoutGeneration.totalUsage)
-    await recordLlmBilling(
-      llmBilling,
-      "fileScout",
-      REVIEW_VERIFIER_MODEL,
-      scoutGeneration
-    )
-    const scoutOutput = fileScoutOutputSchema.parse(scoutGeneration.output)
-    scoutOutputs.push(scoutOutput)
-    await recorder.writeJson(`file-scouts/${item.safeFile}/output.json`, {
-      finishReason: scoutGeneration.finishReason,
-      usage: scoutGeneration.totalUsage,
-      providerMetadata: scoutGeneration.providerMetadata,
-      output: scoutGeneration.output,
-      text: scoutGeneration.text,
-    })
-    await recorder.writeText(
-      `file-scouts/${item.safeFile}/tool-calls.jsonl`,
-      `${serializeJsonl(localToolCalls)}${localToolCalls.length > 0 ? "\n" : ""}`
-    )
-    await recorder.appendEvent("file_scout.completed", {
-      file: item.file,
-      findings: scoutOutput.candidates.length,
-      inspectedSymbols: scoutOutput.inspectedSymbols,
-      toolCalls: recorder.counts().toolCalls - scoutStartToolCalls,
-    })
+    }
   }
-  const scoutFindings = aggregateScoutFindings(scoutOutputs)
-  await recorder.writeJson("candidate-scout-findings.json", scoutFindings)
-  await recorder.writeJson("file-scouts/summary.json", {
-    files: filteredFiles.length,
-    completed: scoutOutputs.length,
-    skipped: skippedScouts,
-    candidateFindings: scoutFindings.length,
-    perFile: scoutOutputs.map((output) => ({
-      file: output.file,
-      candidates: output.candidates.length,
-      inspectedSymbols: output.inspectedSymbols,
-      notes: output.notes,
-    })),
+
+  const subagentUsages: unknown[] = []
+  const suspicionIds = new Set<string>()
+  let spawnBatch = 0
+  const spawnReviewAgents = tool({
+    description:
+      "Run focused review subagents concurrently. Delegate architectural areas and end-to-end flows. May be called repeatedly.",
+    inputSchema: z.object({
+      tasks: z
+        .array(
+          z.object({ id: z.string().min(1), objective: z.string().min(1) })
+        )
+        .min(1)
+        .max(8)
+        .refine(
+          (tasks) =>
+            new Set(tasks.map((task) => task.id)).size === tasks.length,
+          "Task IDs must be unique within a batch"
+        ),
+    }),
+    execute: async ({ tasks }) => {
+      const batch = ++spawnBatch
+      await recorder.appendEvent("subagents.batch.started", {
+        batch,
+        tasks: tasks.map((task) => task.id),
+      })
+      const runTask = async (task: { id: string; objective: string }) => {
+        const safeId = `${String(tasks.indexOf(task) + 1).padStart(2, "0")}-${safePathSegment(task.id)}`
+        const prompt = `Assigned exploration:
+${task.objective}
+
+Pull request title: ${pullRequest.title}
+Pull request description: ${pullRequest.body ?? "(none)"}
+Base branch: ${pullRequest.baseRef}
+Head branch: ${pullRequest.headRef}
+
+Repository context:
+${preparedRepositoryContext.markdown}
+
+Changed files:
+${diff}
+
+Changed symbol index:
+${affectedSymbols}`
+        await recorder.writeText(
+          `subagents/batch-${batch}/${safeId}/prompt.txt`,
+          prompt
+        )
+        let lastError: unknown
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          try {
+            const agent = new ToolLoopAgent({
+              model: subagentModel,
+              instructions: reviewSubagentInstructions,
+              tools: createRepositoryTools(
+                `subagent.${batch}.${safeId}.${attempt}`
+              ),
+              providerOptions: verifierModelProviderOptions,
+              output: Output.object({
+                schema: reviewSubagentOutputSchema,
+                name: "review_suspicions",
+                description: "Unfiltered suspicious code locations",
+              }),
+              maxRetries: 2,
+              onStepFinish: async (step) => recorder.recordStep(step),
+            })
+            const generation = await agent.generate({ prompt })
+            subagentUsages.push(generation.totalUsage)
+            await recordLlmBilling(
+              llmBilling,
+              "subagents",
+              REVIEW_VERIFIER_MODEL,
+              generation
+            )
+            const output = reviewSubagentOutputSchema.parse(generation.output)
+            const suspicions = output.suspicions.map((suspicion, index) => {
+              const suspicionId = `batch-${batch}:${task.id}:${index + 1}`
+              suspicionIds.add(suspicionId)
+              return { suspicionId, ...suspicion }
+            })
+            await recorder.writeJson(
+              `subagents/batch-${batch}/${safeId}/attempt-${attempt}.json`,
+              {
+                finishReason: generation.finishReason,
+                usage: generation.totalUsage,
+                providerMetadata: generation.providerMetadata,
+                output,
+                text: generation.text,
+              }
+            )
+            await recorder.appendEvent("subagent.completed", {
+              batch,
+              taskId: task.id,
+              attempt,
+              suspicions: suspicions.length,
+            })
+            return { taskId: task.id, suspicions }
+          } catch (error) {
+            lastError = error
+            await recorder.writeJson(
+              `subagents/batch-${batch}/${safeId}/attempt-${attempt}-error.json`,
+              { error }
+            )
+            await recorder.appendEvent("subagent.attempt.failed", {
+              batch,
+              taskId: task.id,
+              attempt,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+        return {
+          taskId: task.id,
+          error:
+            lastError instanceof Error
+              ? lastError.message
+              : "Subagent failed after retry",
+        }
+      }
+      const results: Awaited<ReturnType<typeof runTask>>[] = []
+      for (let offset = 0; offset < tasks.length; offset += 4) {
+        results.push(
+          ...(await Promise.all(tasks.slice(offset, offset + 4).map(runTask)))
+        )
+      }
+      const output = {
+        results: results.filter((item) => "suspicions" in item),
+        failures: results.filter((item) => "error" in item),
+      }
+      await recorder.writeJson(`subagents/batch-${batch}/result.json`, output)
+      await recorder.recordToolCall({
+        name: "main.spawn_review_agents",
+        input: { tasks },
+        output,
+      })
+      await recorder.appendEvent("subagents.batch.completed", {
+        batch,
+        completed: output.results.length,
+        failed: output.failures.length,
+      })
+      return output
+    },
   })
-  logger.info("Review agent stage completed", {
-    ...context,
-    stage: "fileScout",
-    completed: scoutOutputs.length,
-    skipped: skippedScouts.length,
-    candidateFindings: scoutFindings.length,
-  })
-  await recorder.appendEvent("stage.completed", {
-    stage: "fileScout",
-    completed: scoutOutputs.length,
-    skipped: skippedScouts.length,
-    candidateFindings: scoutFindings.length,
-  })
-  const judgePrompt = buildReviewJudgePrompt({
+
+  const mainPrompt = buildMainReviewPrompt({
     title: pullRequest.title,
     body: pullRequest.body,
     baseRef: pullRequest.baseRef,
@@ -996,331 +788,166 @@ export const runReviewAgent = async ({
     diff,
     affectedSymbols,
     repositoryContext: preparedRepositoryContext.markdown,
-    scoutFindings,
   })
-  await recorder.writeText("context/judge-prompt.txt", judgePrompt)
-  await recorder.writeJson("context/judge-prompt-stats.json", {
+  await recorder.writeText(
+    "context/main-review-instructions.txt",
+    mainReviewAgentInstructions
+  )
+  await recorder.writeText("context/main-review-prompt.txt", mainPrompt)
+  await recorder.writeJson("context/main-review-prompt-stats.json", {
+    promptBytes: textBytes(mainPrompt),
     diffBytes: textBytes(diff),
     affectedSymbolsBytes: textBytes(affectedSymbols),
     repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
     repositoryContextSource: preparedRepositoryContext.source,
-    repositoryContextId: preparedRepositoryContext.contextId,
-    repositoryContextBaseSha: preparedRepositoryContext.baseSha,
-    scoutCandidateFindings: scoutFindings.length,
-    promptBytes: textBytes(judgePrompt),
     semanticEnabled,
-    semanticContextPreloaded: false,
   })
-  logger.info("Review agent stage started", {
-    ...context,
-    stage: "judge",
-    scoutCandidateFindings: scoutFindings.length,
-  })
-  await recorder.appendEvent("stage.started", {
-    stage: "judge",
-    scoutCandidateFindings: scoutFindings.length,
-  })
-  const judgeGeneration = await createJudgeAgent().generate({
-    prompt: judgePrompt,
-  })
-  const judgeUsage = await recordLlmBilling(
-    llmBilling,
-    "judge",
-    REVIEW_MODEL,
-    judgeGeneration
-  )
-  const judgeOutput = reviewJudgeOutputSchema.parse(judgeGeneration.output)
-  const judgeDecisionLedger = validateJudgeDecisionLedger(
-    judgeOutput,
-    scoutFindings
-  )
-  const initialReport = reportFromJudgeOutput(judgeOutput)
-  await recorder.writeJson("agent-judge-output.json", {
-    finishReason: judgeGeneration.finishReason,
-    usage: judgeGeneration.totalUsage,
-    providerMetadata: judgeGeneration.providerMetadata,
-    output: judgeGeneration.output,
-    text: judgeGeneration.text,
-  })
-  await recorder.writeJson("judge-decisions.json", judgeOutput.decisions)
-  await recorder.writeJson(
-    "judge-decision-ledger-validation.json",
-    judgeDecisionLedger
-  )
-  logger.info("Review agent stage completed", {
-    ...context,
-    stage: "judge",
-    usage: judgeGeneration.totalUsage,
-    findings: initialReport.findings.length,
-    decisions: judgeOutput.decisions.length,
-    missingDecisions: judgeDecisionLedger.missingDecisionIds.length,
-    unknownDecisions: judgeDecisionLedger.unknownDecisionIds.length,
-    duplicateDecisions: judgeDecisionLedger.duplicateDecisionIds.length,
-    inspectedSymbols: [...judgeInspectedSymbols].sort(),
-  })
-  await recorder.appendEvent("stage.completed", {
-    stage: "judge",
-    usage: judgeGeneration.totalUsage,
-    findings: initialReport.findings.length,
-    decisions: judgeOutput.decisions.length,
-    missingDecisions: judgeDecisionLedger.missingDecisionIds.length,
-    unknownDecisions: judgeDecisionLedger.unknownDecisionIds.length,
-    duplicateDecisions: judgeDecisionLedger.duplicateDecisionIds.length,
-    inspectedSymbols: [...judgeInspectedSymbols].sort(),
-  })
-  await recorder.writeJson("candidate-review-report.json", initialReport)
-  let report = initialReport
-  let reportValidation: ReviewReportEvidenceValidation =
-    await validateReviewReportEvidence({
-      repository: runtime.paths.repositoryPath,
-      diffFiles: parsedDiffFiles,
-      report,
+  const mainOutputSchema = reviewReportSchema
+    .extend({
+      decisions: z.array(reviewSuspicionDecisionSchema),
     })
+    .superRefine((output, validation) => {
+      const seen = new Set<string>()
+      const duplicateIds = new Set<string>()
+      const unknownIds = new Set<string>()
+      for (const decision of output.decisions) {
+        if (seen.has(decision.suspicionId)) {
+          duplicateIds.add(decision.suspicionId)
+        }
+        seen.add(decision.suspicionId)
+        if (!suspicionIds.has(decision.suspicionId)) {
+          unknownIds.add(decision.suspicionId)
+        }
+        if (
+          decision.decision === "accepted" &&
+          (decision.findingIndex === null ||
+            decision.findingIndex >= output.findings.length)
+        ) {
+          validation.addIssue({
+            code: "custom",
+            path: ["decisions"],
+            message: `Accepted suspicion ${decision.suspicionId} must reference an existing findingIndex.`,
+          })
+        }
+        if (
+          decision.decision !== "accepted" &&
+          decision.findingIndex !== null
+        ) {
+          validation.addIssue({
+            code: "custom",
+            path: ["decisions"],
+            message: `Rejected suspicion ${decision.suspicionId} must set findingIndex to null.`,
+          })
+        }
+      }
+      const missingIds = [...suspicionIds].filter((id) => !seen.has(id))
+      if (
+        missingIds.length > 0 ||
+        duplicateIds.size > 0 ||
+        unknownIds.size > 0
+      ) {
+        validation.addIssue({
+          code: "custom",
+          path: ["decisions"],
+          message: `Invalid suspicion decision ledger. Missing: ${missingIds.join(", ") || "none"}; duplicate: ${[...duplicateIds].join(", ") || "none"}; unknown: ${[...unknownIds].join(", ") || "none"}.`,
+        })
+      }
+    })
+  const mainAgent = new ToolLoopAgent({
+    model: mainModel,
+    instructions: mainReviewAgentInstructions,
+    tools: {
+      ...createRepositoryTools("main"),
+      spawn_review_agents: spawnReviewAgents,
+    },
+    providerOptions: reviewModelProviderOptions,
+    output: Output.object({
+      schema: mainOutputSchema,
+      name: "review_report",
+      description:
+        "Verified pull request review and a complete decision ledger for every delegated suspicion",
+    }),
+    maxRetries: 2,
+    onStepFinish: async (step) => recorder.recordStep(step),
+  })
+  const mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
+  const mainUsage = await recordLlmBilling(
+    llmBilling,
+    "main",
+    REVIEW_MODEL,
+    mainGeneration
+  )
+  const mainOutput = mainOutputSchema.parse(mainGeneration.output)
+  const generatedReport = reviewReportSchema.parse(mainOutput)
+  await recorder.writeJson("main-agent-output.json", {
+    finishReason: mainGeneration.finishReason,
+    usage: mainGeneration.totalUsage,
+    providerMetadata: mainGeneration.providerMetadata,
+    output: mainOutput,
+    text: mainGeneration.text,
+  })
+  await recorder.writeJson("suspicion-decisions.json", mainOutput.decisions)
+  const decisionCounts = {
+    accepted: mainOutput.decisions.filter(
+      (decision) => decision.decision === "accepted"
+    ).length,
+    duplicate: mainOutput.decisions.filter(
+      (decision) => decision.decision === "duplicate"
+    ).length,
+    notBug: mainOutput.decisions.filter(
+      (decision) => decision.decision === "not_bug"
+    ).length,
+  }
+
+  const reportValidation = await validateReviewReportEvidence({
+    repository: runtime.paths.repositoryPath,
+    diffFiles: parsedDiffFiles,
+    report: generatedReport,
+  })
+  const invalidEvidenceFindings = generatedReport.findings.filter(
+    (_, index) => !reportValidation.findings[index]?.valid
+  )
+  const finalReport: ReviewReport = {
+    ...generatedReport,
+    findings: generatedReport.findings.filter(
+      (_, index) => reportValidation.findings[index]?.valid
+    ),
+  }
   await recorder.writeJson(
     "candidate-review-report-validation.json",
     reportValidation
   )
-  let repairUsage: unknown
-  if (!reportValidation.valid) {
-    logger.info("Review agent stage started", {
-      ...context,
-      stage: "evidence-repair",
-      invalidFindings: reportValidation.findings.filter(
-        (finding) => !finding.valid
-      ).length,
-    })
-    await recorder.appendEvent("stage.started", {
-      stage: "evidence-repair",
-      invalidFindings: reportValidation.findings.filter(
-        (finding) => !finding.valid
-      ).length,
-    })
-    const invalidValidationFindings = reportValidation.findings.filter(
-      (finding) => !finding.valid
-    )
-    const invalidFindings = invalidValidationFindings.map((validation) => ({
-      findingIndex: validation.findingIndex,
-      finding: report.findings[validation.findingIndex],
-      validation,
-    }))
-    const repairFileContexts = buildEvidenceRepairFileContexts({
-      invalidFindings: invalidValidationFindings,
-      files: filteredFiles,
-    })
-    const repairPrompt = buildReviewEvidenceRepairPrompt({
-      invalidFindings,
-      fileContexts: repairFileContexts,
-    })
-    await recorder.writeText("context/repair-prompt.txt", repairPrompt)
-    await recorder.writeJson("context/repair-prompt-stats.json", {
-      promptBytes: textBytes(repairPrompt),
-      invalidFindings: invalidValidationFindings.length,
-      files: repairFileContexts.length,
-      fileContextBytes: textBytes(JSON.stringify(repairFileContexts)),
-    })
-    await recorder.writeJson("evidence-repair-input.json", {
-      invalidFindings,
-      fileContexts: repairFileContexts,
-    })
-    const repairGeneration = await createEvidenceRepairAgent().generate({
-      prompt: repairPrompt,
-    })
-    repairUsage = await recordLlmBilling(
-      llmBilling,
-      "repair",
-      REVIEW_MODEL,
-      repairGeneration
-    )
-    const repairOutput = reviewEvidenceRepairSchema.parse(repairGeneration.output)
-    report = applyEvidenceRepairs(report, repairOutput)
-    await recorder.writeJson("agent-repair-output.json", {
-      finishReason: repairGeneration.finishReason,
-      usage: repairGeneration.totalUsage,
-      providerMetadata: repairGeneration.providerMetadata,
-      output: repairGeneration.output,
-      text: repairGeneration.text,
-    })
-    await recorder.writeJson("evidence-repairs.json", repairOutput)
-    await recorder.writeJson("repaired-candidate-review-report.json", report)
-    reportValidation = await validateReviewReportEvidence({
-      repository: runtime.paths.repositoryPath,
-      diffFiles: parsedDiffFiles,
-      report,
-    })
-    await recorder.writeJson(
-      "repaired-candidate-review-report-validation.json",
-      reportValidation
-    )
-    logger.info("Review agent stage completed", {
-      ...context,
-      stage: "evidence-repair",
-      usage: repairGeneration.totalUsage,
-      findings: report.findings.length,
-      invalidFindings: reportValidation.findings.filter(
-        (finding) => !finding.valid
-      ).length,
-    })
-    await recorder.appendEvent("stage.completed", {
-      stage: "evidence-repair",
-      usage: repairGeneration.totalUsage,
-      findings: report.findings.length,
-      invalidFindings: reportValidation.findings.filter(
-        (finding) => !finding.valid
-      ).length,
-    })
-  }
-  const invalidEvidenceFindings = report.findings.filter(
-    (_, index) => !reportValidation.findings[index]?.valid
-  )
-  report = filterReportToValidEvidence(report, reportValidation)
   await recorder.writeJson(
     "evidence-filtered-findings.json",
     invalidEvidenceFindings
   )
-  await recorder.writeJson("evidence-validated-review-report.json", report)
-  const candidateFindings: CandidateFinding[] = report.findings.map(
-    (finding, index) => ({
-      candidateId: `finding-${index}`,
-      ...finding,
-    })
-  )
-  await recorder.writeJson("candidate-findings.json", candidateFindings)
-  let verification: ReviewVerification | null = null
-  let verificationUsage: unknown
-  if (candidateFindings.length > 0) {
-    logger.info("Review agent stage started", {
-      ...context,
-      stage: "verification",
-      findings: candidateFindings.length,
-      verifierModelId: REVIEW_VERIFIER_MODEL,
-    })
-    await recorder.appendEvent("stage.started", {
-      stage: "verification",
-      findings: candidateFindings.length,
-    })
-    const verifierAgent = new ToolLoopAgent({
-      model: openrouter.chat(REVIEW_VERIFIER_MODEL),
-      instructions: reviewVerifierInstructions,
-      tools,
-      providerOptions: verifierModelProviderOptions,
-      output: Output.object({
-        schema: reviewVerificationSchema,
-        name: "review_verification",
-        description: "Verification decisions for candidate review findings",
-      }),
-      maxRetries: 2,
-      onStepFinish: async (step) => {
-        await recorder.recordStep(step)
-      },
-    })
-    const verificationPrompt = buildReviewVerifierPrompt({
-      title: pullRequest.title,
-      body: pullRequest.body,
-      baseRef: pullRequest.baseRef,
-      headRef: pullRequest.headRef,
-      diff,
-      affectedSymbols,
-      repositoryContext: preparedRepositoryContext.markdown,
-      candidates: candidateFindings,
-    })
-    await recorder.writeText(
-      "context/verification-instructions.txt",
-      reviewVerifierInstructions
-    )
-    await recorder.writeText(
-      "context/verification-prompt.txt",
-      verificationPrompt
-    )
-    await recorder.writeJson("context/verification-prompt-stats.json", {
-      promptBytes: textBytes(verificationPrompt),
-      repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
-      repositoryContextId: preparedRepositoryContext.contextId,
-      semanticCoverageBytes: 0,
-      semanticEnabled,
-      findings: candidateFindings.length,
-    })
-    const verificationGeneration = await verifierAgent.generate({
-      prompt: verificationPrompt,
-    })
-    verification = reviewVerificationSchema.parse(verificationGeneration.output)
-    verificationUsage = await recordLlmBilling(
-      llmBilling,
-      "verification",
-      REVIEW_VERIFIER_MODEL,
-      verificationGeneration
-    )
-    await recorder.writeJson("verification-output.json", {
-      finishReason: verificationGeneration.finishReason,
-      modelId: REVIEW_VERIFIER_MODEL,
-      usage: verificationGeneration.totalUsage,
-      providerMetadata: verificationGeneration.providerMetadata,
-      output: verificationGeneration.output,
-      text: verificationGeneration.text,
-    })
-    await recorder.writeJson("verification-report.json", verification)
-    logger.info("Review agent stage completed", {
-      ...context,
-      stage: "verification",
-      verifierModelId: REVIEW_VERIFIER_MODEL,
-      usage: verificationGeneration.totalUsage,
-      confirmedFindings: verification.verifications.filter(
-        (item) => item.confirmed
-      ).length,
-    })
-    await recorder.appendEvent("stage.completed", {
-      stage: "verification",
-      verifierModelId: REVIEW_VERIFIER_MODEL,
-      usage: verificationGeneration.totalUsage,
-      confirmedFindings: verification.verifications.filter(
-        (item) => item.confirmed
-      ).length,
-    })
-  }
-  const rejectedFindings = verification
-    ? candidateFindings.filter(
-        (candidate) =>
-          !verification.verifications.some(
-            (item) =>
-              item.candidateId === candidate.candidateId && item.confirmed
-          )
-      )
-    : []
-  const finalReport = applyVerification(report, candidateFindings, verification)
+  await recorder.writeJson("review-report.json", finalReport)
   const renderedReport = renderReviewSummaryComment({
     report: finalReport,
     files: filteredFiles,
     inlineReview: { kind: "not_needed" },
   })
-  await recorder.writeJson("review-report.json", finalReport)
-  await recorder.writeJson("rejected-findings.json", rejectedFindings)
   await recorder.writeText("rendered-comment.md", renderedReport)
+  const generationUsage = { main: mainUsage, subagents: subagentUsages }
   logger.info("Review agent stage completed", {
     ...context,
     stage: "generation",
-    usage: {
-      fileScout: fileScoutUsages,
-      judge: judgeUsage,
-      repair: repairUsage,
-      verification: verificationUsage,
-    },
+    usage: generationUsage,
+    spawnBatches: spawnBatch,
+    suspicionDecisions: decisionCounts,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings.length,
-    candidateFindings: report.findings.length,
-    generatedCandidateFindings: initialReport.findings.length,
+    generatedFindings: generatedReport.findings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "generation",
-    usage: {
-      fileScout: fileScoutUsages,
-      judge: judgeUsage,
-      repair: repairUsage,
-      verification: verificationUsage,
-    },
+    usage: generationUsage,
+    spawnBatches: spawnBatch,
+    suspicionDecisions: decisionCounts,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings.length,
-    candidateFindings: report.findings.length,
-    generatedCandidateFindings: initialReport.findings.length,
+    generatedFindings: generatedReport.findings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
   })
 
@@ -1498,12 +1125,8 @@ export const runReviewAgent = async ({
     inlineReviewPublishError,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings,
-    usage: {
-      fileScout: fileScoutUsages,
-      judge: judgeUsage,
-      repair: repairUsage,
-      verification: verificationUsage,
-    } as unknown as Record<string, unknown>,
+    suspicionDecisions: decisionCounts,
+    usage: generationUsage as unknown as Record<string, unknown>,
     billing,
     startedAt: startedAtIso,
     completedAt: new Date().toISOString(),
@@ -1526,15 +1149,14 @@ export const runReviewAgent = async ({
     qdrantIndexedFiles,
     qdrantIgnoredFiles,
     qdrantLogicalWriteBytes,
-    candidateFindings: report.findings.length,
-    generatedCandidateFindings: initialReport.findings.length,
+    generatedFindings: generatedReport.findings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
+    suspicionDecisions: decisionCounts,
     confirmedFindings: finalReport.findings.length,
     inlineCommentCount,
     reviewId,
     reviewEvent,
     inlineReviewPublishError,
-    rejectedFindings: rejectedFindings.length,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     usage: result.usage,
     billing,
