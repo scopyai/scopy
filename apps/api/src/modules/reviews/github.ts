@@ -206,6 +206,36 @@ export const reviewBalanceBlockedBody =
 const severityLabel = (severity: ReviewFinding["severity"]) =>
   severity.toUpperCase()
 
+const renderFixPrompt = (finding: ReviewFinding) => {
+  const prompt = [
+    "Fix the following issue found in this pull request.",
+    "",
+    `Title: ${finding.title}`,
+    `File: ${finding.file}`,
+    `Lines: ${finding.startLine}-${finding.endLine}`,
+    `Severity: ${finding.severity}`,
+    "",
+    "Description:",
+    finding.body,
+  ].join("\n")
+  const longestFence = Math.max(
+    0,
+    ...(prompt.match(/`+/g) ?? []).map((match) => match.length),
+  )
+  const fence = "`".repeat(Math.max(3, longestFence + 1))
+
+  return [
+    "<details>",
+    "<summary>Fix with AI</summary>",
+    "",
+    `${fence}text`,
+    prompt,
+    fence,
+    "",
+    "</details>",
+  ].join("\n")
+}
+
 export const renderInlineReviewComment = (finding: ReviewFinding) =>
   [
     `**[${severityLabel(finding.severity)}] ${finding.title}**`,
@@ -213,6 +243,8 @@ export const renderInlineReviewComment = (finding: ReviewFinding) =>
     finding.body,
     "",
     `Confidence: ${Math.round(finding.confidence * 100)}%`,
+    "",
+    renderFixPrompt(finding),
   ].join("\n")
 
 export const buildPullRequestReviewComments = (
