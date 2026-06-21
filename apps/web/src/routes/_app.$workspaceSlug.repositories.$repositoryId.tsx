@@ -1,15 +1,20 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useCallback, useRef, useState } from "react"
+import { GitPullRequestIcon, Settings2Icon } from "lucide-react"
 import { z } from "zod"
+import { cn } from "@workspace/ui/lib/utils"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useRepositories } from "@/hooks/use-repositories"
 import { usePullRequests } from "@/hooks/use-pull-requests"
 import { usePullRequest } from "@/hooks/use-pull-request"
+import { useWorkspaces } from "@/hooks/use-workspaces"
 import { PullRequestList } from "@/components/pull-requests/pr-list"
 import { PullRequestDetail } from "@/components/pull-requests/pr-detail"
+import { RepositoryReviewSettings } from "@/components/repositories/repository-review-settings"
 
 const searchSchema = z.object({
   pullRequestId: z.string().optional(),
+  view: z.enum(["pull-requests", "settings"]).default("pull-requests"),
 })
 
 export const Route = createFileRoute("/_app/$workspaceSlug/repositories/$repositoryId")({
@@ -23,12 +28,19 @@ const DEFAULT_LIST_WIDTH = 320
 
 function RepositoryPage() {
   const { repositoryId } = Route.useParams()
-  const { pullRequestId } = Route.useSearch()
+  const { pullRequestId, view } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
 
   const { selectedWorkspaceId } = useWorkspaceContext()
+  const { data: workspaces } = useWorkspaces()
   const { data: repos } = useRepositories(selectedWorkspaceId)
   const repository = repos?.find((r) => r.id === repositoryId)
+
+  const selectedEntry = workspaces?.find(
+    (entry) => entry.workspace.id === selectedWorkspaceId,
+  )
+  const canEditSettings =
+    selectedEntry?.role === "owner" || selectedEntry?.role === "admin"
 
   const { data: pullRequests, isPending: pullRequestsPending } = usePullRequests(
     selectedWorkspaceId,
@@ -41,7 +53,8 @@ function RepositoryPage() {
     pullRequestId,
   )
 
-  const detailOpen = !!pullRequestId
+  const showSettings = view === "settings"
+  const detailOpen = !!pullRequestId && !showSettings
 
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -73,16 +86,27 @@ function RepositoryPage() {
   }, [])
 
   const handleSelectPullRequest = (id: string) => {
-    navigate({ search: (prev) => ({ ...prev, pullRequestId: id }) })
+    navigate({
+      search: (prev) => ({ ...prev, pullRequestId: id, view: "pull-requests" }),
+    })
   }
 
   const handleCloseDetail = () => {
     navigate({ search: (prev) => ({ ...prev, pullRequestId: undefined }) })
   }
 
+  const handleViewChange = (nextView: "pull-requests" | "settings") => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        view: nextView,
+        pullRequestId: nextView === "settings" ? undefined : prev.pullRequestId,
+      }),
+    })
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* h-14 matches sidebar workspace-switcher: h-14 border-b on both keeps borders at the same y-position */}
       <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {repository ? (
@@ -110,48 +134,96 @@ function RepositoryPage() {
             <div className="h-4 w-40 animate-pulse rounded bg-muted" />
           )}
         </div>
-      </div>
 
-      {/* Two-panel body */}
-      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
-        {/* PR list column */}
-        <div
-          style={detailOpen ? { width: listWidth } : undefined}
-          className={
-            detailOpen
-              ? "flex shrink-0 flex-col overflow-hidden"
-              : "flex flex-1 flex-col overflow-hidden"
-          }
-        >
-          <PullRequestList
-            pullRequests={pullRequests}
-            isPending={pullRequestsPending}
-            selectedPullRequestId={pullRequestId}
-            onSelect={handleSelectPullRequest}
+        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border p-0.5">
+          <RepositoryViewTab
+            active={!showSettings}
+            onClick={() => handleViewChange("pull-requests")}
+            icon={GitPullRequestIcon}
+            label="Pull requests"
+          />
+          <RepositoryViewTab
+            active={showSettings}
+            onClick={() => handleViewChange("settings")}
+            icon={Settings2Icon}
+            label="Settings"
           />
         </div>
+      </div>
 
-        {/* Draggable resize handle — wide hit area (16px) with a 1px visual line centered */}
-        {detailOpen && (
+      {showSettings && selectedWorkspaceId ? (
+        <RepositoryReviewSettings
+          workspaceId={selectedWorkspaceId}
+          repositoryId={repositoryId}
+          repositoryEnabled={repository?.enabled ?? false}
+          canEdit={canEditSettings}
+        />
+      ) : (
+        <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
           <div
-            className="group relative flex w-4 shrink-0 cursor-col-resize items-stretch justify-center"
-            onMouseDown={startResize}
+            style={detailOpen ? { width: listWidth } : undefined}
+            className={
+              detailOpen
+                ? "flex shrink-0 flex-col overflow-hidden"
+                : "flex flex-1 flex-col overflow-hidden"
+            }
           >
-            <div className="w-px bg-border transition-colors group-hover:bg-primary/50" />
-          </div>
-        )}
-
-        {/* PR detail panel */}
-        {detailOpen && (
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <PullRequestDetail
-              pullRequest={pullRequestDetail}
-              isPending={detailPending}
-              onClose={handleCloseDetail}
+            <PullRequestList
+              pullRequests={pullRequests}
+              isPending={pullRequestsPending}
+              selectedPullRequestId={pullRequestId}
+              onSelect={handleSelectPullRequest}
             />
           </div>
-        )}
-      </div>
+
+          {detailOpen && (
+            <div
+              className="group relative flex w-4 shrink-0 cursor-col-resize items-stretch justify-center"
+              onMouseDown={startResize}
+            >
+              <div className="w-px bg-border transition-colors group-hover:bg-primary/50" />
+            </div>
+          )}
+
+          {detailOpen && (
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <PullRequestDetail
+                pullRequest={pullRequestDetail}
+                isPending={detailPending}
+                onClose={handleCloseDetail}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+function RepositoryViewTab({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+        active
+          ? "bg-accent text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="size-3.5" />
+      {label}
+    </button>
   )
 }

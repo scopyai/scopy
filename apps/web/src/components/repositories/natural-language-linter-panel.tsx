@@ -1,0 +1,114 @@
+import { useState } from "react"
+import { PlusIcon, SparklesIcon, XIcon } from "lucide-react"
+import { Button } from "@workspace/ui/components/button"
+import { Label } from "@workspace/ui/components/label"
+import { Textarea } from "@workspace/ui/components/textarea"
+import { cn } from "@workspace/ui/lib/utils"
+import { SettingsSection } from "@/components/repositories/settings-section"
+import { useNaturalLanguageLinter } from "@/hooks/use-natural-language-linter"
+
+interface NaturalLanguageLinterPanelProps {
+  workspaceId: string
+  repositoryId: string
+  disabled?: boolean
+}
+
+export function NaturalLanguageLinterPanel({
+  workspaceId,
+  repositoryId,
+  disabled = false,
+}: NaturalLanguageLinterPanelProps) {
+  const { rules, addRule, removeRule } = useNaturalLanguageLinter(
+    workspaceId,
+    repositoryId,
+  )
+  const [draft, setDraft] = useState("")
+
+  const commitDraft = () => {
+    if (disabled) return
+    const next = draft.trim()
+    if (!next) return
+    addRule(next)
+    setDraft("")
+  }
+
+  const handleRemoveRule = (rule: string) => {
+    if (disabled) return
+    removeRule(rule)
+  }
+
+  return (
+    <SettingsSection
+      title="Natural language linter"
+      description="Describe coding standards in plain English. Scopy will flag pull requests that break these rules during review."
+    >
+      <fieldset
+        disabled={disabled}
+        className={cn(
+          "flex min-w-0 flex-col gap-2 border-0 p-0 m-0",
+          disabled && "opacity-60",
+        )}
+      >
+        <Label htmlFor="natural-language-linter-rule">Rules</Label>
+        <p className="text-xs text-muted-foreground">
+          Add a rule to enforce it on pull requests. Press Enter or click away
+          to save each one.
+        </p>
+
+        {rules.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {rules.map((rule) => (
+              <li
+                key={rule}
+                className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2.5"
+              >
+                <SparklesIcon className="mt-0.5 size-3.5 shrink-0 text-primary/70" />
+                <p className="min-w-0 flex-1 text-sm leading-relaxed">{rule}</p>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveRule(rule)}
+                  className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none"
+                  aria-label={`Remove rule: ${rule}`}
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">No rules added yet.</p>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <Textarea
+            id="natural-language-linter-rule"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commitDraft}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault()
+                commitDraft()
+              }
+            }}
+            placeholder="Don't use raw SQL when an ORM function exists."
+            rows={3}
+            className="min-h-20 resize-y text-sm"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={commitDraft}
+              disabled={!draft.trim()}
+            >
+              <PlusIcon className="size-3.5" />
+              Add rule
+            </Button>
+          </div>
+        </div>
+      </fieldset>
+    </SettingsSection>
+  )
+}

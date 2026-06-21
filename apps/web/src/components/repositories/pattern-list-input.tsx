@@ -1,0 +1,113 @@
+import { useState } from "react"
+import { PlusIcon, XIcon } from "lucide-react"
+import { Badge } from "@workspace/ui/components/badge"
+import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
+import { Label } from "@workspace/ui/components/label"
+import { cn } from "@workspace/ui/lib/utils"
+
+interface PatternListInputProps {
+  id: string
+  label: string
+  description?: string
+  placeholder?: string
+  values: string[]
+  onChange: (values: string[]) => void
+  disabled?: boolean
+}
+
+export function PatternListInput({
+  id,
+  label,
+  description,
+  placeholder,
+  values,
+  onChange,
+  disabled,
+}: PatternListInputProps) {
+  const [draft, setDraft] = useState("")
+
+  const addPattern = () => {
+    if (disabled) return
+    const next = draft.trim()
+    if (!next) return
+    setDraft("")
+    if (values.includes(next)) return
+    onChange([...values, next])
+  }
+
+  const commitDraftOnBlur = () => {
+    if (disabled) return
+    if (draft.trim()) addPattern()
+  }
+
+  const removePattern = (pattern: string) => {
+    if (disabled) return
+    onChange(values.filter((value) => value !== pattern))
+  }
+
+  return (
+    <fieldset
+      disabled={disabled}
+      className={cn(
+        "flex min-w-0 flex-col gap-2 border-0 p-0 m-0",
+        disabled && "opacity-60",
+      )}
+    >
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={id}>{label}</Label>
+        {description ? (
+          <p className="text-xs text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+
+      {values.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {values.map((pattern) => (
+            <Badge key={pattern} variant="secondary" className="gap-1 pr-1">
+              <span className="font-mono text-[11px]">{pattern}</span>
+              <button
+                type="button"
+                onClick={() => removePattern(pattern)}
+                className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none"
+                aria-label={`Remove ${pattern}`}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No patterns added.</p>
+      )}
+
+      <div className="flex gap-2">
+        <Input
+          id={id}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraftOnBlur}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault()
+              addPattern()
+            }
+          }}
+          placeholder={placeholder}
+          className="h-8 font-mono text-xs"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={addPattern}
+          disabled={!draft.trim()}
+        >
+          <PlusIcon className="size-3.5" />
+          Add
+        </Button>
+      </div>
+    </fieldset>
+  )
+}
