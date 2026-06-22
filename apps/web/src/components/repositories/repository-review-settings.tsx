@@ -1,5 +1,4 @@
 import { useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
@@ -10,11 +9,7 @@ import type {
   ReviewConfigValues,
 } from "@/components/repositories/review-settings-fields"
 import { useReviewConfig } from "@/hooks/use-review-config"
-import {
-  applyReviewConfigOptimisticUpdate,
-  reviewConfigQueryKey,
-  useUpdateReviewConfig,
-} from "@/hooks/use-update-review-config"
+import { useUpdateReviewConfig } from "@/hooks/use-update-review-config"
 import { useUpdateRepository } from "@/hooks/use-update-repository"
 import { useWorkspaceReviewConfig } from "@/hooks/use-workspace-review-config"
 
@@ -31,8 +26,6 @@ export function RepositoryReviewSettings({
   repositoryEnabled,
   canEdit,
 }: RepositoryReviewSettingsProps) {
-  const queryClient = useQueryClient()
-  const queryKey = reviewConfigQueryKey(workspaceId, repositoryId)
   const { data, isPending, isError, refetch } = useReviewConfig(
     workspaceId,
     repositoryId
@@ -57,8 +50,6 @@ export function RepositoryReviewSettings({
         return
       }
 
-      applyReviewConfigOptimisticUpdate(queryClient, queryKey, { [key]: value })
-
       updateReviewConfig.mutate(
         { [key]: value },
         {
@@ -68,7 +59,7 @@ export function RepositoryReviewSettings({
         }
       )
     },
-    [queryClient, queryKey, settingsDisabled, updateReviewConfig]
+    [settingsDisabled, updateReviewConfig]
   )
 
   const updateEnabled = useCallback(

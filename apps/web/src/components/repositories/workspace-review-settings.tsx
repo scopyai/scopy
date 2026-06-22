@@ -1,5 +1,4 @@
 import { useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { InfoIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
@@ -10,11 +9,7 @@ import type {
   ReviewConfigValues,
 } from "@/components/repositories/review-settings-fields"
 import { useWorkspaceReviewConfig } from "@/hooks/use-workspace-review-config"
-import {
-  applyWorkspaceReviewConfigOptimisticUpdate,
-  useUpdateWorkspaceReviewConfig,
-  workspaceReviewConfigQueryKey,
-} from "@/hooks/use-update-workspace-review-config"
+import { useUpdateWorkspaceReviewConfig } from "@/hooks/use-update-workspace-review-config"
 
 export function WorkspaceReviewSettings({
   workspaceId,
@@ -23,8 +18,6 @@ export function WorkspaceReviewSettings({
   workspaceId: string
   canEdit: boolean
 }) {
-  const queryClient = useQueryClient()
-  const queryKey = workspaceReviewConfigQueryKey(workspaceId)
   const { data, isPending, isError, refetch } =
     useWorkspaceReviewConfig(workspaceId)
   const updateConfig = useUpdateWorkspaceReviewConfig(workspaceId)
@@ -44,10 +37,6 @@ export function WorkspaceReviewSettings({
         return
       }
 
-      applyWorkspaceReviewConfigOptimisticUpdate(queryClient, queryKey, {
-        [key]: value,
-      })
-
       updateConfig.mutate(
         { [key]: value },
         {
@@ -57,7 +46,7 @@ export function WorkspaceReviewSettings({
         }
       )
     },
-    [canEdit, queryClient, queryKey, updateConfig]
+    [canEdit, updateConfig]
   )
 
   if (isPending) {

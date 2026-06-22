@@ -52,6 +52,10 @@ export function useUpdateWorkspaceReviewConfig(workspaceId: string) {
         queryKey: ["workspaces", workspaceId, "repositories"],
         exact: true,
       })
+      void queryClient.invalidateQueries({
+        queryKey: ["workspaces", workspaceId, "repositories"],
+        predicate: (query) => query.queryKey[4] === "review-config",
+      })
     },
   })
 }
