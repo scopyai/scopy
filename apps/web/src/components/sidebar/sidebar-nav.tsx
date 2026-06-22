@@ -4,6 +4,7 @@ import {
   CreditCardIcon,
   ArrowUpRight,
   GitForkIcon,
+  Settings2Icon,
   UsersIcon,
 } from "lucide-react"
 import { Link, useRouterState } from "@tanstack/react-router"
@@ -36,11 +37,6 @@ const workspaceItems: NavItem[] = [
     icon: BarChart3Icon,
     to: "/$workspaceSlug/analytics",
   },
-  // {
-  //   label: "Review settings",
-  //   icon: Settings2Icon,
-  //   to: "/$workspaceSlug/settings",
-  // },
 ]
 
 const managementItems: NavItem[] = [
@@ -53,6 +49,11 @@ const managementItems: NavItem[] = [
     label: "Team",
     icon: UsersIcon,
     to: "/$workspaceSlug/manage-team",
+  },
+  {
+    label: "Settings",
+    icon: Settings2Icon,
+    to: "/$workspaceSlug/settings",
   },
 ]
 

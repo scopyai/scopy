@@ -1,11 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import {
-  ExternalLinkIcon,
-  RefreshCwIcon,
-  Settings2Icon,
-  UnlinkIcon,
-  UsersIcon,
-} from "lucide-react"
+import { UnlinkIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 import {
@@ -23,9 +17,7 @@ import { PageHeader } from "@/components/page-header"
 import { WorkspaceMembers } from "@/components/team/workspace-members"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
-import { useInstallUrl } from "@/hooks/use-install-url"
 import { useLeaveWorkspace } from "@/hooks/use-leave-workspace"
-import { useWorkspaceGithubLinks } from "@/hooks/use-workspace-github-links"
 import { authClient } from "@/lib/auth-client"
 import { getWorkspaceSlug } from "@/lib/workspace-slug"
 
@@ -37,9 +29,7 @@ function ManageTeamRoute() {
   const { workspaceSlug } = Route.useParams()
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces } = useWorkspaces()
-  const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
   const leaveWorkspace = useLeaveWorkspace()
-  const { data: githubLinks } = useWorkspaceGithubLinks(selectedWorkspaceId)
   const { data: session } = authClient.useSession()
   const navigate = useNavigate()
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
@@ -49,28 +39,6 @@ function ManageTeamRoute() {
   const selectedEntry = workspaces?.find(
     (w) => w.workspace.id === selectedWorkspaceId
   )
-
-  const handleConfigureGitHub = async () => {
-    if (
-      githubLinks?.action === "reinstall" ||
-      selectedEntry?.workspace.connectionStatus === "deleted"
-    ) {
-      const result = await fetchInstallUrl()
-      if (result.error || !result.data?.url) {
-        toast.error(
-          "Failed to get GitHub install URL. Is the GitHub App configured?"
-        )
-        return
-      }
-      window.location.href = result.data.url
-    } else if (githubLinks?.installationSettingsUrl) {
-      window.open(
-        githubLinks.installationSettingsUrl,
-        "_blank",
-        "noopener,noreferrer"
-      )
-    }
-  }
 
   const handleLeave = async () => {
     if (!selectedEntry) return
@@ -110,10 +78,6 @@ function ManageTeamRoute() {
     )
   }
 
-  const isReinstall =
-    githubLinks?.action === "reinstall" ||
-    selectedEntry.workspace.connectionStatus === "deleted"
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader icon={UsersIcon} title="Manage Team" />
@@ -128,44 +92,8 @@ function ManageTeamRoute() {
             />
           )}
 
-          <section className="flex flex-col gap-3 border-t border-border pt-5">
-            <p className="text-sm text-muted-foreground">Workspace settings</p>
-            <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-              <Settings2Icon className="size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">GitHub configuration</p>
-                <p className="text-xs text-muted-foreground">
-                  {isReinstall
-                    ? "The GitHub App installation needs to be reinstalled."
-                    : "Manage repository access and permissions on GitHub."}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={handleConfigureGitHub}
-                disabled={
-                  fetchingUrl ||
-                  (!isReinstall && !githubLinks?.installationSettingsUrl)
-                }
-              >
-                {isReinstall ? (
-                  <>
-                    <RefreshCwIcon className="size-3.5" />
-                    {fetchingUrl ? "Loading…" : "Reinstall on GitHub"}
-                  </>
-                ) : (
-                  <>
-                    <ExternalLinkIcon className="size-3.5" />
-                    Configure on GitHub
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {selectedEntry.role !== "owner" && (
+          {selectedEntry.role !== "owner" && (
+            <section className="flex flex-col gap-3 border-t border-border pt-5">
               <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-card px-4 py-3">
                 <UnlinkIcon className="size-4 shrink-0 text-destructive" />
                 <div className="min-w-0 flex-1">
@@ -187,9 +115,8 @@ function ManageTeamRoute() {
                   Leave workspace
                 </Button>
               </div>
-            )}
-            </div>
-          </section>
+            </section>
+          )}
         </div>
       </div>
 

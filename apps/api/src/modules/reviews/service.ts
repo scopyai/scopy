@@ -1,24 +1,16 @@
 import { randomUUID } from "node:crypto"
 import { and, eq } from "drizzle-orm"
 import { db } from "../../db/client"
-import { pullRequest, reviewConfig, reviewRun } from "../../db/schema"
+import { pullRequest, reviewRun } from "../../db/schema"
 import { env } from "../../env"
 import { jobs } from "../../jobs/definitions"
 import { containsBotMention, isBotAuthoredComment } from "./triggers"
+import { resolveReviewConfig, selectReviewTrigger } from "./review-config"
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type TriggerSource = "automatic" | "mention"
 
 const automaticReviewActions = new Set(["opened", "ready_for_review"])
-
-const matchesBranchPattern = (branch: string, pattern: string) => {
-  const expression = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".*")
-    .replace(/\?/g, ".")
-
-  return new RegExp(`^${expression}$`).test(branch)
-}
 
 export const getPullRequestReviewTrigger = async ({
   eventName,
@@ -42,33 +34,36 @@ export const getPullRequestReviewTrigger = async ({
     action === "created" &&
     Boolean(
       appSlug &&
-        commentBody &&
-        containsBotMention(commentBody, appSlug) &&
-        !isBotAuthoredComment(commentAuthor, appSlug),
+      commentBody &&
+      containsBotMention(commentBody, appSlug) &&
+      !isBotAuthoredComment(commentAuthor, appSlug)
     )
 
   if (!isAutomatic && !isMention) {
     return null
   }
 
-  const config = await db.query.reviewConfig.findFirst({
-    where: eq(reviewConfig.repositoryId, savedPullRequest.repositoryId),
+  const repo = await db.query.repository.findFirst({
+    where: (repository, { eq }) =>
+      eq(repository.id, savedPullRequest.repositoryId),
+    with: {
+      workspace: true,
+    },
   })
 
-  if (!config?.enabled || !config.reviewPullRequests) {
+  if (!repo) {
     return null
   }
 
-  if (isMention) {
-    return "mention"
-  }
+  const config = resolveReviewConfig(repo.workspace, repo)
 
-  return (config.reviewDrafts || !savedPullRequest.draft) &&
-    config.baseBranchPatterns.some((pattern) =>
-      matchesBranchPattern(savedPullRequest.baseRef, pattern),
-    )
-    ? "automatic"
-    : null
+  return selectReviewTrigger({
+    isAutomatic,
+    isMention,
+    config,
+    draft: savedPullRequest.draft,
+    baseRef: savedPullRequest.baseRef,
+  })
 }
 
 export const schedulePullRequestReview = async (
@@ -83,14 +78,14 @@ export const schedulePullRequestReview = async (
     pullRequestId: string
     headSha: string
     triggerSource: TriggerSource
-  },
+  }
 ) => {
   const existingRun =
     triggerSource === "automatic"
       ? await tx.query.reviewRun.findFirst({
           where: and(
             eq(reviewRun.pullRequestId, pullRequestId),
-            eq(reviewRun.headSha, headSha),
+            eq(reviewRun.headSha, headSha)
           ),
         })
       : null

@@ -3,10 +3,7 @@ import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "../../db/client"
 import { reviewFinding, reviewRun } from "../../db/schema"
-import {
-  debitReviewUsage,
-  hasPositiveUsageBalance,
-} from "../billing/usage"
+import { debitReviewUsage, hasPositiveUsageBalance } from "../billing/usage"
 import {
   buildCompletedReviewCheckOutput,
   completeReviewCheck,
@@ -17,12 +14,9 @@ import {
   type ReviewCheckConclusion,
   type ReviewCheckOutput,
 } from "./github"
-import {
-  publishReviewFailure,
-  REVIEW_MODEL,
-  runReviewAgent,
-} from "."
+import { publishReviewFailure, REVIEW_MODEL, runReviewAgent } from "."
 import { createReviewRunRecorder } from "./debug-run"
+import { resolveReviewConfig, shouldRunAutomaticReview } from "./review-config"
 
 type JobContext = {
   logger: {
@@ -33,9 +27,7 @@ type JobContext = {
   maxAttempts: number
 }
 
-type LoadedReviewRun = NonNullable<
-  Awaited<ReturnType<typeof loadReviewRun>>
->
+type LoadedReviewRun = NonNullable<Awaited<ReturnType<typeof loadReviewRun>>>
 
 const loadReviewRun = (reviewRunId: string) =>
   db.query.reviewRun.findFirst({
@@ -46,7 +38,6 @@ const loadReviewRun = (reviewRunId: string) =>
           repository: {
             with: {
               workspace: true,
-              reviewConfig: true,
             },
           },
         },
@@ -152,11 +143,16 @@ const languageForFile = (file: string) =>
 
 export const executeReviewPullRequest = async (
   { reviewRunId }: { reviewRunId: string },
-  { logger, attempt, maxAttempts }: JobContext,
+  { logger, attempt, maxAttempts }: JobContext
 ) => {
   const run = await loadReviewRun(reviewRunId)
 
-  if (!run || run.status === "completed" || run.status === "superseded") {
+  if (
+    !run ||
+    run.status === "completed" ||
+    run.status === "skipped" ||
+    run.status === "superseded"
+  ) {
     return
   }
 
@@ -187,6 +183,38 @@ export const executeReviewPullRequest = async (
     return
   }
 
+  if (!run.pullRequest.repository.enabled) {
+    const completedAt = new Date()
+    await db
+      .update(reviewRun)
+      .set({
+        status: "skipped",
+        result: {
+          kind: "repository_disabled",
+          triggerSource:
+            run.result?.triggerSource === "mention" ? "mention" : "automatic",
+          skipReason: "repository_disabled",
+          completedAt: completedAt.toISOString(),
+        },
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(eq(reviewRun.id, run.id))
+    await syncReviewCheck({
+      run,
+      logger,
+      completion: {
+        conclusion: "neutral",
+        output: {
+          title: "Review skipped",
+          summary:
+            "Repository reviews were disabled before this review started.",
+        },
+      },
+    })
+    return
+  }
+
   await syncReviewCheck({ run, logger })
 
   const workspaceId = run.pullRequest.repository.workspace.id
@@ -194,7 +222,50 @@ export const executeReviewPullRequest = async (
     typeof run.result?.triggerSource === "string"
       ? run.result.triggerSource
       : "automatic"
+  const effectiveReviewConfig = resolveReviewConfig(
+    run.pullRequest.repository.workspace,
+    run.pullRequest.repository
+  )
   const reviewCommentRunId = triggerSource === "mention" ? run.id : undefined
+
+  if (
+    triggerSource === "automatic" &&
+    !shouldRunAutomaticReview({
+      config: effectiveReviewConfig,
+      draft: run.pullRequest.draft,
+      baseRef: run.pullRequest.baseRef,
+    })
+  ) {
+    const completedAt = new Date()
+    await db
+      .update(reviewRun)
+      .set({
+        status: "skipped",
+        result: {
+          kind: "settings_changed",
+          triggerSource,
+          skipReason: "automatic_review_settings",
+          completedAt: completedAt.toISOString(),
+        },
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(eq(reviewRun.id, run.id))
+    await syncReviewCheck({
+      run,
+      logger,
+      completion: {
+        conclusion: "neutral",
+        output: {
+          title: "Review skipped",
+          summary:
+            "The repository review settings changed before this review started.",
+        },
+      },
+    })
+    return
+  }
+
   if (!(await hasPositiveUsageBalance(workspaceId))) {
     let commentId: number | undefined
     try {
@@ -240,11 +311,14 @@ export const executeReviewPullRequest = async (
         updatedAt: completedAt,
       })
       .where(eq(reviewRun.id, run.id))
-    logger.info("Skipped pull request review because workspace balance is empty", {
-      reviewRunId: run.id,
-      pullRequestId: run.pullRequestId,
-      workspaceId,
-    })
+    logger.info(
+      "Skipped pull request review because workspace balance is empty",
+      {
+        reviewRunId: run.id,
+        pullRequestId: run.pullRequestId,
+        workspaceId,
+      }
+    )
     await syncReviewCheck({
       run,
       logger,
@@ -275,7 +349,7 @@ export const executeReviewPullRequest = async (
       reviewRunId: run.id,
       pullRequest: run.pullRequest,
       repository: run.pullRequest.repository,
-      reviewConfig: run.pullRequest.repository.reviewConfig,
+      reviewConfig: effectiveReviewConfig,
       installationId:
         run.pullRequest.repository.workspace.providerInstallationId,
       triggerSource,
@@ -326,7 +400,9 @@ export const executeReviewPullRequest = async (
         })
         .where(eq(reviewRun.id, run.id))
 
-      await tx.delete(reviewFinding).where(eq(reviewFinding.reviewRunId, run.id))
+      await tx
+        .delete(reviewFinding)
+        .where(eq(reviewFinding.reviewRunId, run.id))
 
       if (result.kind === "summary" && result.findings?.length) {
         await tx.insert(reviewFinding).values(
@@ -340,7 +416,7 @@ export const executeReviewPullRequest = async (
             title: finding.title,
             confidence: finding.confidence,
             language: languageForFile(finding.file),
-          })),
+          }))
         )
       }
     })

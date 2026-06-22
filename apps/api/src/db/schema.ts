@@ -173,6 +173,19 @@ export const workspace = pgTable(
     connectionStatus: workspaceConnectionStatus("connection_status")
       .default("active")
       .notNull(),
+    reviewDrafts: boolean("review_drafts").default(false).notNull(),
+    baseBranchPatterns: jsonb("base_branch_patterns")
+      .$type<string[]>()
+      .default(["main", "master"])
+      .notNull(),
+    pathIncludePatterns: jsonb("path_include_patterns")
+      .$type<string[]>()
+      .default([])
+      .notNull(),
+    pathExcludePatterns: jsonb("path_exclude_patterns")
+      .$type<string[]>()
+      .default([])
+      .notNull(),
     installedByUserId: text("installed_by_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -258,6 +271,10 @@ export const repository = pgTable(
     defaultBranch: text("default_branch"),
     htmlUrl: text("html_url").notNull(),
     enabled: boolean("enabled").default(false).notNull(),
+    reviewDrafts: boolean("review_drafts"),
+    baseBranchPatterns: jsonb("base_branch_patterns").$type<string[]>(),
+    pathIncludePatterns: jsonb("path_include_patterns").$type<string[]>(),
+    pathExcludePatterns: jsonb("path_exclude_patterns").$type<string[]>(),
     archived: boolean("archived").default(false).notNull(),
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),
@@ -356,39 +373,6 @@ export const pullRequestTimelineEvent = pgTable(
       table.externalKey
     ),
     index("pull_request_timeline_pull_request_id_idx").on(table.pullRequestId),
-  ]
-)
-
-export const reviewConfig = pgTable(
-  "review_config",
-  {
-    id: text("id").primaryKey(),
-    repositoryId: text("repository_id")
-      .notNull()
-      .references(() => repository.id, { onDelete: "cascade" }),
-    enabled: boolean("enabled").default(true).notNull(),
-    reviewPullRequests: boolean("review_pull_requests").default(true).notNull(),
-    reviewDrafts: boolean("review_drafts").default(false).notNull(),
-    baseBranchPatterns: jsonb("base_branch_patterns")
-      .$type<string[]>()
-      .default(["main", "master"])
-      .notNull(),
-    pathIncludePatterns: jsonb("path_include_patterns")
-      .$type<string[]>()
-      .default([])
-      .notNull(),
-    pathExcludePatterns: jsonb("path_exclude_patterns")
-      .$type<string[]>()
-      .default([])
-      .notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("review_config_repository_id_idx").on(table.repositoryId),
   ]
 )
 
@@ -591,7 +575,6 @@ export const repositoryRelations = relations(repository, ({ one, many }) => ({
     fields: [repository.workspaceId],
     references: [workspace.id],
   }),
-  reviewConfig: one(reviewConfig),
   context: one(repositoryContext),
   pullRequests: many(pullRequest),
 }))
@@ -614,13 +597,6 @@ export const pullRequestTimelineEventRelations = relations(
     }),
   })
 )
-
-export const reviewConfigRelations = relations(reviewConfig, ({ one }) => ({
-  repository: one(repository, {
-    fields: [reviewConfig.repositoryId],
-    references: [repository.id],
-  }),
-}))
 
 export const repositoryContextRelations = relations(
   repositoryContext,

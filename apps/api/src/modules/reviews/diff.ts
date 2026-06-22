@@ -13,10 +13,12 @@ export const MAX_REVIEW_DIFF_CHARACTERS = 100_000
 const matchesPattern = (path: string, pattern: string) => {
   const expression = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*/g, "\0")
+    .replace(/\*\*\//g, "__GLOBSTAR_DIRECTORY__")
+    .replace(/\*\*/g, "__GLOBSTAR__")
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
-    .replace(/\0/g, ".*")
+    .replace(/__GLOBSTAR_DIRECTORY__/g, "(?:.*/)?")
+    .replace(/__GLOBSTAR__/g, ".*")
 
   return new RegExp(`^${expression}$`).test(path)
 }
@@ -47,7 +49,9 @@ export const serializePullRequestFiles = (files: PullRequestFile[]) =>
     )
     .join("\n\n")
 
-export const serializePullRequestFilesAsUnifiedDiff = (files: PullRequestFile[]) =>
+export const serializePullRequestFilesAsUnifiedDiff = (
+  files: PullRequestFile[]
+) =>
   files
     .filter((file) => file.patch)
     .map((file) =>

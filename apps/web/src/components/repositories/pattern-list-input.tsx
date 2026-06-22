@@ -3,8 +3,7 @@ import { PlusIcon, XIcon } from "lucide-react"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
-import { Label } from "@workspace/ui/components/label"
-import { cn } from "@workspace/ui/lib/utils"
+import { SettingLabelRow } from "@/components/repositories/review-settings-fields"
 
 interface PatternListInputProps {
   id: string
@@ -14,6 +13,7 @@ interface PatternListInputProps {
   values: string[]
   onChange: (values: string[]) => void
   disabled?: boolean
+  scopeBadge?: React.ReactNode
 }
 
 export function PatternListInput({
@@ -24,6 +24,7 @@ export function PatternListInput({
   values,
   onChange,
   disabled,
+  scopeBadge,
 }: PatternListInputProps) {
   const [draft, setDraft] = useState("")
 
@@ -47,39 +48,36 @@ export function PatternListInput({
   }
 
   return (
-    <fieldset
-      disabled={disabled}
-      className={cn(
-        "flex min-w-0 flex-col gap-2 border-0 p-0 m-0",
-        disabled && "opacity-60",
-      )}
-    >
+    <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-col gap-1">
-        <Label htmlFor={id}>{label}</Label>
+        <SettingLabelRow htmlFor={id} label={label} scopeBadge={scopeBadge} />
         {description ? (
           <p className="text-xs text-muted-foreground">{description}</p>
         ) : null}
       </div>
 
-      {values.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {values.map((pattern) => (
-            <Badge key={pattern} variant="secondary" className="gap-1 pr-1">
-              <span className="font-mono text-[11px]">{pattern}</span>
-              <button
-                type="button"
-                onClick={() => removePattern(pattern)}
-                className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none"
-                aria-label={`Remove ${pattern}`}
-              >
-                <XIcon className="size-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">No patterns added.</p>
-      )}
+      <div className="min-h-7">
+        {values.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {values.map((pattern) => (
+              <Badge key={pattern} variant="secondary" className="gap-1 pr-1">
+                <span className="font-mono text-[11px]">{pattern}</span>
+                <button
+                  type="button"
+                  onClick={() => removePattern(pattern)}
+                  disabled={disabled}
+                  className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none"
+                  aria-label={`Remove ${pattern}`}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No patterns added.</p>
+        )}
+      </div>
 
       <div className="flex gap-2">
         <Input
@@ -94,6 +92,7 @@ export function PatternListInput({
             }
           }}
           placeholder={placeholder}
+          disabled={disabled}
           className="h-8 font-mono text-xs"
         />
         <Button
@@ -102,12 +101,12 @@ export function PatternListInput({
           size="sm"
           className="shrink-0"
           onClick={addPattern}
-          disabled={!draft.trim()}
+          disabled={disabled || !draft.trim()}
         >
           <PlusIcon className="size-3.5" />
           Add
         </Button>
       </div>
-    </fieldset>
+    </div>
   )
 }

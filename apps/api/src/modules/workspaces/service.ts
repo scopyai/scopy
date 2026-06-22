@@ -3,7 +3,6 @@ import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
   repository,
-  reviewConfig,
   user,
   workspace,
   workspaceMember,
@@ -288,7 +287,7 @@ export const syncWorkspaceRepositories = async (
   )
 
   for (const githubRepository of repositories) {
-    const [savedRepository] = await db
+    await db
       .insert(repository)
       .values({
         id: randomUUID(),
@@ -321,16 +320,6 @@ export const syncWorkspaceRepositories = async (
         },
       })
       .returning()
-
-    await db
-      .insert(reviewConfig)
-      .values({
-        id: randomUUID(),
-        repositoryId: savedRepository.id,
-      })
-      .onConflictDoNothing({
-        target: reviewConfig.repositoryId,
-      })
   }
 
   const staleRepositoriesWhere =

@@ -1,55 +1,42 @@
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 
-export type ReviewConfigUpdate = {
+export type WorkspaceReviewConfigUpdate = {
   reviewDrafts?: boolean
   baseBranchPatterns?: string[]
   pathIncludePatterns?: string[]
   pathExcludePatterns?: string[]
 }
 
-export function reviewConfigQueryKey(
-  workspaceId: string,
-  repositoryId: string
-) {
-  return [
-    "workspaces",
-    workspaceId,
-    "repositories",
-    repositoryId,
-    "review-config",
-  ] as const
+export function workspaceReviewConfigQueryKey(workspaceId: string) {
+  return ["workspaces", workspaceId, "review-config"] as const
 }
 
-export function applyReviewConfigOptimisticUpdate(
+export function applyWorkspaceReviewConfigOptimisticUpdate(
   queryClient: QueryClient,
-  queryKey: ReturnType<typeof reviewConfigQueryKey>,
-  values: ReviewConfigUpdate
+  queryKey: ReturnType<typeof workspaceReviewConfigQueryKey>,
+  values: WorkspaceReviewConfigUpdate
 ) {
   queryClient.setQueryData(queryKey, (current) =>
     current ? { ...current, ...values } : current
   )
 }
 
-export function useUpdateReviewConfig(
-  workspaceId: string,
-  repositoryId: string
-) {
+export function useUpdateWorkspaceReviewConfig(workspaceId: string) {
   const queryClient = useQueryClient()
-  const queryKey = reviewConfigQueryKey(workspaceId, repositoryId)
+  const queryKey = workspaceReviewConfigQueryKey(workspaceId)
 
   return useMutation({
-    mutationFn: async (values: ReviewConfigUpdate) => {
+    mutationFn: async (values: WorkspaceReviewConfigUpdate) => {
       const { data, error } = await api
         .workspaces({ workspaceId })
-        .repositories({ repositoryId })
         ["review-config"].patch(values)
       if (error) throw error
       return data
     },
     onMutate: (values) => {
       const previous = queryClient.getQueryData(queryKey)
-      applyReviewConfigOptimisticUpdate(queryClient, queryKey, values)
+      applyWorkspaceReviewConfigOptimisticUpdate(queryClient, queryKey, values)
       void queryClient.cancelQueries({ queryKey })
       return { previous }
     },
@@ -60,6 +47,10 @@ export function useUpdateReviewConfig(
     },
     onSuccess: (data) => {
       queryClient.setQueryData(queryKey, data)
+      void queryClient.invalidateQueries({
+        queryKey: ["workspaces", workspaceId, "repositories"],
+        exact: true,
+      })
     },
   })
 }

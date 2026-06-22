@@ -1,54 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { AlertCircleIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
-import { Label } from "@workspace/ui/components/label"
-import { Separator } from "@workspace/ui/components/separator"
 import { Skeleton } from "@workspace/ui/components/skeleton"
-import { Switch } from "@workspace/ui/components/switch"
-import { PatternListInput } from "@/components/repositories/pattern-list-input"
 import { NaturalLanguageLinterPanel } from "@/components/repositories/natural-language-linter-panel"
-import { SettingsSection } from "@/components/repositories/settings-section"
-import {
-  useUpdateReviewConfig,
-  type ReviewConfigUpdate,
-} from "@/hooks/use-update-review-config"
+import { ReviewSettingsFields } from "@/components/repositories/review-settings-fields"
+import type {
+  ReviewConfigKey,
+  ReviewConfigValues,
+} from "@/components/repositories/review-settings-fields"
 import { useReviewConfig } from "@/hooks/use-review-config"
-
-type ReviewConfigForm = {
-  reviewPullRequests: boolean
-  reviewDrafts: boolean
-  baseBranchPatterns: string[]
-  pathIncludePatterns: string[]
-  pathExcludePatterns: string[]
-}
-
-const defaultReviewConfigForm = (): ReviewConfigForm => ({
-  reviewPullRequests: true,
-  reviewDrafts: false,
-  baseBranchPatterns: ["main", "master"],
-  pathIncludePatterns: [],
-  pathExcludePatterns: [],
-})
-
-const toFormValues = (
-  config: Awaited<ReturnType<typeof useReviewConfig>>["data"],
-): ReviewConfigForm => ({
-  reviewPullRequests: config?.reviewPullRequests ?? true,
-  reviewDrafts: config?.reviewDrafts ?? false,
-  baseBranchPatterns: config?.baseBranchPatterns ?? ["main", "master"],
-  pathIncludePatterns: config?.pathIncludePatterns ?? [],
-  pathExcludePatterns: config?.pathExcludePatterns ?? [],
-})
-
-const toPayload = (form: ReviewConfigForm): ReviewConfigUpdate => ({
-  enabled: form.reviewPullRequests,
-  reviewPullRequests: form.reviewPullRequests,
-  reviewDrafts: form.reviewDrafts,
-  baseBranchPatterns: form.baseBranchPatterns,
-  pathIncludePatterns: form.pathIncludePatterns,
-  pathExcludePatterns: form.pathExcludePatterns,
-})
+import {
+  applyReviewConfigOptimisticUpdate,
+  reviewConfigQueryKey,
+  useUpdateReviewConfig,
+} from "@/hooks/use-update-review-config"
+import { useUpdateRepository } from "@/hooks/use-update-repository"
+import { useWorkspaceReviewConfig } from "@/hooks/use-workspace-review-config"
 
 interface RepositoryReviewSettingsProps {
   workspaceId: string
@@ -63,68 +31,61 @@ export function RepositoryReviewSettings({
   repositoryEnabled,
   canEdit,
 }: RepositoryReviewSettingsProps) {
-  const { data: reviewConfig, isPending, isError, refetch } = useReviewConfig(
+  const queryClient = useQueryClient()
+  const queryKey = reviewConfigQueryKey(workspaceId, repositoryId)
+  const { data, isPending, isError, refetch } = useReviewConfig(
     workspaceId,
-    repositoryId,
+    repositoryId
   )
+  const workspaceConfig = useWorkspaceReviewConfig(workspaceId)
   const updateReviewConfig = useUpdateReviewConfig(workspaceId, repositoryId)
+  const updateRepository = useUpdateRepository(workspaceId)
+  const settingsDisabled = !canEdit || !repositoryEnabled
 
-  const serverValues = useMemo(
-    () => toFormValues(reviewConfig),
-    [reviewConfig],
-  )
-  const serverValuesKey = useMemo(
-    () => JSON.stringify(serverValues),
-    [serverValues],
-  )
-  const [form, setForm] = useState<ReviewConfigForm>(defaultReviewConfigForm)
-  const formRef = useRef(form)
-  formRef.current = form
-
-  useEffect(() => {
-    setForm((current) => {
-      const next = JSON.parse(serverValuesKey) as ReviewConfigForm
-      return JSON.stringify(current) === serverValuesKey ? current : next
-    })
-  }, [serverValuesKey])
-
-  const readOnly = !canEdit
-  const settingsDisabled = readOnly || !repositoryEnabled
-
-  const saveConfig = useCallback(
-    async (next: ReviewConfigForm) => {
+  const updateField = useCallback(
+    <TKey extends ReviewConfigKey>(
+      key: TKey,
+      value: ReviewConfigValues[TKey]
+    ) => {
       if (settingsDisabled) return
-
-      if (next.baseBranchPatterns.length === 0) {
+      if (
+        key === "baseBranchPatterns" &&
+        Array.isArray(value) &&
+        value.length === 0
+      ) {
         toast.error("At least one base branch is required")
-        setForm(serverValues)
         return
       }
 
-      setForm(next)
+      applyReviewConfigOptimisticUpdate(queryClient, queryKey, { [key]: value })
 
-      try {
-        await updateReviewConfig.mutateAsync(toPayload(next))
-      } catch {
-        toast.error("Failed to save review settings")
-        setForm(serverValues)
-      }
+      updateReviewConfig.mutate(
+        { [key]: value },
+        {
+          onError: () => {
+            toast.error("Failed to save review settings")
+          },
+        }
+      )
     },
-    [settingsDisabled, serverValues, updateReviewConfig],
+    [queryClient, queryKey, settingsDisabled, updateReviewConfig]
   )
 
-  const patchConfig = useCallback(
-    (patch: Partial<ReviewConfigForm>) => {
-      void saveConfig({ ...formRef.current, ...patch })
+  const updateEnabled = useCallback(
+    (next: boolean) => {
+      if (!canEdit) return
+      void updateRepository
+        .mutateAsync({ repositoryId, enabled: next })
+        .catch(() => toast.error("Failed to update repository"))
     },
-    [saveConfig],
+    [canEdit, repositoryId, updateRepository]
   )
 
-  if (isPending && reviewConfig === undefined) {
+  if (isPending || workspaceConfig.isPending) {
     return <RepositoryReviewSettingsSkeleton />
   }
 
-  if (isError) {
+  if (isError || workspaceConfig.isError) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <p className="text-sm text-muted-foreground">
@@ -137,132 +98,35 @@ export function RepositoryReviewSettings({
     )
   }
 
-  const scopeDisabled = settingsDisabled || !form.reviewPullRequests
-
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="flex flex-col gap-6">
-        {!repositoryEnabled ? (
-          <div className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3">
-            <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">Repository tracking is disabled</p>
-              <p className="text-xs text-muted-foreground">
-                Enable this repository from the repositories list before reviews
-                can run.
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        {readOnly ? (
+        {!canEdit ? (
           <div className="rounded-lg border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
             Only workspace admins can change review settings.
           </div>
         ) : null}
 
-        <SettingsSection
-          title="Automatic reviews"
-          description="Control when Scopy analyzes pull requests for this repository."
-        >
-          <SettingRow
-            id="review-pull-requests"
-            label="Review pull requests"
-            description="Run reviews when PRs are opened, marked ready, or when you mention the GitHub App."
-            checked={form.reviewPullRequests}
-            onCheckedChange={(checked) =>
-              patchConfig({ reviewPullRequests: checked })
-            }
-            disabled={settingsDisabled}
-          />
-          <Separator />
-          <SettingRow
-            id="review-drafts"
-            label="Review draft pull requests"
-            description="Include draft PRs in automatic reviews. Mention triggers always work."
-            checked={form.reviewDrafts}
-            onCheckedChange={(checked) => patchConfig({ reviewDrafts: checked })}
-            disabled={scopeDisabled}
-          />
-        </SettingsSection>
+        <ReviewSettingsFields
+          values={data}
+          workspaceDefaults={workspaceConfig.data}
+          pendingValues={
+            updateReviewConfig.isPending
+              ? updateReviewConfig.variables
+              : undefined
+          }
+          disabled={!canEdit}
+          onChange={(key, value) => updateField(key, value)}
+          repositoryEnabled={repositoryEnabled}
+          onRepositoryEnabledChange={updateEnabled}
+        />
 
-        <SettingsSection
-          title="Scope"
-          description="Limit which branches and files Scopy includes in a review."
-        >
-          <PatternListInput
-            id="base-branch-patterns"
-            label="Base branches"
-            description='Only review PRs targeting these branches. Supports globs like "release/*".'
-            placeholder="main"
-            values={form.baseBranchPatterns}
-            onChange={(baseBranchPatterns) => patchConfig({ baseBranchPatterns })}
-            disabled={scopeDisabled}
-          />
-          <Separator />
-          <PatternListInput
-            id="path-include-patterns"
-            label="Include paths"
-            description="If set, only changed files matching these patterns are reviewed."
-            placeholder="apps/api/**"
-            values={form.pathIncludePatterns}
-            onChange={(pathIncludePatterns) =>
-              patchConfig({ pathIncludePatterns })
-            }
-            disabled={scopeDisabled}
-          />
-          <Separator />
-          <PatternListInput
-            id="path-exclude-patterns"
-            label="Exclude paths"
-            description="Skip changed files matching these patterns."
-            placeholder="**/*.lock"
-            values={form.pathExcludePatterns}
-            onChange={(pathExcludePatterns) =>
-              patchConfig({ pathExcludePatterns })
-            }
-            disabled={scopeDisabled}
-          />
-        </SettingsSection>
-
-        <NaturalLanguageLinterPanel
+        {/* <NaturalLanguageLinterPanel
           workspaceId={workspaceId}
           repositoryId={repositoryId}
-          disabled={scopeDisabled}
-        />
+          disabled={settingsDisabled}
+        /> */}
       </div>
-    </div>
-  )
-}
-
-function SettingRow({
-  id,
-  label,
-  description,
-  checked,
-  onCheckedChange,
-  disabled,
-}: {
-  id: string
-  label: string
-  description: string
-  checked: boolean
-  onCheckedChange: (checked: boolean) => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex flex-col gap-1">
-        <Label htmlFor={id}>{label}</Label>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      <Switch
-        id={id}
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        disabled={disabled}
-        className="mt-0.5 shrink-0"
-      />
     </div>
   )
 }

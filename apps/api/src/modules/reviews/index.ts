@@ -13,7 +13,7 @@ import {
 } from "tools"
 import { z } from "zod"
 import { env } from "../../env"
-import type { pullRequest, repository, reviewConfig } from "../../db/schema"
+import type { pullRequest, repository } from "../../db/schema"
 import {
   calculateVectorNetworkCostMicrocents,
   calculateVectorQueryCostMicrocents,
@@ -52,6 +52,7 @@ import { createReviewRunRecorder } from "./debug-run"
 import { reviewAgentConfig } from "./config"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
+import type { ReviewConfigValues } from "./review-config"
 
 export const REVIEW_MODEL = env.REVIEW_MODEL
 export const REVIEW_VERIFIER_MODEL =
@@ -84,7 +85,7 @@ type RunInput = {
   reviewRunId: string
   pullRequest: typeof pullRequest.$inferSelect
   repository: typeof repository.$inferSelect
-  reviewConfig: typeof reviewConfig.$inferSelect | null
+  reviewConfig: ReviewConfigValues
   installationId: string
   triggerSource: string
   logger: Logger
@@ -269,8 +270,8 @@ export const runReviewAgent = async ({
   })
   const filteredFiles = filterPullRequestFiles(
     files,
-    reviewConfig?.pathIncludePatterns ?? [],
-    reviewConfig?.pathExcludePatterns ?? []
+    reviewConfig.pathIncludePatterns,
+    reviewConfig.pathExcludePatterns
   )
   const diff = serializePullRequestFiles(filteredFiles)
   const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { protectedRoute } from "../auth"
@@ -8,7 +7,6 @@ import {
   repository,
   pullRequest,
   pullRequestTimelineEvent,
-  reviewConfig,
   user,
   workspace,
   workspaceMember,
@@ -22,6 +20,14 @@ import {
   syncWorkspaceRepositories,
 } from "./service"
 import { syncRepositoryPullRequests } from "../pull-requests/service"
+import {
+  normalizeReviewConfigOverrides,
+  repositoryReviewConfigUpdateSchema,
+  resolveReviewConfig,
+  workspaceReviewConfigUpdateSchema,
+  type ReviewConfigOverrides,
+  type ReviewConfigValues,
+} from "../reviews/review-config"
 
 const updateWorkspaceSchema = z.object({
   name: z.string().min(1).max(120),
@@ -48,13 +54,22 @@ const onboardingRepositoriesSchema = z.object({
   repositoryIds: z.array(z.string()).default([]),
 })
 
-const updateReviewConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  reviewPullRequests: z.boolean().optional(),
-  reviewDrafts: z.boolean().optional(),
-  baseBranchPatterns: z.array(z.string().min(1)).optional(),
-  pathIncludePatterns: z.array(z.string().min(1)).optional(),
-  pathExcludePatterns: z.array(z.string().min(1)).optional(),
+const selectReviewConfigValues = (
+  config: ReviewConfigValues
+): ReviewConfigValues => ({
+  reviewDrafts: config.reviewDrafts,
+  baseBranchPatterns: config.baseBranchPatterns,
+  pathIncludePatterns: config.pathIncludePatterns,
+  pathExcludePatterns: config.pathExcludePatterns,
+})
+
+const selectReviewConfigOverrides = (
+  config: ReviewConfigOverrides | null | undefined
+): ReviewConfigOverrides => ({
+  reviewDrafts: config?.reviewDrafts ?? null,
+  baseBranchPatterns: config?.baseBranchPatterns ?? null,
+  pathIncludePatterns: config?.pathIncludePatterns ?? null,
+  pathExcludePatterns: config?.pathExcludePatterns ?? null,
 })
 
 export const workspaceRoutes = protectedRoute("/workspaces")
@@ -150,6 +165,71 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         .returning()
 
       return updatedWorkspace
+    }
+  )
+  .get(
+    "/:workspaceId/review-config",
+    async ({ params, user: currentUser, status }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
+        params.workspaceId,
+        currentUser.id
+      ).catch(() => null)
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" })
+      }
+
+      return selectReviewConfigValues(workspaceWithRole.workspace)
+    }
+  )
+  .patch(
+    "/:workspaceId/review-config",
+    async ({ body, params, user: currentUser, status }) => {
+      const parsed = workspaceReviewConfigUpdateSchema.safeParse(body)
+
+      if (!parsed.success) {
+        return status(400, { error: "Invalid review config update" })
+      }
+
+      const workspaceWithRole = await requireWorkspaceRole(
+        params.workspaceId,
+        currentUser.id,
+        ["owner", "admin"]
+      ).catch(() => null)
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" })
+      }
+
+      const updatedWorkspace = await db.transaction(async (tx) => {
+        const now = new Date()
+        const [updated] = await tx
+          .update(workspace)
+          .set({ ...parsed.data, updatedAt: now })
+          .where(eq(workspace.id, params.workspaceId))
+          .returning()
+
+        const workspaceDefaults = selectReviewConfigValues(updated!)
+        const repositories = await tx
+          .select()
+          .from(repository)
+          .where(eq(repository.workspaceId, params.workspaceId))
+
+        for (const repo of repositories) {
+          const normalized = normalizeReviewConfigOverrides(
+            workspaceDefaults,
+            selectReviewConfigOverrides(repo)
+          )
+          await tx
+            .update(repository)
+            .set({ ...normalized, updatedAt: now })
+            .where(eq(repository.id, repo.id))
+        }
+
+        return updated!
+      })
+
+      return selectReviewConfigValues(updatedWorkspace)
     }
   )
   .delete("/:workspaceId", async ({ params, user: currentUser, status }) => {
@@ -612,9 +692,6 @@ export const workspaceRoutes = protectedRoute("/workspaces")
           eq(repository.id, params.repositoryId),
           eq(repository.workspaceId, params.workspaceId)
         ),
-        with: {
-          reviewConfig: true,
-        },
       })
 
       if (!repo) {
@@ -829,7 +906,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
           eq(repository.workspaceId, params.workspaceId)
         ),
         with: {
-          reviewConfig: true,
+          workspace: true,
         },
       })
 
@@ -837,13 +914,13 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(404, { error: "Repository not found" })
       }
 
-      return repo.reviewConfig
+      return resolveReviewConfig(repo.workspace, repo)
     }
   )
   .patch(
     "/:workspaceId/repositories/:repositoryId/review-config",
     async ({ body, params, user: currentUser, status }) => {
-      const parsed = updateReviewConfigSchema.safeParse(body)
+      const parsed = repositoryReviewConfigUpdateSchema.safeParse(body)
 
       if (!parsed.success) {
         return status(400, { error: "Invalid review config update" })
@@ -865,7 +942,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
           eq(repository.workspaceId, params.workspaceId)
         ),
         with: {
-          reviewConfig: true,
+          workspace: true,
         },
       })
 
@@ -873,25 +950,17 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(404, { error: "Repository not found" })
       }
 
-      const values = {
-        id: repo.reviewConfig?.id ?? randomUUID(),
-        repositoryId: repo.id,
+      const workspaceDefaults = selectReviewConfigValues(repo.workspace)
+      const overrides = normalizeReviewConfigOverrides(workspaceDefaults, {
+        ...selectReviewConfigOverrides(repo),
         ...parsed.data,
-        updatedAt: new Date(),
-      }
+      })
 
-      const [updatedReviewConfig] = await db
-        .insert(reviewConfig)
-        .values(values)
-        .onConflictDoUpdate({
-          target: reviewConfig.repositoryId,
-          set: {
-            ...parsed.data,
-            updatedAt: values.updatedAt,
-          },
-        })
-        .returning()
+      await db
+        .update(repository)
+        .set({ ...overrides, updatedAt: new Date() })
+        .where(eq(repository.id, repo.id))
 
-      return updatedReviewConfig
+      return resolveReviewConfig(workspaceDefaults, overrides)
     }
   )
