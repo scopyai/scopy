@@ -6,6 +6,7 @@ export type WorkspaceReviewConfigUpdate = {
   baseBranchPatterns?: string[]
   pathIncludePatterns?: string[]
   pathExcludePatterns?: string[]
+  maxReviewChangedLines?: number
 }
 
 export function workspaceReviewConfigQueryKey(workspaceId: string) {

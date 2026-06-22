@@ -121,11 +121,11 @@ export function RepositoryReviewSettings({
           onRepositoryEnabledChange={updateEnabled}
         />
 
-        {/* <NaturalLanguageLinterPanel
+        <NaturalLanguageLinterPanel
           workspaceId={workspaceId}
           repositoryId={repositoryId}
           disabled={settingsDisabled}
-        /> */}
+        />
       </div>
     </div>
   )

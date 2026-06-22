@@ -3,7 +3,7 @@ import { PlusIcon, XIcon } from "lucide-react"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
-import { SettingLabelRow } from "@/components/repositories/review-settings-fields"
+import { SettingLabelRow } from "@/components/repositories/setting-label-row"
 
 interface PatternListInputProps {
   id: string

@@ -1,8 +1,9 @@
 import { Badge } from "@workspace/ui/components/badge"
-import { Label } from "@workspace/ui/components/label"
 import { Separator } from "@workspace/ui/components/separator"
 import { Switch } from "@workspace/ui/components/switch"
 import { PatternListInput } from "@/components/repositories/pattern-list-input"
+import { MaxReviewChangedLinesInput } from "@/components/repositories/max-review-changed-lines-input"
+import { SettingLabelRow } from "@/components/repositories/setting-label-row"
 import { SettingsSection } from "@/components/repositories/settings-section"
 
 export type ReviewConfigValues = {
@@ -10,6 +11,7 @@ export type ReviewConfigValues = {
   baseBranchPatterns: string[]
   pathIncludePatterns: string[]
   pathExcludePatterns: string[]
+  maxReviewChangedLines: number
 }
 
 export type ReviewConfigKey = keyof ReviewConfigValues
@@ -117,6 +119,14 @@ export function ReviewSettingsFields({
           disabled={controlDisabled(true)}
           scopeBadge={scopeBadge("pathExcludePatterns")}
         />
+        <Separator />
+        <MaxReviewChangedLinesInput
+          id="max-review-changed-lines"
+          value={effectiveValue("maxReviewChangedLines")}
+          onChange={(value) => onChange("maxReviewChangedLines", value)}
+          disabled={controlDisabled(true)}
+          scopeBadge={scopeBadge("maxReviewChangedLines")}
+        />
       </SettingsSection>
     </div>
   )
@@ -161,24 +171,7 @@ function ScopeBadge({ visible }: { visible: boolean }) {
   )
 }
 
-export function SettingLabelRow({
-  htmlFor,
-  label,
-  scopeBadge,
-}: {
-  htmlFor: string
-  label: string
-  scopeBadge?: React.ReactNode
-}) {
-  return (
-    <div className="flex min-h-5 flex-wrap items-center gap-x-2 gap-y-0">
-      <Label htmlFor={htmlFor} className="leading-5">
-        {label}
-      </Label>
-      {scopeBadge}
-    </div>
-  )
-}
+export { SettingLabelRow } from "@/components/repositories/setting-label-row"
 
 function SettingRow({
   id,
