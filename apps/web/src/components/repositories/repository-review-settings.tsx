@@ -2,7 +2,7 @@ import { useCallback } from "react"
 import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
-import { NaturalLanguageLinterPanel } from "@/components/repositories/natural-language-linter-panel"
+// import { NaturalLanguageLinterPanel } from "@/components/repositories/natural-language-linter-panel"
 import { ReviewSettingsFields } from "@/components/repositories/review-settings-fields"
 import type {
   ReviewConfigKey,
@@ -112,11 +112,11 @@ export function RepositoryReviewSettings({
           onRepositoryEnabledChange={updateEnabled}
         />
 
-        <NaturalLanguageLinterPanel
+        {/* <NaturalLanguageLinterPanel
           workspaceId={workspaceId}
           repositoryId={repositoryId}
           disabled={settingsDisabled}
-        />
+        /> */}
       </div>
     </div>
   )
