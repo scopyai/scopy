@@ -186,6 +186,7 @@ export const workspace = pgTable(
       .$type<string[]>()
       .default([])
       .notNull(),
+    maxReviewChangedLines: integer("max_review_changed_lines").notNull(),
     installedByUserId: text("installed_by_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -275,6 +276,7 @@ export const repository = pgTable(
     baseBranchPatterns: jsonb("base_branch_patterns").$type<string[]>(),
     pathIncludePatterns: jsonb("path_include_patterns").$type<string[]>(),
     pathExcludePatterns: jsonb("path_exclude_patterns").$type<string[]>(),
+    maxReviewChangedLines: integer("max_review_changed_lines"),
     archived: boolean("archived").default(false).notNull(),
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),

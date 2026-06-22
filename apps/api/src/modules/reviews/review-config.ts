@@ -5,6 +5,7 @@ export type ReviewConfigValues = {
   baseBranchPatterns: string[]
   pathIncludePatterns: string[]
   pathExcludePatterns: string[]
+  maxReviewChangedLines: number
 }
 
 export type ReviewConfigOverrides = {
@@ -16,15 +17,18 @@ export const defaultWorkspaceReviewConfig: ReviewConfigValues = {
   baseBranchPatterns: ["main", "master"],
   pathIncludePatterns: [],
   pathExcludePatterns: ["**/*.json"],
+  maxReviewChangedLines: 15_000,
 }
 
 const patternSchema = z.string().trim().min(1)
+const maxReviewChangedLinesSchema = z.number().int().min(1).max(100_000)
 
 export const workspaceReviewConfigUpdateSchema = z.object({
   reviewDrafts: z.boolean().optional(),
   baseBranchPatterns: z.array(patternSchema).min(1).optional(),
   pathIncludePatterns: z.array(patternSchema).optional(),
   pathExcludePatterns: z.array(patternSchema).optional(),
+  maxReviewChangedLines: maxReviewChangedLinesSchema.optional(),
 })
 
 export const repositoryReviewConfigUpdateSchema = z.object({
@@ -32,6 +36,7 @@ export const repositoryReviewConfigUpdateSchema = z.object({
   baseBranchPatterns: z.array(patternSchema).min(1).optional(),
   pathIncludePatterns: z.array(patternSchema).optional(),
   pathExcludePatterns: z.array(patternSchema).optional(),
+  maxReviewChangedLines: maxReviewChangedLinesSchema.optional(),
 })
 
 export const resolveReviewConfig = (
@@ -48,6 +53,9 @@ export const resolveReviewConfig = (
       repositoryOverrides?.pathIncludePatterns ?? defaults.pathIncludePatterns,
     pathExcludePatterns:
       repositoryOverrides?.pathExcludePatterns ?? defaults.pathExcludePatterns,
+    maxReviewChangedLines:
+      repositoryOverrides?.maxReviewChangedLines ??
+      defaults.maxReviewChangedLines,
   }
 }
 
@@ -93,6 +101,14 @@ export const normalizeReviewConfigOverrides = (
     )
       ? null
       : overrides.pathExcludePatterns,
+  maxReviewChangedLines:
+    overrides.maxReviewChangedLines !== null &&
+    valuesEqual(
+      overrides.maxReviewChangedLines,
+      workspaceDefaults.maxReviewChangedLines
+    )
+      ? null
+      : overrides.maxReviewChangedLines,
 })
 
 export const matchesBranchPattern = (branch: string, pattern: string) => {

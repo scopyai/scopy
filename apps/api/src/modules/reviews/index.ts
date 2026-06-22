@@ -21,6 +21,7 @@ import {
   resolveOpenRouterGenerationCost,
 } from "../billing/usage"
 import {
+  countPullRequestChangedLines,
   filterPullRequestFiles,
   getDiffSkipReason,
   serializePullRequestFilesAsUnifiedDiff,
@@ -99,7 +100,7 @@ export type ReviewAgentResult = {
   verifierModelId?: string
   fetchedFileCount: number
   filteredFileCount: number
-  diffCharacterCount: number
+  diffChangedLineCount: number
   commentId: number
   reviewId?: number
   reviewEvent?: PullRequestReviewEvent
@@ -275,7 +276,7 @@ export const runReviewAgent = async ({
   )
   const diff = serializePullRequestFiles(filteredFiles)
   const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)
-  const diffCharacterCount = diff.length
+  const diffChangedLineCount = countPullRequestChangedLines(filteredFiles)
   await recorder.writeJson("review-config.json", reviewConfig)
   await recorder.writeJson("github-files.json", files)
   await recorder.writeJson("filtered-files.json", filteredFiles)
@@ -286,19 +287,22 @@ export const runReviewAgent = async ({
     stage: "diff",
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
-    diffCharacterCount,
+    diffChangedLineCount,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "diff",
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
-    diffCharacterCount,
+    diffChangedLineCount,
   })
 
   const skipReason =
     filteredFiles.length === 0
       ? "No reviewable changes matched this repository's path filters."
-      : getDiffSkipReason(filteredFiles.length, diffCharacterCount)
+      : getDiffSkipReason(
+          diffChangedLineCount,
+          reviewConfig.maxReviewChangedLines
+        )
 
   if (skipReason) {
     await updateReviewComment({
@@ -315,7 +319,7 @@ export const runReviewAgent = async ({
       modelId: REVIEW_MODEL,
       fetchedFileCount: files.length,
       filteredFileCount: filteredFiles.length,
-      diffCharacterCount,
+      diffChangedLineCount,
       commentId,
       skipReason,
       startedAt: startedAtIso,
@@ -332,7 +336,7 @@ export const runReviewAgent = async ({
       verifierModelId: REVIEW_VERIFIER_MODEL,
       fetchedFileCount: files.length,
       filteredFileCount: filteredFiles.length,
-      diffCharacterCount,
+      diffChangedLineCount,
       skipReason,
       counts: recorder.counts(),
       durationMs: result.durationMs,
@@ -1088,7 +1092,7 @@ ${affectedSymbols}`
     verifierModelId: REVIEW_VERIFIER_MODEL,
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
-    diffCharacterCount,
+    diffChangedLineCount,
     commentId,
     reviewId,
     reviewEvent,
@@ -1113,7 +1117,7 @@ ${affectedSymbols}`
     verifierModelId: REVIEW_VERIFIER_MODEL,
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
-    diffCharacterCount,
+    diffChangedLineCount,
     semanticEnabled,
     qdrantEnabled: semanticEnabled,
     qdrantChunks,

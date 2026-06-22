@@ -1,5 +1,5 @@
 {
-  "id": "9086760b-3d58-4989-977b-c5c8271a00e9",
+  "id": "d7fee5eb-d577-4ad3-9ac2-5587f2f6687c",
   "prevId": "18eae351-4cec-477f-a6f9-d6045d2c6cd0",
   "version": "7",
   "dialect": "postgresql",
@@ -593,6 +593,12 @@
         "path_exclude_patterns": {
           "name": "path_exclude_patterns",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_review_changed_lines": {
+          "name": "max_review_changed_lines",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -1610,6 +1616,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "max_review_changed_lines": {
+          "name": "max_review_changed_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
         },
         "installed_by_user_id": {
           "name": "installed_by_user_id",

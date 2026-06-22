@@ -61,6 +61,7 @@ const selectReviewConfigValues = (
   baseBranchPatterns: config.baseBranchPatterns,
   pathIncludePatterns: config.pathIncludePatterns,
   pathExcludePatterns: config.pathExcludePatterns,
+  maxReviewChangedLines: config.maxReviewChangedLines,
 })
 
 const selectReviewConfigOverrides = (
@@ -70,6 +71,7 @@ const selectReviewConfigOverrides = (
   baseBranchPatterns: config?.baseBranchPatterns ?? null,
   pathIncludePatterns: config?.pathIncludePatterns ?? null,
   pathExcludePatterns: config?.pathExcludePatterns ?? null,
+  maxReviewChangedLines: config?.maxReviewChangedLines ?? null,
 })
 
 export const workspaceRoutes = protectedRoute("/workspaces")
