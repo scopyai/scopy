@@ -9,6 +9,7 @@ import {
   type workspaceMemberRole,
 } from "../../db/schema"
 import type { GitHubInstallation, GitHubRepository } from "../github/service"
+import { defaultWorkspaceReviewConfig } from "../reviews/review-config"
 
 type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number]
 
@@ -202,6 +203,7 @@ export const upsertGitHubWorkspace = async (
   const workspaceId = existing?.id ?? randomUUID()
 
   const values = {
+    ...defaultWorkspaceReviewConfig,
     id: workspaceId,
     provider: "github" as const,
     providerInstallationId,

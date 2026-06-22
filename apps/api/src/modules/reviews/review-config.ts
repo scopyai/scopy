@@ -15,7 +15,7 @@ export const defaultWorkspaceReviewConfig: ReviewConfigValues = {
   reviewDrafts: false,
   baseBranchPatterns: ["main", "master"],
   pathIncludePatterns: [],
-  pathExcludePatterns: [],
+  pathExcludePatterns: ["**/*.json"],
 }
 
 const patternSchema = z.string().trim().min(1)
