@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1781375179878,
-      "tag": "0000_smooth_polaris",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781433600000,
-      "tag": "0001_repository_context",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1782060053125,
-      "tag": "0002_early_ezekiel",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1782148339498,
-      "tag": "0003_mature_kinsey_walden",
+      "when": 1782155214051,
+      "tag": "0000_swift_shinobi_shaw",
       "breakpoints": true
     }
   ]

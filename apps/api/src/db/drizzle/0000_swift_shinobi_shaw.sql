@@ -81,6 +81,11 @@ CREATE TABLE "repository" (
 	"default_branch" text,
 	"html_url" text NOT NULL,
 	"enabled" boolean DEFAULT false NOT NULL,
+	"review_drafts" boolean,
+	"base_branch_patterns" jsonb,
+	"path_include_patterns" jsonb,
+	"path_exclude_patterns" jsonb,
+	"max_review_changed_lines" integer,
 	"archived" boolean DEFAULT false NOT NULL,
 	"provider_access_removed_at" timestamp,
 	"last_synced_at" timestamp,
@@ -88,15 +93,15 @@ CREATE TABLE "repository" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "review_config" (
+CREATE TABLE "repository_context" (
 	"id" text PRIMARY KEY NOT NULL,
 	"repository_id" text NOT NULL,
-	"enabled" boolean DEFAULT true NOT NULL,
-	"review_pull_requests" boolean DEFAULT true NOT NULL,
-	"review_drafts" boolean DEFAULT false NOT NULL,
-	"base_branch_patterns" jsonb DEFAULT '["main","master"]'::jsonb NOT NULL,
-	"path_include_patterns" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"path_exclude_patterns" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"base_sha" text NOT NULL,
+	"model_id" text NOT NULL,
+	"markdown" text NOT NULL,
+	"summary" text NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"generated_at" timestamp DEFAULT now() NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -119,6 +124,8 @@ CREATE TABLE "review_run" (
 	"pull_request_id" text NOT NULL,
 	"trigger_webhook_event_id" text,
 	"head_sha" text NOT NULL,
+	"provider_check_run_id" text,
+	"check_sync_error" text,
 	"status" "review_run_status" DEFAULT 'queued' NOT NULL,
 	"result" jsonb,
 	"error" text,
@@ -187,6 +194,11 @@ CREATE TABLE "workspace" (
 	"repository_selection" "repository_selection" NOT NULL,
 	"permissions" jsonb NOT NULL,
 	"connection_status" "workspace_connection_status" DEFAULT 'active' NOT NULL,
+	"review_drafts" boolean DEFAULT false NOT NULL,
+	"base_branch_patterns" jsonb DEFAULT '["main","master"]'::jsonb NOT NULL,
+	"path_include_patterns" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"path_exclude_patterns" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"max_review_changed_lines" integer NOT NULL,
 	"installed_by_user_id" text,
 	"installed_at" timestamp DEFAULT now() NOT NULL,
 	"last_synced_at" timestamp,
@@ -232,7 +244,7 @@ ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("
 ALTER TABLE "pull_request" ADD CONSTRAINT "pull_request_repository_id_repository_id_fk" FOREIGN KEY ("repository_id") REFERENCES "public"."repository"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pull_request_timeline_event" ADD CONSTRAINT "pull_request_timeline_event_pull_request_id_pull_request_id_fk" FOREIGN KEY ("pull_request_id") REFERENCES "public"."pull_request"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repository" ADD CONSTRAINT "repository_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "review_config" ADD CONSTRAINT "review_config_repository_id_repository_id_fk" FOREIGN KEY ("repository_id") REFERENCES "public"."repository"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "repository_context" ADD CONSTRAINT "repository_context_repository_id_repository_id_fk" FOREIGN KEY ("repository_id") REFERENCES "public"."repository"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_finding" ADD CONSTRAINT "review_finding_review_run_id_review_run_id_fk" FOREIGN KEY ("review_run_id") REFERENCES "public"."review_run"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_run" ADD CONSTRAINT "review_run_pull_request_id_pull_request_id_fk" FOREIGN KEY ("pull_request_id") REFERENCES "public"."pull_request"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_run" ADD CONSTRAINT "review_run_trigger_webhook_event_id_webhook_event_id_fk" FOREIGN KEY ("trigger_webhook_event_id") REFERENCES "public"."webhook_event"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -251,7 +263,8 @@ CREATE UNIQUE INDEX "pull_request_timeline_external_key_idx" ON "pull_request_ti
 CREATE INDEX "pull_request_timeline_pull_request_id_idx" ON "pull_request_timeline_event" USING btree ("pull_request_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "repository_workspace_provider_id_idx" ON "repository" USING btree ("workspace_id","provider_repository_id");--> statement-breakpoint
 CREATE INDEX "repository_workspace_id_idx" ON "repository" USING btree ("workspace_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "review_config_repository_id_idx" ON "review_config" USING btree ("repository_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "repository_context_repository_id_idx" ON "repository_context" USING btree ("repository_id");--> statement-breakpoint
+CREATE INDEX "repository_context_base_sha_idx" ON "repository_context" USING btree ("base_sha");--> statement-breakpoint
 CREATE INDEX "review_finding_review_run_id_idx" ON "review_finding" USING btree ("review_run_id");--> statement-breakpoint
 CREATE INDEX "review_finding_severity_idx" ON "review_finding" USING btree ("severity");--> statement-breakpoint
 CREATE INDEX "review_finding_file_idx" ON "review_finding" USING btree ("file");--> statement-breakpoint
