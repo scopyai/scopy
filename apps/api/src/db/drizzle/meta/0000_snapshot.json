@@ -1,5 +1,5 @@
 {
-  "id": "2ce66763-54dd-4fbf-bc30-10413175ca9b",
+  "id": "7acc00ad-98e7-4d63-b127-94437b3873d2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -572,6 +572,36 @@
           "notNull": true,
           "default": false
         },
+        "review_drafts": {
+          "name": "review_drafts",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_branch_patterns": {
+          "name": "base_branch_patterns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "path_include_patterns": {
+          "name": "path_include_patterns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "path_exclude_patterns": {
+          "name": "path_exclude_patterns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_review_changed_lines": {
+          "name": "max_review_changed_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "archived": {
           "name": "archived",
           "type": "boolean",
@@ -665,8 +695,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.review_config": {
-      "name": "review_config",
+    "public.repository_context": {
+      "name": "repository_context",
       "schema": "",
       "columns": {
         "id": {
@@ -681,47 +711,43 @@
           "primaryKey": false,
           "notNull": true
         },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
+        "base_sha": {
+          "name": "base_sha",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": true
+          "notNull": true
         },
-        "review_pull_requests": {
-          "name": "review_pull_requests",
-          "type": "boolean",
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": true
+          "notNull": true
         },
-        "review_drafts": {
-          "name": "review_drafts",
-          "type": "boolean",
+        "markdown": {
+          "name": "markdown",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": true
         },
-        "base_branch_patterns": {
-          "name": "base_branch_patterns",
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "metadata": {
+          "name": "metadata",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[\"main\",\"master\"]'::jsonb"
+          "default": "'{}'::jsonb"
         },
-        "path_include_patterns": {
-          "name": "path_include_patterns",
-          "type": "jsonb",
+        "generated_at": {
+          "name": "generated_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "path_exclude_patterns": {
-          "name": "path_exclude_patterns",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "now()"
         },
         "created_at": {
           "name": "created_at",
@@ -739,8 +765,8 @@
         }
       },
       "indexes": {
-        "review_config_repository_id_idx": {
-          "name": "review_config_repository_id_idx",
+        "repository_context_repository_id_idx": {
+          "name": "repository_context_repository_id_idx",
           "columns": [
             {
               "expression": "repository_id",
@@ -753,12 +779,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "repository_context_base_sha_idx": {
+          "name": "repository_context_base_sha_idx",
+          "columns": [
+            {
+              "expression": "base_sha",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
-        "review_config_repository_id_repository_id_fk": {
-          "name": "review_config_repository_id_repository_id_fk",
-          "tableFrom": "review_config",
+        "repository_context_repository_id_repository_id_fk": {
+          "name": "repository_context_repository_id_repository_id_fk",
+          "tableFrom": "repository_context",
           "tableTo": "repository",
           "columnsFrom": [
             "repository_id"
@@ -953,6 +994,18 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "provider_check_run_id": {
+          "name": "provider_check_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_sync_error": {
+          "name": "check_sync_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1535,6 +1588,40 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
+        },
+        "review_drafts": {
+          "name": "review_drafts",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "base_branch_patterns": {
+          "name": "base_branch_patterns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[\"main\",\"master\"]'::jsonb"
+        },
+        "path_include_patterns": {
+          "name": "path_include_patterns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "path_exclude_patterns": {
+          "name": "path_exclude_patterns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "max_review_changed_lines": {
+          "name": "max_review_changed_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
         },
         "installed_by_user_id": {
           "name": "installed_by_user_id",

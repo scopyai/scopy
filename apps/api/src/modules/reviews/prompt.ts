@@ -1,6 +1,5 @@
 import { z } from "zod"
 import type { CodeChunk, DiffContextResult, RepositoryCodeIndex } from "tools"
-import type { PullRequestFile } from "./diff"
 
 export const reviewFindingSchema = z.object({
   severity: z.enum(["critical", "high", "medium", "low"]),
@@ -14,26 +13,33 @@ export const reviewFindingSchema = z.object({
 
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>
 
-export const scoutCandidateSchema = reviewFindingSchema.extend({
-  sourceFile: z.string().min(1),
-  evidence: z.string().min(1),
-  uncertainty: z.string().min(1),
-})
-
-export type ScoutCandidate = z.infer<typeof scoutCandidateSchema>
-
-export const fileScoutOutputSchema = z.object({
+export const reviewSuspicionSchema = z.object({
   file: z.string().min(1),
-  summary: z.string().min(1),
-  inspectedSymbols: z.array(z.string().min(1)),
-  candidates: z.array(scoutCandidateSchema),
-  notes: z.array(z.string()),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  suspicion: z.string().min(1),
 })
 
-export type FileScoutOutput = z.infer<typeof fileScoutOutputSchema>
+export const reviewSubagentOutputSchema = z.object({
+  suspicions: z.array(reviewSuspicionSchema),
+})
+
+export const reviewSuspicionDecisionSchema = z.object({
+  suspicionId: z.string().min(1),
+  decision: z.enum(["accepted", "duplicate", "not_bug"]),
+  reason: z.string().min(1),
+  findingIndex: z.number().int().nonnegative().nullable(),
+})
 
 export const reviewReportSchema = z.object({
   summary: z.string().min(1),
+  changedFiles: z.array(
+    z.object({
+      file: z.string().min(1),
+      summary: z.string().min(1),
+    })
+  ),
+  reviewerAttention: z.array(z.string().min(1)),
   mergeSafetyScore: z.union([
     z.literal(1),
     z.literal(2),
@@ -47,110 +53,8 @@ export const reviewReportSchema = z.object({
 
 export type ReviewReport = z.infer<typeof reviewReportSchema>
 
-export const reviewJudgeDecisionSchema = z.object({
-  candidateId: z.string().min(1),
-  decision: z.enum([
-    "accepted",
-    "duplicate",
-    "false_positive",
-    "unsupported",
-    "not_security",
-    "invalid_range",
-  ]),
-  reason: z.string().min(1),
-})
-
-export type ReviewJudgeDecision = z.infer<typeof reviewJudgeDecisionSchema>
-
-export const reviewJudgeOutputSchema = reviewReportSchema.extend({
-  decisions: z.array(reviewJudgeDecisionSchema),
-})
-
-export type ReviewJudgeOutput = z.infer<typeof reviewJudgeOutputSchema>
-
-export const reviewVerificationSchema = z.object({
-  summary: z.string().min(1),
-  mergeSafetyScore: z.union([
-    z.literal(1),
-    z.literal(2),
-    z.literal(3),
-    z.literal(4),
-    z.literal(5),
-  ]),
-  mergeSafetyReason: z.string().min(1),
-  verifications: z.array(
-    z.object({
-      candidateId: z.string().min(1),
-      confirmed: z.boolean(),
-      confidence: z.number().min(0).max(1),
-      reason: z.string().min(1),
-    })
-  ),
-})
-
-export type ReviewVerification = z.infer<typeof reviewVerificationSchema>
-
-export type CandidateFinding = ReviewFinding & {
-  candidateId: string
-}
-
-export type ScoutFinding = ScoutCandidate & {
-  candidateId: string
-  scoutFile: string
-}
-
-export const safeScoutPathSegment = (value: string) =>
+export const safePathSegment = (value: string) =>
   value.replace(/[^A-Za-z0-9_.-]/g, "_")
-
-export const aggregateScoutFindings = (
-  scoutOutputs: FileScoutOutput[]
-): ScoutFinding[] =>
-  scoutOutputs.flatMap((output, scoutIndex) =>
-    output.candidates.map((candidate, candidateIndex) => ({
-      candidateId: `scout-${String(scoutIndex + 1).padStart(3, "0")}-${String(
-        candidateIndex + 1
-      ).padStart(3, "0")}`,
-      scoutFile: output.file,
-      ...candidate,
-    }))
-  )
-
-export type FileScoutPlanItem =
-  | {
-      file: string
-      safeFile: string
-      status: string
-      patch: string
-      skipped: null
-    }
-  | {
-      file: string
-      safeFile: string
-      status: string
-      skipped: { reason: "patch_unavailable" }
-    }
-
-export const buildFileScoutPlan = (
-  files: PullRequestFile[]
-): FileScoutPlanItem[] =>
-  files.map((file) => {
-    const base = {
-      file: file.filename,
-      safeFile: safeScoutPathSegment(file.filename),
-      status: file.status,
-    }
-    if (!file.patch) {
-      return {
-        ...base,
-        skipped: { reason: "patch_unavailable" },
-      }
-    }
-    return {
-      ...base,
-      patch: file.patch,
-      skipped: null,
-    }
-  })
 
 const symbolLabel = ({
   kind,
@@ -305,250 +209,70 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
   return lines.join("\n").trim()
 }
 
-export const renderAffectedSymbolsForFile = (
-  context: DiffContextResult,
-  filePath: string
-) => {
-  const file = context.files.find((item) => item.file === filePath)
-  if (!file) return "No affected symbols detected for this file."
+export const reviewSubagentInstructions = `Explore the assigned area of a pull request for anything that could go wrong.
 
-  const lines = [
-    `File: ${file.file}`,
-    `Status: ${file.status}`,
-    file.language ? `Language: ${file.language}` : undefined,
-    `Top-level changed lines: ${
-      file.topLevelChangedLines.length > 0
-        ? file.topLevelChangedLines.join(", ")
-        : "none"
-    }`,
-    "Affected symbols:",
-  ].filter((line): line is string => Boolean(line))
-
-  if (file.affectedSymbols.length === 0) {
-    lines.push("- none detected")
-  } else {
-    for (const symbol of file.affectedSymbols) {
-      lines.push(
-        `- ${symbolLabel(symbol)} ${symbol.startLine}-${symbol.endLine}; touched lines: ${symbol.touchedLines.join(", ")}`
-      )
-      if (symbol.parameters?.length) {
-        lines.push(`  params: ${symbol.parameters.join(", ")}`)
-      }
-      if (symbol.returnType) lines.push(`  returns: ${symbol.returnType}`)
-    }
-  }
-
-  return lines.join("\n").trim()
-}
-
-export const fileScoutInstructions = `Find possible security vulnerabilities introduced or exposed by one changed file.
-
-Optimize for recall over precision.
+Optimize aggressively for recall, not precision. Follow data and control flow across the repository instead of limiting yourself to one changed file.
 
 Rules:
-- Review only security-relevant risks from this file change and directly connected code.
-- Consider whether this file changes authorization, authentication, data exposure, input validation, external calls, secrets, signatures, persistence, state transitions, deserialization, file/network access, trust boundaries, or other security-relevant aspects.
-- Use get_symbol_definition and get_symbol_callers when a candidate depends on behavior outside the visible file patch.
-- Return every plausible security candidate, including low-confidence candidates, as long as it has a concrete changed-file line range.
-- Do not suppress one candidate because another candidate is more severe.
-- If there are no plausible security candidates, return an empty candidates array and explain that in notes.
-- Each candidate range must be in the pull request head version and should overlap this file change when the issue is caused by this file.`
+- Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
+- Include speculative suspicions and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another suspicion.
+- Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
+- Do not verify, deduplicate, prioritize, assign severity or confidence, or decide whether a suspicion should be published. Evaluation belongs entirely to the main agent.
+- Do not return summaries, evidence ledgers, uncertainty fields, inspected-symbol metadata, or recommendations.
+- For each suspicion return only the most relevant repository-relative file, head-side start and end lines, and a detailed explanation of what might go wrong and in what scenario.
+- Return an empty suspicions array only after thoroughly exploring the assigned area and finding no plausible failure.`
 
-export const reviewJudgeInstructions = `Judge noisy security candidates for a pull request.
+export const mainReviewAgentInstructions = `Review a pull request for actionable bugs using repository tools and delegated exploration.
 
-Your job is to verify and deduplicate candidate findings generated by per-file scout agents.
-
-Rules:
-- Use the scout candidates as the primary review surface.
-- Verify candidate claims against the diff, repository context, and tool-inspected code before including them.
-- Return one decision for every scout candidateId you received. Do not silently drop a candidate.
-- Use decision "accepted" when the candidate is included as a final finding.
-- Use decision "duplicate" only when another accepted finding covers the same root cause and fix.
-- Use decision "false_positive" only when the claim is factually false.
-- Use decision "unsupported" when the claim might be true but cannot be supported from the diff, repository context, or inspected code.
-- Use decision "not_security" only when the claim is real but has no security impact.
-- Use decision "invalid_range" only when the candidate is attached to a non-reviewable or clearly wrong changed-line range and you cannot correct it.
-- Keep true findings even if they are less severe than other true findings.
-- Reject false positives, duplicate findings, unsupported claims, and invalid review ranges.
-- You may add independent findings discovered while verifying candidates, especially cross-file or data-flow security issues.
-- Do not report style-only feedback or non-security issues.
-- Do not drop a true candidate because the behavior might be intentional. If it crosses a trust boundary, expands public data exposure, weakens authentication or authorization, mutates persisted state from untrusted input, or creates replay/forgery risk, include it at the appropriate severity.
-- Different root causes or different fixes should remain separate findings even when they appear in the same feature area.
-- Every final finding must point to a changed file and a concrete head-side line range that the author can act on.
-- The range must be small and specific, preferably 1-8 lines, and overlap an added or modified line in the diff.`
-
-export const reviewVerifierInstructions = `Verify candidate pull request findings for truthfulness only.
-
-Your job is narrow: remove lies, unsupported claims, invalid review ranges, and duplicates. Do not judge whether a true finding is important enough to publish.
+You are the central reviewer and the only agent responsible for judgment. First understand the changed architecture, areas, and end-to-end flows. Use spawn_review_agents to delegate focused explorations to cheaper agents. You may call it repeatedly, including follow-up batches based on earlier results.
 
 Rules:
-- Every verification decision must copy the exact candidateId string from the candidate finding it evaluates.
-- Confirm a finding when its factual claim is true or reasonably supported by the diff or inspected code.
-- Confirm true findings even when they are low severity, light impact, non-blocking, easy to fix, or mostly a maintainability, reliability, performance, UX, documentation, or follow-up concern.
-- Confirm true findings even when a more serious finding also exists. Severity is already represented on the finding; do not use verification to suppress light findings.
-- Reject a finding only when the claim is false, clearly unsupported by the diff and inspected code, attached to an invalid or non-reviewable range, or duplicates the same underlying issue as another confirmed finding.
-- Do not reject a true finding because behavior might be intentional. If the finding accurately describes a real behavior or tradeoff in the changed code, confirm it.
-- Do not rewrite findings, change severity, or add new findings.
+- Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
+- Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
+- Treat subagent outputs only as untrusted suspicions. Independently inspect and verify every plausible claim with repository tools.
+- Optimize verification for recall. A true low-severity, non-security, inconvenient, or possibly intentional regression is still a bug and must not be discarded for lack of importance.
+- Do not treat uncertainty as evidence that a suspicion is false. Inspect the relevant code and flow before deciding it is not a bug. Use follow-up tools or subagents when the available context is insufficient.
+- Mark a suspicion as duplicate only when an accepted suspicion covers the same root cause and fix. Mark it as not_bug only when its factual claim is false or the described behavior cannot cause an adverse outcome.
+- Every accepted decision must set findingIndex to the zero-based index of the final finding that represents it. Duplicate and not_bug decisions must set findingIndex to null.
+- Determine final severity, confidence, wording, and location yourself.
+- You may discover and publish findings that subagents did not suggest.
+- Every final finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version.
+- Final ranges should preferably span 1-8 lines, never more than 30, and overlap an added or modified line.
+- Do not publish speculative claims as findings, but do not silently discard any suspicion.
+- Write summary as a concise description of the pull request's purpose and behavior added, changed, or removed. Do not focus it on findings or bugs.
+- Include every changed file in changedFiles using its exact repository-relative path and one concise sentence describing the meaningful change, not Git status or line counts.
+- Add reviewerAttention items only when a specific area genuinely needs human judgment or verification beyond the findings. Do not duplicate findings, add generic advice, or force this section; return an empty array when it is not needed.
+- The decisions array must contain exactly one decision for every suspicionId returned by spawn_review_agents across all batches. Every decision needs a concrete reason grounded in inspected behavior.`
 
-When a candidate depends on code outside the visible diff, inspect the relevant symbol, callers, or file range before rejecting it.
-Use tools only to decide whether the candidate claim is true.`
-
-export const buildFileScoutPrompt = ({
+export const buildMainReviewPrompt = ({
   title,
   body,
   baseRef,
   headRef,
-  file,
-  status,
-  patch,
+  diff,
   affectedSymbols,
+  repositoryContext,
 }: {
   title: string
   body: string | null
   baseRef: string
   headRef: string
-  file: string
-  status: string
-  patch: string
+  diff: string
   affectedSymbols: string
+  repositoryContext?: string | null
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
 
-Scout file: ${file}
-File status: ${status}
+Repository context:
+${repositoryContext ?? "(none)"}
 
-File patch:
-${patch}
+Changed files:
+${diff}
 
-Affected symbols in this file:
+Changed symbol index:
 ${affectedSymbols}`
-
-export const buildReviewJudgePrompt = ({
-  title,
-  body,
-  baseRef,
-  headRef,
-  diff,
-  affectedSymbols,
-  repositoryContext,
-  scoutFindings,
-}: {
-  title: string
-  body: string | null
-  baseRef: string
-  headRef: string
-  diff: string
-  affectedSymbols: string
-  repositoryContext?: string | null
-  scoutFindings: ScoutFinding[]
-}) => `Pull request title: ${title}
-Pull request description: ${body ?? "(none)"}
-Base branch: ${baseRef}
-Head branch: ${headRef}
-
-Repository context:
-${repositoryContext ?? "(none)"}
-
-Changed files:
-${diff}
-
-Changed symbol index:
-${affectedSymbols}
-
-Grouped scout candidate findings JSON:
-${JSON.stringify(groupScoutFindingsByFile(scoutFindings), null, 2)}
-
-Decision ledger requirement:
-- The decisions array must contain exactly one entry for each candidateId in the grouped scout candidate findings JSON.
-- A final finding accepted from a scout candidate should preserve the candidate's core claim, but you may correct severity, wording, and line range.
-- Independent findings you add do not need decision entries because they have no scout candidateId.`
-
-export const groupScoutFindingsByFile = (findings: ScoutFinding[]) => {
-  const grouped = new Map<string, ScoutFinding[]>()
-  for (const finding of findings) {
-    grouped.set(finding.scoutFile, [
-      ...(grouped.get(finding.scoutFile) ?? []),
-      finding,
-    ])
-  }
-
-  return [...grouped.entries()].map(([file, candidates]) => ({
-    file,
-    candidates,
-  }))
-}
-
-export const buildReviewAgentRepairPrompt = ({
-  originalPrompt,
-  report,
-  validation,
-}: {
-  originalPrompt: string
-  report: ReviewReport
-  validation: unknown
-}) => `${originalPrompt}
-
-The previous review report had invalid finding locations. Return a corrected complete review report.
-
-Rules for this correction pass:
-- Keep only actionable findings that have valid file/startLine/endLine ranges.
-- Correct invalid ranges when the finding is still supported by the diff or inspected context.
-- Drop any finding whose correct range is uncertain.
-- Do not invent new findings just to replace invalid ones.
-- Return the full report JSON again, not a patch.
-
-Previous report JSON:
-${JSON.stringify(report, null, 2)}
-
-Location validation failures:
-${JSON.stringify(validation, null, 2)}`
-
-export const buildReviewVerifierPrompt = ({
-  title,
-  body,
-  baseRef,
-  headRef,
-  diff,
-  affectedSymbols,
-  repositoryContext,
-  semanticCoverage,
-  candidates,
-}: {
-  title: string
-  body: string | null
-  baseRef: string
-  headRef: string
-  diff: string
-  affectedSymbols: string
-  repositoryContext?: string | null
-  semanticCoverage?: string | null
-  candidates: CandidateFinding[]
-}) => `Pull request title: ${title}
-Pull request description: ${body ?? "(none)"}
-Base branch: ${baseRef}
-Head branch: ${headRef}
-
-Repository context:
-${repositoryContext ?? "(none)"}
-
-Changed files:
-${diff}
-
-Changed symbol index:
-${affectedSymbols}${
-  semanticCoverage
-    ? `
-
-Semantic search coverage:
-${semanticCoverage}
-`
-    : "\n"
-}
-
-Candidate findings JSON:
-${JSON.stringify({ candidates }, null, 2)}`
 
 const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 1) return "1/5 - extremely unsafe"
@@ -595,20 +319,14 @@ export const renderReviewReport = (report: ReviewReport) => {
 
 type InlineReviewPublishStatus =
   | { kind: "not_needed" }
-  | { kind: "published"; inlineCommentCount: number }
   | { kind: "failed"; error: string }
 
-const renderChangedFiles = (files: PullRequestFile[]) => {
+const renderChangedFiles = (files: ReviewReport["changedFiles"]) => {
   if (files.length === 0) {
     return "No reviewable changed files."
   }
 
-  return files
-    .map(
-      (file) =>
-        `- \`${file.filename}\` (${file.status}, +${file.additions} -${file.deletions})`
-    )
-    .join("\n")
+  return files.map((file) => `- \`${file.file}\` - ${file.summary}`).join("\n")
 }
 
 const renderInlineFindingSummary = (report: ReviewReport) => {
@@ -626,11 +344,9 @@ const renderInlineFindingSummary = (report: ReviewReport) => {
 
 export const renderReviewSummaryComment = ({
   report,
-  files,
   inlineReview,
 }: {
   report: ReviewReport
-  files: PullRequestFile[]
   inlineReview: InlineReviewPublishStatus
 }) => {
   const sections = [
@@ -640,39 +356,37 @@ export const renderReviewSummaryComment = ({
     "",
     "## Changed files",
     "",
-    renderChangedFiles(files),
+    renderChangedFiles(report.changedFiles),
+  ]
+
+  if (report.reviewerAttention.length > 0) {
+    sections.push(
+      "",
+      "## Reviewer attention",
+      "",
+      ...report.reviewerAttention.map((item) => `- ${item}`)
+    )
+  }
+
+  sections.push(
     "",
     "## Merge safety",
     "",
     `**${scoreLabel(report.mergeSafetyScore)}**`,
     "",
-    report.mergeSafetyReason,
-    "",
-    "## Inline findings",
-    "",
-  ]
+    report.mergeSafetyReason
+  )
 
-  if (inlineReview.kind === "published") {
+  if (inlineReview.kind === "failed") {
     sections.push(
-      `${inlineReview.inlineCommentCount} inline review comment${
-        inlineReview.inlineCommentCount === 1 ? " was" : "s were"
-      } published in a GitHub review.`
-    )
-  } else if (inlineReview.kind === "failed") {
-    sections.push(
+      "",
+      "## Findings",
+      "",
       "I could not publish the inline GitHub review comments. Findings are listed here so they are not lost.",
       "",
       renderInlineFindingSummary(report),
       "",
       `Publish error: ${inlineReview.error}`
-    )
-  } else if (report.findings.length === 0) {
-    sections.push("No actionable findings.")
-  } else {
-    sections.push(
-      `${report.findings.length} inline review comment${
-        report.findings.length === 1 ? " is" : "s are"
-      } ready to publish.`
     )
   }
 

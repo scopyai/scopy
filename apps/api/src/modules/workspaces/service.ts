@@ -3,13 +3,13 @@ import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
   repository,
-  reviewConfig,
   user,
   workspace,
   workspaceMember,
   type workspaceMemberRole,
 } from "../../db/schema"
 import type { GitHubInstallation, GitHubRepository } from "../github/service"
+import { defaultWorkspaceReviewConfig } from "../reviews/review-config"
 
 type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number]
 
@@ -203,6 +203,7 @@ export const upsertGitHubWorkspace = async (
   const workspaceId = existing?.id ?? randomUUID()
 
   const values = {
+    ...defaultWorkspaceReviewConfig,
     id: workspaceId,
     provider: "github" as const,
     providerInstallationId,
@@ -288,7 +289,7 @@ export const syncWorkspaceRepositories = async (
   )
 
   for (const githubRepository of repositories) {
-    const [savedRepository] = await db
+    await db
       .insert(repository)
       .values({
         id: randomUUID(),
@@ -321,16 +322,6 @@ export const syncWorkspaceRepositories = async (
         },
       })
       .returning()
-
-    await db
-      .insert(reviewConfig)
-      .values({
-        id: randomUUID(),
-        repositoryId: savedRepository.id,
-      })
-      .onConflictDoNothing({
-        target: reviewConfig.repositoryId,
-      })
   }
 
   const staleRepositoriesWhere =

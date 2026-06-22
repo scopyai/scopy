@@ -14,8 +14,169 @@ type PullRequestReviewComment = {
 }
 export type PullRequestReviewEvent = "COMMENT" | "REQUEST_CHANGES"
 
+export const REVIEW_CHECK_NAME = "AI Review"
+
+export type ReviewCheckConclusion =
+  | "success"
+  | "neutral"
+  | "action_required"
+  | "failure"
+
+export type ReviewCheckOutput = {
+  title: string
+  summary: string
+}
+
 const getOctokit = async (installationId: string) =>
   createGitHubApp().getInstallationOctokit(Number(installationId))
+
+export const startReviewCheck = async ({
+  repo,
+  installationId,
+  reviewRunId,
+  headSha,
+  checkRunId,
+  detailsUrl,
+}: {
+  repo: Repository
+  installationId: string
+  reviewRunId: string
+  headSha: string
+  checkRunId?: string | null
+  detailsUrl: string
+}) => {
+  const octokit = await getOctokit(installationId)
+  let existingCheckRunId = checkRunId
+
+  if (!existingCheckRunId) {
+    const response = await octokit.request(
+      "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+      {
+        owner: repo.owner,
+        repo: repo.name,
+        ref: headSha,
+        check_name: REVIEW_CHECK_NAME,
+        per_page: 100,
+      },
+    )
+    existingCheckRunId = response.data.check_runs.find(
+      (checkRun) => checkRun.external_id === reviewRunId,
+    )?.id.toString()
+  }
+
+  if (existingCheckRunId) {
+    await octokit.request(
+      "PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}",
+      {
+        owner: repo.owner,
+        repo: repo.name,
+        check_run_id: Number(existingCheckRunId),
+        status: "in_progress",
+        started_at: new Date().toISOString(),
+        details_url: detailsUrl,
+        output: {
+          title: "Review in progress",
+          summary: "Analyzing the changes in this pull request.",
+        },
+      },
+    )
+    return existingCheckRunId
+  }
+
+  const response = await octokit.request(
+    "POST /repos/{owner}/{repo}/check-runs",
+    {
+      owner: repo.owner,
+      repo: repo.name,
+      name: REVIEW_CHECK_NAME,
+      head_sha: headSha,
+      status: "in_progress",
+      started_at: new Date().toISOString(),
+      external_id: reviewRunId,
+      details_url: detailsUrl,
+      output: {
+        title: "Review in progress",
+        summary: "Analyzing the changes in this pull request.",
+      },
+    },
+  )
+
+  return response.data.id.toString()
+}
+
+export const completeReviewCheck = async ({
+  repo,
+  installationId,
+  checkRunId,
+  conclusion,
+  output,
+  detailsUrl,
+}: {
+  repo: Repository
+  installationId: string
+  checkRunId: string
+  conclusion: ReviewCheckConclusion
+  output: ReviewCheckOutput
+  detailsUrl: string
+}) => {
+  const octokit = await getOctokit(installationId)
+  await octokit.request(
+    "PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}",
+    {
+      owner: repo.owner,
+      repo: repo.name,
+      check_run_id: Number(checkRunId),
+      status: "completed",
+      conclusion,
+      completed_at: new Date().toISOString(),
+      details_url: detailsUrl,
+      output,
+    },
+  )
+}
+
+export const buildCompletedReviewCheckOutput = ({
+  durationMs,
+  reviewedFileCount,
+  findings = [],
+  partialPublication = false,
+}: {
+  durationMs?: number
+  reviewedFileCount?: number
+  findings?: Array<{ severity: ReviewFinding["severity"] }>
+  partialPublication?: boolean
+}): ReviewCheckOutput => {
+  const counts = { critical: 0, high: 0, medium: 0, low: 0 }
+  for (const finding of findings) {
+    counts[finding.severity] += 1
+  }
+
+  const duration =
+    typeof durationMs === "number"
+      ? `${Math.max(1, Math.round(durationMs / 1000))}s`
+      : "unknown"
+  const files = reviewedFileCount ?? 0
+  const findingSummary = [
+    `${findings.length} total`,
+    `${counts.critical} critical`,
+    `${counts.high} high`,
+    `${counts.medium} medium`,
+    `${counts.low} low`,
+  ].join(", ")
+
+  return {
+    title: partialPublication
+      ? "Review completed with a publishing warning"
+      : "Review completed",
+    summary: [
+      `Reviewed ${files} file${files === 1 ? "" : "s"} in ${duration}.`,
+      `Findings: ${findingSummary}.`,
+      partialPublication
+        ? "Some inline comments could not be published. See the pull request summary for details."
+        : "See the pull request summary and inline comments for details.",
+    ].join("\n\n"),
+  }
+}
 
 export type ReviewCommentScope = {
   pullRequestId: string
@@ -45,6 +206,36 @@ export const reviewBalanceBlockedBody =
 const severityLabel = (severity: ReviewFinding["severity"]) =>
   severity.toUpperCase()
 
+const renderFixPrompt = (finding: ReviewFinding) => {
+  const prompt = [
+    "Fix the following issue found in this pull request.",
+    "",
+    `Title: ${finding.title}`,
+    `File: ${finding.file}`,
+    `Lines: ${finding.startLine}-${finding.endLine}`,
+    `Severity: ${finding.severity}`,
+    "",
+    "Description:",
+    finding.body,
+  ].join("\n")
+  const longestFence = Math.max(
+    0,
+    ...(prompt.match(/`+/g) ?? []).map((match) => match.length),
+  )
+  const fence = "`".repeat(Math.max(3, longestFence + 1))
+
+  return [
+    "<details>",
+    "<summary>Fix with AI</summary>",
+    "",
+    `${fence}text`,
+    prompt,
+    fence,
+    "",
+    "</details>",
+  ].join("\n")
+}
+
 export const renderInlineReviewComment = (finding: ReviewFinding) =>
   [
     `**[${severityLabel(finding.severity)}] ${finding.title}**`,
@@ -52,6 +243,8 @@ export const renderInlineReviewComment = (finding: ReviewFinding) =>
     finding.body,
     "",
     `Confidence: ${Math.round(finding.confidence * 100)}%`,
+    "",
+    renderFixPrompt(finding),
   ].join("\n")
 
 export const buildPullRequestReviewComments = (

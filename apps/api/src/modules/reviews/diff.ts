@@ -7,16 +7,15 @@ export type PullRequestFile = {
   patch?: string
 }
 
-export const MAX_REVIEW_FILES = 300
-export const MAX_REVIEW_DIFF_CHARACTERS = 100_000
-
 const matchesPattern = (path: string, pattern: string) => {
   const expression = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*/g, "\0")
+    .replace(/\*\*\//g, "__GLOBSTAR_DIRECTORY__")
+    .replace(/\*\*/g, "__GLOBSTAR__")
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
-    .replace(/\0/g, ".*")
+    .replace(/__GLOBSTAR_DIRECTORY__/g, "(?:.*/)?")
+    .replace(/__GLOBSTAR__/g, ".*")
 
   return new RegExp(`^${expression}$`).test(path)
 }
@@ -35,6 +34,9 @@ export const filterPullRequestFiles = (
       !excludePatterns.some((pattern) => matchesPattern(file.filename, pattern))
   )
 
+export const countPullRequestChangedLines = (files: PullRequestFile[]) =>
+  files.reduce((total, file) => total + file.additions + file.deletions, 0)
+
 export const serializePullRequestFiles = (files: PullRequestFile[]) =>
   files
     .map((file) =>
@@ -47,7 +49,9 @@ export const serializePullRequestFiles = (files: PullRequestFile[]) =>
     )
     .join("\n\n")
 
-export const serializePullRequestFilesAsUnifiedDiff = (files: PullRequestFile[]) =>
+export const serializePullRequestFilesAsUnifiedDiff = (
+  files: PullRequestFile[]
+) =>
   files
     .filter((file) => file.patch)
     .map((file) =>
@@ -61,15 +65,11 @@ export const serializePullRequestFilesAsUnifiedDiff = (files: PullRequestFile[])
     .join("\n")
 
 export const getDiffSkipReason = (
-  fileCount: number,
-  characterCount: number
+  changedLineCount: number,
+  maxChangedLines: number
 ) => {
-  if (fileCount > MAX_REVIEW_FILES) {
-    return `The pull request changes ${fileCount} files, which exceeds the ${MAX_REVIEW_FILES}-file review limit.`
-  }
-
-  if (characterCount > MAX_REVIEW_DIFF_CHARACTERS) {
-    return `The pull request diff contains ${characterCount.toLocaleString()} characters, which exceeds the ${MAX_REVIEW_DIFF_CHARACTERS.toLocaleString()}-character review limit.`
+  if (changedLineCount > maxChangedLines) {
+    return `The pull request contains ${changedLineCount.toLocaleString()} reviewable changed lines, which exceeds the configured ${maxChangedLines.toLocaleString()}-line review limit.`
   }
 
   return null

@@ -117,6 +117,7 @@ function RepositoriesList({
     navigate({
       to: "/$workspaceSlug/repositories/$repositoryId",
       params: { workspaceSlug, repositoryId },
+      search: { view: "pull-requests" },
     })
   }
 
