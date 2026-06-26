@@ -1,18 +1,6 @@
-name: Backend deploy
+name: Backend dev deploy
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/api/**"
-      - "apps/tools/**"
-      - "packages/billing/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".dockerignore"
-      - ".github/workflows/backend-deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,9 +11,22 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
-    name: Build and Push Backend Image
+  validate-branch:
+    name: Validate dev branch
     runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - name: Require dev branch
+        if: github.ref_name != 'dev'
+        run: |
+          echo "Backend dev deploys must be started from dev. Current ref: ${GITHUB_REF_NAME}"
+          exit 1
+
+  build-and-push:
+    name: Build and Push Backend Dev Image
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs:
+      - validate-branch
 
     outputs:
       image: ${{ steps.image.outputs.image }}
@@ -34,12 +35,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Validate deployment branch
-        if: github.ref_name != 'main'
-        run: |
-          echo "Backend deploys must be started from main. Current ref: ${GITHUB_REF_NAME}"
-          exit 1
 
       - name: Resolve image name
         id: image
@@ -67,8 +62,8 @@ jobs:
           target: api-runner
           push: true
           tags: |
-            ${{ steps.image.outputs.image }}:latest
-            ${{ steps.image.outputs.image }}:${{ github.sha }}
+            ${{ steps.image.outputs.image }}:dev
+            ${{ steps.image.outputs.image }}:dev-${{ github.sha }}
 
       - name: Build and push worker image
         uses: useblacksmith/build-push-action@v2
@@ -78,18 +73,17 @@ jobs:
           target: worker-runner
           push: true
           tags: |
-            ${{ steps.image.outputs.worker-image }}:latest
-            ${{ steps.image.outputs.worker-image }}:${{ github.sha }}
+            ${{ steps.image.outputs.worker-image }}:dev
+            ${{ steps.image.outputs.worker-image }}:dev-${{ github.sha }}
 
   trigger-deploy:
-    name: Trigger deploy
+    name: Trigger dev deploy
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.ref_name == 'main'
     needs:
       - build-and-push
     env:
-      DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_BACKEND_WEBHOOK_URL }}
-      DOKPLOY_WORKER_WEBHOOK_URL: ${{ secrets.DOKPLOY_BACKEND_WORKER_WEBHOOK_URL }}
+      DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_DEV_BACKEND_WEBHOOK_URL }}
+      DOKPLOY_WORKER_WEBHOOK_URL: ${{ secrets.DOKPLOY_DEV_BACKEND_WORKER_WEBHOOK_URL }}
       GITHUB_REF_NAME: ${{ github.ref_name }}
 
     steps:
@@ -115,8 +109,8 @@ jobs:
 
       - name: Skip redeploy
         if: ${{ env.DOKPLOY_WEBHOOK_URL == '' }}
-        run: echo "DOKPLOY_BACKEND_WEBHOOK_URL is not configured; image was pushed but redeploy was skipped."
+        run: echo "DOKPLOY_DEV_BACKEND_WEBHOOK_URL is not configured; image was pushed but redeploy was skipped."
 
       - name: Skip worker redeploy
         if: ${{ env.DOKPLOY_WORKER_WEBHOOK_URL == '' }}
-        run: echo "DOKPLOY_BACKEND_WORKER_WEBHOOK_URL is not configured; worker image was pushed but redeploy was skipped."
+        run: echo "DOKPLOY_DEV_BACKEND_WORKER_WEBHOOK_URL is not configured; worker image was pushed but redeploy was skipped."
