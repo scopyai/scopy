@@ -132,7 +132,7 @@ const FEATURES = [
   {
     icon: <ZapIcon size={22} />,
     name: "Model-agnostic",
-    desc: "Plug in OpenAI, Anthropic, local models or anything with a compatible API. No lock-in, no hidden compute costs.",
+    desc: "Self-host with OpenAI, Anthropic, local models or anything with a compatible API. No model lock-in.",
   },
   {
     icon: <GitHubIcon size={22} className="l-icon" />,
@@ -216,7 +216,7 @@ function OpenSource() {
             </p>*/}
             <ul className="l-oss-list">
               <li>Sign in with GitHub in seconds</li>
-              <li>Compute included in plan</li>
+              <li>Review usage included in plan</li>
               <li>Unlimited repositories</li>
               <li>Team workspace management</li>
             </ul>
@@ -246,9 +246,9 @@ function Pricing() {
     <section className="l-price l-section">
       <div className="l-wrap">
         <div className="l-price-header">
-          <h2 className="l-price-title">Simple pricing</h2>
+          <h2 className="l-price-title">Simple usage-based pricing</h2>
           <p className="l-price-sub">
-            Care about your product, not the review cost.
+            Hosted Scopy includes monthly review usage with no per-seat pricing.
           </p>
         </div>
 

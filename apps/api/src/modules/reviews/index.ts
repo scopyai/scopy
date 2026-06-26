@@ -486,6 +486,14 @@ export const runReviewAgent = async ({
     recorder,
     logger,
   })
+  if (preparedRepositoryContext.billingGeneration) {
+    await recordLlmBilling(
+      llmBilling,
+      "repository_context",
+      REVIEW_MODEL,
+      preparedRepositoryContext.billingGeneration
+    )
+  }
   logger.info("Review agent stage completed", {
     ...context,
     stage: "repository-context",

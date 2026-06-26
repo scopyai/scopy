@@ -41,7 +41,7 @@ const planFeatures: Record<string, string[]> = {
   ],
   ultra: [
     "Everything in Premium",
-    "5× monthly usage allowance",
+    "Higher monthly usage limits",
     "Built for high-volume teams",
   ],
   enterprise: [

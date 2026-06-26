@@ -1,20 +1,12 @@
 import { env } from "#/env"
 import {
+  PREMIUM_BILLING_PLAN,
+  ULTRA_BILLING_PLAN,
+} from "@workspace/billing/plans"
+import {
   formatComputeAllowance,
   formatPlanPriceAmount,
 } from "#/lib/billing-format"
-
-// Keep in sync with apps/api/src/modules/billing/plans.ts
-const HOSTED_PLANS = {
-  premium: {
-    priceCents: 1999,
-    monthlyCredits: 25_000_000,
-  },
-  ultra: {
-    priceCents: 9999,
-    monthlyCredits: 130_000_000,
-  },
-} as const
 
 export type LandingPlan = {
   name: string
@@ -31,16 +23,16 @@ export type LandingPlan = {
 
 export function getLandingPlans(): LandingPlan[] {
   const premiumCompute = formatComputeAllowance(
-    HOSTED_PLANS.premium.monthlyCredits
+    PREMIUM_BILLING_PLAN.monthlyCredits
   )
-  const ultraCompute = formatComputeAllowance(HOSTED_PLANS.ultra.monthlyCredits)
+  const ultraCompute = formatComputeAllowance(ULTRA_BILLING_PLAN.monthlyCredits)
 
   return [
     {
       name: "Self-host",
       priceLabel: "Free",
       period: "",
-      computeLabel: "Bring your own LLM keys",
+      computeLabel: "Bring your own model keys",
       desc: "Run Scopy on your infrastructure without limits.",
       features: [
         "Unlimited pull requests",
@@ -53,11 +45,11 @@ export function getLandingPlans(): LandingPlan[] {
       featured: false,
     },
     {
-      name: "Premium",
-      priceLabel: formatPlanPriceAmount(HOSTED_PLANS.premium.priceCents),
+      name: PREMIUM_BILLING_PLAN.name,
+      priceLabel: formatPlanPriceAmount(PREMIUM_BILLING_PLAN.price),
       period: "/mo",
-      computeLabel: `${premiumCompute} of compute included`,
-      desc: "Hosted option for teams who start their journey.",
+      computeLabel: `${premiumCompute} of review usage included`,
+      desc: "Hosted Scopy for teams getting started.",
       features: [
         "Unlimited repositories",
         "Team workspace management",
@@ -69,14 +61,14 @@ export function getLandingPlans(): LandingPlan[] {
       featured: true,
     },
     {
-      name: "Ultra",
-      priceLabel: formatPlanPriceAmount(HOSTED_PLANS.ultra.priceCents),
+      name: ULTRA_BILLING_PLAN.name,
+      priceLabel: formatPlanPriceAmount(ULTRA_BILLING_PLAN.price),
       period: "/mo",
-      computeLabel: `${ultraCompute} of compute included`,
-      desc: "More monthly compute for teams that ship fast.",
+      computeLabel: `${ultraCompute} of review usage included`,
+      desc: "More included usage for teams that ship fast.",
       features: [
         "Everything in Premium",
-        "More than 5× monthly compute",
+        "Higher monthly review usage",
         "Priority support",
       ],
       cta: "Get started",

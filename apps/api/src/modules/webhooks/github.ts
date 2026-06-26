@@ -126,6 +126,21 @@ const updateWorkspaceConnectionStatus = async (
     .where(eq(workspace.providerInstallationId, String(installationId)))
 }
 
+const syncWebhookRepositories = async (
+  relatedWorkspace: typeof workspace.$inferSelect,
+  payload: GitHubWebhookPayload,
+) => {
+  const repositories = await listGitHubInstallationRepositories(
+    relatedWorkspace.providerInstallationId,
+  )
+
+  await syncWorkspaceRepositories(
+    relatedWorkspace.id,
+    repositories,
+    payload.installation?.repository_selection,
+  )
+}
+
 export const handleGitHubWebhook = async ({
   event,
   payload,
@@ -143,26 +158,26 @@ export const handleGitHubWebhook = async ({
   }
 
   if (event.eventName === "installation_repositories" && relatedWorkspace) {
-    const repositories = await listGitHubInstallationRepositories(
-      relatedWorkspace.providerInstallationId,
-    )
-
-    await syncWorkspaceRepositories(
-      relatedWorkspace.id,
-      repositories,
-      payload.installation?.repository_selection,
-    )
+    await syncWebhookRepositories(relatedWorkspace, payload)
   }
 
   if (!pullRequestEventNames.has(event.eventName) || !relatedWorkspace) {
     return
   }
 
-  const repo = await getTrackedRepositoryForWebhook(
+  const number = getTrackedPullRequestNumbers(payload)
+  let repo = await getTrackedRepositoryForWebhook(
     relatedWorkspace.id,
     payload.repository?.id,
   )
-  const number = getTrackedPullRequestNumbers(payload)
+
+  if (!repo && number) {
+    await syncWebhookRepositories(relatedWorkspace, payload)
+    repo = await getTrackedRepositoryForWebhook(
+      relatedWorkspace.id,
+      payload.repository?.id,
+    )
+  }
 
   if (!repo || !number) {
     return

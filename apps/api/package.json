@@ -32,6 +32,7 @@
     "@octokit/webhooks": "^14.2.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
     "@qdrant/js-client-rest": "^1.18.0",
+    "@workspace/billing": "workspace:*",
     "ai": "^6.0.193",
     "better-auth": "^1.6.5",
     "creem": "^1.4.5",
