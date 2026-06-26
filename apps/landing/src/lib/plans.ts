@@ -8,11 +8,11 @@ import {
 const HOSTED_PLANS = {
   premium: {
     priceCents: 1999,
-    monthlyCredits: 25_000_000,
+    monthlyCredits: 20_000_000,
   },
   ultra: {
     priceCents: 9999,
-    monthlyCredits: 130_000_000,
+    monthlyCredits: 100_000_000,
   },
 } as const
 
@@ -40,7 +40,7 @@ export function getLandingPlans(): LandingPlan[] {
       name: "Self-host",
       priceLabel: "Free",
       period: "",
-      computeLabel: "Bring your own LLM keys",
+      computeLabel: "Bring your own model keys",
       desc: "Run Scopy on your infrastructure without limits.",
       features: [
         "Unlimited pull requests",
@@ -56,8 +56,8 @@ export function getLandingPlans(): LandingPlan[] {
       name: "Premium",
       priceLabel: formatPlanPriceAmount(HOSTED_PLANS.premium.priceCents),
       period: "/mo",
-      computeLabel: `${premiumCompute} of compute included`,
-      desc: "Hosted option for teams who start their journey.",
+      computeLabel: `${premiumCompute} of review usage included`,
+      desc: "Hosted Scopy for teams getting started.",
       features: [
         "Unlimited repositories",
         "Team workspace management",
@@ -72,11 +72,11 @@ export function getLandingPlans(): LandingPlan[] {
       name: "Ultra",
       priceLabel: formatPlanPriceAmount(HOSTED_PLANS.ultra.priceCents),
       period: "/mo",
-      computeLabel: `${ultraCompute} of compute included`,
-      desc: "More monthly compute for teams that ship fast.",
+      computeLabel: `${ultraCompute} of review usage included`,
+      desc: "More included usage for teams that ship fast.",
       features: [
         "Everything in Premium",
-        "More than 5× monthly compute",
+        "Higher monthly review usage",
         "Priority support",
       ],
       cta: "Get started",

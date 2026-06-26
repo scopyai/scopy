@@ -1,47 +1,26 @@
 # Scopy
 
-Scopy is an open-source AI code review tool for GitHub pull requests.
+Scopy is an open-source AI code reviewer.
 
-It connects to GitHub, watches enabled repositories, reviews pull request diffs with an AI review engine, posts findings back to GitHub, and tracks review activity in a product dashboard.
+It reviews understands repository context, finds bugs and gives teams a dashboard for to review statistics and usage.
 
-## Monorepo
+## Features
 
-- `apps/web`: TanStack Start, React, shadcn/ui, React Query, Eden treaty
-- `apps/api`: Elysia, Better Auth, Drizzle, PostgreSQL, Graphile Worker
-- `apps/tools`: repository analysis, diff context, symbol lookup, text search, and semantic indexing utilities
-- `apps/landing`: marketing site
-- `packages/ui`: shared shadcn/ui components
+- **Pull request reviews**: most obvious one: scopy analyzes diffs and leaves focused feedback directly on GitHub (only, yet) pull requests.
+- **Custom review rules**: Describe team standards in plain English and let Scopy flag pull requests that break them.
+- **Repository controls**: Choose which repositories Scopy watches and tune when reviews should run.
+- **Team workspaces**: Manage repositories, billing, and teammates from a dashboard.
+- **Usage analytics**: Track review activity and usage across your workspace.
 
-Scopy developer and product docs live in the separate [`scopyai/docs`](https://github.com/scopyai/docs) repository and are structured for Mintlify.
+## Self-hosting
 
-## Quickstart
+Scopy can be easily self-hosted for ones who are not afraid of setup and want to have more granular control over the data.
 
-```bash
-pnpm install
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-pnpm dev
-```
+For deployment, configuration and development instructions, see the [documentation](https://docs.scopy.dev).
 
-Default local URLs:
+## Scopy Cloud
 
-- Web app: `http://localhost:3000`
-- API: `http://localhost:3001`
-- Landing app: `http://localhost:3002`
+By far the easiest way to to start using Scopy. Connect GitHub, choose the repositories you want reviewed, and Scopy will start catching bugs in your next PR.
 
-## Common Commands
-
-```bash
-pnpm typecheck
-pnpm build
-pnpm --filter api test
-pnpm --filter tools test
-```
-
-## Development Rules
-
-- Use React Query for frontend data fetching.
-- Use the Eden treaty client from `apps/web/src/lib/api.ts`.
-- Import API types from the `api` workspace package.
-- Prefer shared shadcn/ui components from `@workspace/ui`.
-- Add shadcn/ui components with `pnpm dlx shadcn@latest add <component> -c apps/web`.
+- [Dashboard](https://app.scopy.dev)
+- [More documentation](https://docs.scopy.dev)
