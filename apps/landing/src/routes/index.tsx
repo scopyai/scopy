@@ -248,8 +248,7 @@ function Pricing() {
         <div className="l-price-header">
           <h2 className="l-price-title">Simple usage-based pricing</h2>
           <p className="l-price-sub">
-            Pay for hosted Scopy, get the same amount as review usage. No
-            per-seat pricing.
+            Hosted Scopy includes monthly review usage with no per-seat pricing.
           </p>
         </div>
 

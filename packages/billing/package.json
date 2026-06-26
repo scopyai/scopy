@@ -1,0 +1,12 @@
+{
+  "name": "@workspace/billing",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./plans": {
+      "types": "./src/plans.ts",
+      "default": "./src/plans.ts"
+    }
+  }
+}

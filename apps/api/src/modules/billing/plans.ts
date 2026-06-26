@@ -1,35 +1,23 @@
 import { env } from "../../env"
+import {
+  ENTERPRISE_BILLING_PLAN,
+  PREMIUM_BILLING_PLAN,
+  PUBLIC_BILLING_PLANS,
+  ULTRA_BILLING_PLAN,
+} from "@workspace/billing/plans"
 
 export const billingPlans = [
   {
-    slug: "premium",
-    name: "Premium",
-    billingPeriod: "monthly",
-    price: 1999,
-    currency: "USD",
-    monthlyCredits: 20_000_000,
+    ...PREMIUM_BILLING_PLAN,
     productId: env.CREEM_PREMIUM_PRODUCT_ID,
-    contactSales: false,
   },
   {
-    slug: "ultra",
-    name: "Ultra",
-    billingPeriod: "monthly",
-    price: 9999,
-    currency: "USD",
-    monthlyCredits: 100_000_000,
+    ...ULTRA_BILLING_PLAN,
     productId: env.CREEM_ULTRA_PRODUCT_ID,
-    contactSales: false,
   },
   {
-    slug: "enterprise",
-    name: "Enterprise",
-    billingPeriod: "custom",
-    price: null,
-    currency: null,
-    monthlyCredits: null,
+    ...ENTERPRISE_BILLING_PLAN,
     productId: null,
-    contactSales: true,
   },
 ] as const
 
@@ -58,6 +46,4 @@ export const getPlanByProductId = (productId: string) =>
 export const getMonthlyAllowance = (tier: WorkspaceBillingTier) =>
   isPaidTier(tier) ? getPurchasablePlan(tier)?.monthlyCredits ?? 0 : 0
 
-export const publicBillingPlans = billingPlans.map(
-  ({ productId: _productId, ...plan }) => plan,
-)
+export const publicBillingPlans = PUBLIC_BILLING_PLANS
