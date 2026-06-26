@@ -52,6 +52,7 @@ export type PreparedRepositoryContext = {
   contextId: string
   baseSha: string
   architectureImpact: z.infer<typeof repositoryContextDecisionSchema>
+  billingGeneration?: unknown
 }
 
 const toolText = (text: string, maxBytes = 90_000) => {
@@ -469,7 +470,7 @@ const generateRepositoryContext = async ({
 
   if (!saved) throw new Error("Failed to save repository context")
   await recorder.writeJson("context/repository-context-db-row.json", saved)
-  return saved
+  return { saved, billingGeneration: generation }
 }
 
 export const prepareRepositoryContextForReview = async ({
@@ -538,7 +539,7 @@ export const prepareRepositoryContextForReview = async ({
   })
 
   if (shouldGenerate) {
-    const saved = await generateRepositoryContext({
+    const generated = await generateRepositoryContext({
       repo,
       pullRequest,
       repositoryPath: baseRepositoryPath,
@@ -553,16 +554,17 @@ export const prepareRepositoryContextForReview = async ({
     })
     await recorder.appendEvent("repository_context.prepare.completed", {
       source: "generated",
-      contextId: saved.id,
-      baseSha: saved.baseSha,
+      contextId: generated.saved.id,
+      baseSha: generated.saved.baseSha,
     })
     return {
-      markdown: saved.markdown,
-      summary: saved.summary,
+      markdown: generated.saved.markdown,
+      summary: generated.saved.summary,
       source: "generated",
-      contextId: saved.id,
-      baseSha: saved.baseSha,
+      contextId: generated.saved.id,
+      baseSha: generated.saved.baseSha,
       architectureImpact,
+      billingGeneration: generated.billingGeneration,
     }
   }
 
