@@ -17,5 +17,5 @@ export default defineConfig({
     "tree-sitter-rust",
     "tree-sitter-typescript",
   ],
-  noExternal: ["tools"],
+  noExternal: ["tools", "@workspace/billing"],
 })
