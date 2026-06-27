@@ -487,7 +487,7 @@ export const renderReviewSummaryComment = ({
       "",
       "## Findings",
       "",
-      "I could not publish the inline GitHub review comments. Findings are listed here so they are not lost.",
+      "I could not publish all inline GitHub review comments. Findings are listed here so they are not lost.",
       "",
       renderInlineFindingSummary(report),
       "",

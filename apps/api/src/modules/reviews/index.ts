@@ -22,6 +22,7 @@ import {
 } from "../billing/usage"
 import type { PullRequestFile } from "./diff"
 import {
+  annotatePullRequestFilesForReview,
   batchNaturalLanguageLinterFiles,
   countPullRequestChangedLines,
   filterPullRequestFiles,
@@ -279,12 +280,20 @@ export const runReviewAgent = async ({
     reviewConfig.pathIncludePatterns,
     reviewConfig.pathExcludePatterns
   )
-  const diff = serializePullRequestFiles(filteredFiles)
+  const visibleFiles = annotatePullRequestFilesForReview(
+    files,
+    reviewConfig.pathIncludePatterns,
+    reviewConfig.pathExcludePatterns
+  )
+  const omittedFiles = visibleFiles.filter((file) => file.omittedReason)
+  const diff = serializePullRequestFiles(visibleFiles)
   const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)
   const diffChangedLineCount = countPullRequestChangedLines(filteredFiles)
   await recorder.writeJson("review-config.json", reviewConfig)
   await recorder.writeJson("github-files.json", files)
   await recorder.writeJson("filtered-files.json", filteredFiles)
+  await recorder.writeJson("visible-files.json", visibleFiles)
+  await recorder.writeJson("omitted-files.json", omittedFiles)
   await recorder.writeText("context/diff.md", diff)
   await recorder.writeText("context/unified.diff", unifiedDiff)
   logger.info("Review agent stage completed", {
@@ -292,18 +301,31 @@ export const runReviewAgent = async ({
     stage: "diff",
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
+    omittedFileCount: omittedFiles.length,
     diffChangedLineCount,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "diff",
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
+    omittedFileCount: omittedFiles.length,
     diffChangedLineCount,
   })
 
   const skipReason =
     filteredFiles.length === 0
-      ? "No reviewable changes matched this repository's path filters."
+      ? [
+          "No reviewable file contents matched this repository's path filters.",
+          ...(omittedFiles.length > 0
+            ? [
+                "",
+                "Omitted changed files:",
+                ...omittedFiles.map(
+                  (file) => `- ${file.filename}: ${file.omittedReason}`
+                ),
+              ]
+            : []),
+        ].join("\n")
       : getDiffSkipReason(
           diffChangedLineCount,
           reviewConfig.maxReviewChangedLines
@@ -1237,7 +1259,7 @@ ${affectedSymbols}`
       inlineCommentCount: number
       event: PullRequestReviewEvent
     }
-    let inlineReview: PublishedInlineReview | null = null
+    const inlineReviews: PublishedInlineReview[] = []
     try {
       const bugFindings = finalReport.findings.filter(
         (finding) => finding.source !== "natural_language_linter"
@@ -1245,7 +1267,6 @@ ${affectedSymbols}`
       const lintFindings = finalReport.findings.filter(
         (finding) => finding.source === "natural_language_linter"
       )
-      const inlineReviews: PublishedInlineReview[] = []
 
       if (bugFindings.length > 0) {
         const bugReview = await publishPullRequestReview({
@@ -1269,18 +1290,6 @@ ${affectedSymbols}`
         })
         if (lintReview) inlineReviews.push(lintReview)
       }
-
-      const lastInlineReview = inlineReviews.at(-1)
-      inlineReview = lastInlineReview
-        ? {
-            reviewId: lastInlineReview.reviewId,
-            event: lastInlineReview.event,
-            inlineCommentCount: inlineReviews.reduce(
-              (total, review) => total + review.inlineCommentCount,
-              0
-            ),
-          }
-        : null
     } catch (error) {
       inlineReviewPublishError =
         error instanceof Error
@@ -1299,6 +1308,11 @@ ${affectedSymbols}`
       await recorder.appendEvent("inline_review.failed", {
         message: inlineReviewPublishError,
         findings: finalReport.findings.length,
+        publishedInlineReviewCount: inlineReviews.length,
+        publishedInlineCommentCount: inlineReviews.reduce(
+          (total, review) => total + review.inlineCommentCount,
+          0
+        ),
       })
       publishedReport = renderReviewSummaryComment({
         report: finalReport,
@@ -1325,6 +1339,17 @@ ${affectedSymbols}`
         })
       }
     }
+    const lastInlineReview = inlineReviews.at(-1)
+    const inlineReview = lastInlineReview
+      ? {
+          reviewId: lastInlineReview.reviewId,
+          event: lastInlineReview.event,
+          inlineCommentCount: inlineReviews.reduce(
+            (total, review) => total + review.inlineCommentCount,
+            0
+          ),
+        }
+      : null
     if (inlineReview) {
       reviewId = inlineReview.reviewId
       reviewEvent = inlineReview.event
