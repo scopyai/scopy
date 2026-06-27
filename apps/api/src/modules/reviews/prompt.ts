@@ -345,6 +345,26 @@ export const findingLabel = (finding: ReviewFinding) =>
     ? "LINTING"
     : finding.severity.toUpperCase()
 
+const splitFindings = (findings: ReviewFinding[]) => ({
+  bugFindings: findings.filter(
+    (finding) => finding.source !== "natural_language_linter"
+  ),
+  lintFindings: findings.filter(
+    (finding) => finding.source === "natural_language_linter"
+  ),
+})
+
+const renderFindingDetails = (finding: ReviewFinding) =>
+  [
+    `### [${findingLabel(finding)}] ${finding.title}`,
+    "",
+    `Location: \`${finding.file}:${finding.startLine}-${finding.endLine}\``,
+    `Confidence: ${Math.round(finding.confidence * 100)}%`,
+    "",
+    finding.body,
+    "",
+  ].join("\n")
+
 export const renderReviewReport = (report: ReviewReport) => {
   const sections = [
     "## Review summary",
@@ -364,16 +384,23 @@ export const renderReviewReport = (report: ReviewReport) => {
   if (report.findings.length === 0) {
     sections.push("No actionable findings.")
   } else {
-    for (const finding of report.findings) {
+    const { bugFindings, lintFindings } = splitFindings(report.findings)
+    if (bugFindings.length > 0) {
+      sections.push("Bug findings are listed first, ordered by severity.", "")
+      for (const finding of bugFindings) {
+        sections.push(renderFindingDetails(finding))
+      }
+    }
+    if (lintFindings.length > 0) {
       sections.push(
-        `### [${findingLabel(finding)}] ${finding.title}`,
+        "## Linting rule violations",
         "",
-        `Location: \`${finding.file}:${finding.startLine}-${finding.endLine}\``,
-        `Confidence: ${Math.round(finding.confidence * 100)}%`,
-        "",
-        finding.body,
+        "The findings below come from configured natural-language linting rules.",
         ""
       )
+      for (const finding of lintFindings) {
+        sections.push(renderFindingDetails(finding))
+      }
     }
   }
 
@@ -397,12 +424,27 @@ const renderInlineFindingSummary = (report: ReviewReport) => {
     return "No actionable inline findings."
   }
 
-  return report.findings
-    .map(
-      (finding) =>
-        `- [${findingLabel(finding)}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``
+  const renderFindingLine = (finding: ReviewFinding) =>
+    `- [${findingLabel(finding)}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``
+  const { bugFindings, lintFindings } = splitFindings(report.findings)
+  const sections: string[] = []
+
+  if (bugFindings.length > 0) {
+    sections.push(
+      "Bug findings:",
+      ...bugFindings.map((finding) => renderFindingLine(finding))
     )
-    .join("\n")
+  }
+
+  if (lintFindings.length > 0) {
+    sections.push(
+      ...(sections.length > 0 ? [""] : []),
+      "Linting rule violations:",
+      ...lintFindings.map((finding) => renderFindingLine(finding))
+    )
+  }
+
+  return sections.join("\n")
 }
 
 export const renderReviewSummaryComment = ({

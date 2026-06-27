@@ -267,6 +267,7 @@ export const publishPullRequestReview = async ({
   headSha,
   findings,
   event = "COMMENT",
+  body = "",
 }: {
   repo: Repository
   installationId: string
@@ -274,6 +275,7 @@ export const publishPullRequestReview = async ({
   headSha: string
   findings: ReviewFinding[]
   event?: PullRequestReviewEvent
+  body?: string
 }) => {
   if (findings.length === 0) {
     return null
@@ -300,7 +302,7 @@ export const publishPullRequestReview = async ({
       pull_number: pullRequestNumber,
       review_id: review.data.id,
       event,
-      body: "",
+      body,
     },
   )
 

@@ -952,11 +952,13 @@ ${affectedSymbols}`
     const findings: ReviewReport["findings"] = []
     for (let offset = 0; offset < batches.length; offset += 4) {
       findings.push(
-        ...(await Promise.all(
-          batches
-            .slice(offset, offset + 4)
-            .map((batch, index) => runBatch(batch, offset + index))
-        )).flat()
+        ...(
+          await Promise.all(
+            batches
+              .slice(offset, offset + 4)
+              .map((batch, index) => runBatch(batch, offset + index))
+          )
+        ).flat()
       )
     }
 
@@ -1111,12 +1113,12 @@ ${affectedSymbols}`
   const validCandidateEntries = candidateReport.findings
     .map((finding, index) => ({ finding, index }))
     .filter((entry) => reportValidation.findings[entry.index]?.valid)
-  const validCandidateFindings = validCandidateEntries.map(
-    (entry) => entry.finding
-  )
-  const validLinterFindings = validCandidateFindings.filter(
-    (finding) => finding.source === "natural_language_linter"
-  )
+  const validMainFindings = validCandidateEntries
+    .filter((entry) => entry.index < generatedFindingCount)
+    .map((entry, order) => ({ finding: entry.finding, order }))
+  const validLinterFindings = validCandidateEntries
+    .filter((entry) => entry.index >= generatedFindingCount)
+    .map((entry) => entry.finding)
   const meaningfulTokens = (text: string) =>
     new Set(
       text
@@ -1128,39 +1130,48 @@ ${affectedSymbols}`
           token.length > 3 && token.endsWith("s") ? token.slice(0, -1) : token
         )
     )
-  const shouldPreferLinterFinding = (
-    finding: ReviewReport["findings"][number]
+  const overlap = (
+    first: ReviewReport["findings"][number],
+    second: ReviewReport["findings"][number]
+  ) =>
+    first.file === second.file &&
+    first.startLine <= second.endLine &&
+    second.startLine <= first.endLine
+  const tokenOverlapScore = (first: Set<string>, second: Set<string>) => {
+    if (first.size === 0 || second.size === 0) return 0
+    const shared = [...first].filter((token) => second.has(token)).length
+    return shared / Math.min(first.size, second.size)
+  }
+  const tokensForFinding = (finding: ReviewReport["findings"][number]) =>
+    new Set([
+      ...meaningfulTokens(finding.title),
+      ...meaningfulTokens(finding.body),
+    ])
+  const shouldDropLinterFinding = (
+    linterFinding: ReviewReport["findings"][number]
   ) => {
-    if (finding.source === "natural_language_linter") return false
-    if (finding.severity !== "low") return false
-    const titleTokens = meaningfulTokens(finding.title)
-    const bodyTokens = meaningfulTokens(finding.body)
-    return validLinterFindings.some((linterFinding) => {
-      if (linterFinding.file !== finding.file) return false
-      if (
-        linterFinding.endLine < finding.startLine ||
-        linterFinding.startLine > finding.endLine
-      ) {
-        return false
-      }
-      const linterTokens = new Set([
-        ...meaningfulTokens(linterFinding.title),
-        ...meaningfulTokens(linterFinding.body),
-      ])
-      const shared = [...new Set([...titleTokens, ...bodyTokens])].filter((token) =>
-        linterTokens.has(token)
-      )
-      return shared.length >= 2
+    const linterTokens = tokensForFinding(linterFinding)
+    return validMainFindings.some(({ finding }) => {
+      if (!overlap(linterFinding, finding)) return false
+      return tokenOverlapScore(linterTokens, tokensForFinding(finding)) >= 0.7
     })
   }
+  const severityRank = { critical: 0, high: 1, medium: 2, low: 3 }
   const finalReport: ReviewReport = {
     ...candidateReport,
-    findings: validCandidateEntries
-      .filter(
-        ({ finding, index }) =>
-          index >= generatedFindingCount || !shouldPreferLinterFinding(finding)
-      )
-      .map((entry) => entry.finding),
+    findings: [
+      ...validMainFindings
+        .sort(
+          (first, second) =>
+            severityRank[first.finding.severity] -
+              severityRank[second.finding.severity] ||
+            first.order - second.order
+        )
+        .map((entry) => entry.finding),
+      ...validLinterFindings.filter(
+        (finding) => !shouldDropLinterFinding(finding)
+      ),
+    ],
   }
   await recorder.writeJson(
     "candidate-review-report-validation.json",
@@ -1221,19 +1232,55 @@ ${affectedSymbols}`
   let inlineCommentCount: number | undefined
   let inlineReviewPublishError: string | undefined
   if (finalReport.findings.length > 0) {
-    let inlineReview: {
+    type PublishedInlineReview = {
       reviewId: number
       inlineCommentCount: number
       event: PullRequestReviewEvent
-    } | null = null
+    }
+    let inlineReview: PublishedInlineReview | null = null
     try {
-      inlineReview = await publishPullRequestReview({
-        repo: repository,
-        installationId,
-        pullRequestNumber: pullRequest.number,
-        headSha: pullRequest.headSha,
-        findings: finalReport.findings,
-      })
+      const bugFindings = finalReport.findings.filter(
+        (finding) => finding.source !== "natural_language_linter"
+      )
+      const lintFindings = finalReport.findings.filter(
+        (finding) => finding.source === "natural_language_linter"
+      )
+      const inlineReviews: PublishedInlineReview[] = []
+
+      if (bugFindings.length > 0) {
+        const bugReview = await publishPullRequestReview({
+          repo: repository,
+          installationId,
+          pullRequestNumber: pullRequest.number,
+          headSha: pullRequest.headSha,
+          findings: bugFindings,
+        })
+        if (bugReview) inlineReviews.push(bugReview)
+      }
+
+      if (lintFindings.length > 0) {
+        const lintReview = await publishPullRequestReview({
+          repo: repository,
+          installationId,
+          pullRequestNumber: pullRequest.number,
+          headSha: pullRequest.headSha,
+          findings: lintFindings,
+          body: "Linting rule violations from configured natural-language rules:",
+        })
+        if (lintReview) inlineReviews.push(lintReview)
+      }
+
+      const lastInlineReview = inlineReviews.at(-1)
+      inlineReview = lastInlineReview
+        ? {
+            reviewId: lastInlineReview.reviewId,
+            event: lastInlineReview.event,
+            inlineCommentCount: inlineReviews.reduce(
+              (total, review) => total + review.inlineCommentCount,
+              0
+            ),
+          }
+        : null
     } catch (error) {
       inlineReviewPublishError =
         error instanceof Error
