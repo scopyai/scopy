@@ -1,6 +1,7 @@
 import { Badge } from "@workspace/ui/components/badge"
 import { Separator } from "@workspace/ui/components/separator"
 import { Switch } from "@workspace/ui/components/switch"
+import { NaturalLanguageLinterPanel } from "@/components/repositories/natural-language-linter-panel"
 import { PatternListInput } from "@/components/repositories/pattern-list-input"
 import { MaxReviewChangedLinesInput } from "@/components/repositories/max-review-changed-lines-input"
 import { SettingLabelRow } from "@/components/repositories/setting-label-row"
@@ -11,6 +12,7 @@ export type ReviewConfigValues = {
   baseBranchPatterns: string[]
   pathIncludePatterns: string[]
   pathExcludePatterns: string[]
+  naturalLanguageRules: string[]
   maxReviewChangedLines: number
 }
 
@@ -128,6 +130,12 @@ export function ReviewSettingsFields({
           scopeBadge={scopeBadge("maxReviewChangedLines")}
         />
       </SettingsSection>
+
+      <NaturalLanguageLinterPanel
+        rules={effectiveValue("naturalLanguageRules")}
+        onChange={(value) => onChange("naturalLanguageRules", value)}
+        disabled={controlDisabled(true)}
+      />
     </div>
   )
 }

@@ -6,6 +6,7 @@ export type ReviewConfigUpdate = {
   baseBranchPatterns?: string[]
   pathIncludePatterns?: string[]
   pathExcludePatterns?: string[]
+  naturalLanguageRules?: string[]
   maxReviewChangedLines?: number
 }
 

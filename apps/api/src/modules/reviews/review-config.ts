@@ -5,6 +5,7 @@ export type ReviewConfigValues = {
   baseBranchPatterns: string[]
   pathIncludePatterns: string[]
   pathExcludePatterns: string[]
+  naturalLanguageRules: string[]
   maxReviewChangedLines: number
 }
 
@@ -17,10 +18,12 @@ export const defaultWorkspaceReviewConfig: ReviewConfigValues = {
   baseBranchPatterns: ["main", "master"],
   pathIncludePatterns: [],
   pathExcludePatterns: ["**/*.json"],
+  naturalLanguageRules: [],
   maxReviewChangedLines: 15_000,
 }
 
 const patternSchema = z.string().trim().min(1)
+const naturalLanguageRuleSchema = z.string().trim().min(1).max(2_000)
 const maxReviewChangedLinesSchema = z.number().int().min(1).max(100_000)
 
 export const workspaceReviewConfigUpdateSchema = z.object({
@@ -28,6 +31,7 @@ export const workspaceReviewConfigUpdateSchema = z.object({
   baseBranchPatterns: z.array(patternSchema).min(1).optional(),
   pathIncludePatterns: z.array(patternSchema).optional(),
   pathExcludePatterns: z.array(patternSchema).optional(),
+  naturalLanguageRules: z.array(naturalLanguageRuleSchema).optional(),
   maxReviewChangedLines: maxReviewChangedLinesSchema.optional(),
 })
 
@@ -36,6 +40,7 @@ export const repositoryReviewConfigUpdateSchema = z.object({
   baseBranchPatterns: z.array(patternSchema).min(1).optional(),
   pathIncludePatterns: z.array(patternSchema).optional(),
   pathExcludePatterns: z.array(patternSchema).optional(),
+  naturalLanguageRules: z.array(naturalLanguageRuleSchema).optional(),
   maxReviewChangedLines: maxReviewChangedLinesSchema.optional(),
 })
 
@@ -53,6 +58,9 @@ export const resolveReviewConfig = (
       repositoryOverrides?.pathIncludePatterns ?? defaults.pathIncludePatterns,
     pathExcludePatterns:
       repositoryOverrides?.pathExcludePatterns ?? defaults.pathExcludePatterns,
+    naturalLanguageRules:
+      repositoryOverrides?.naturalLanguageRules ??
+      defaults.naturalLanguageRules,
     maxReviewChangedLines:
       repositoryOverrides?.maxReviewChangedLines ??
       defaults.maxReviewChangedLines,
@@ -101,6 +109,14 @@ export const normalizeReviewConfigOverrides = (
     )
       ? null
       : overrides.pathExcludePatterns,
+  naturalLanguageRules:
+    overrides.naturalLanguageRules !== null &&
+    valuesEqual(
+      overrides.naturalLanguageRules,
+      workspaceDefaults.naturalLanguageRules
+    )
+      ? null
+      : overrides.naturalLanguageRules,
   maxReviewChangedLines:
     overrides.maxReviewChangedLines !== null &&
     valuesEqual(

@@ -1,7 +1,7 @@
 import type { repository } from "../../db/schema"
 import { createGitHubApp } from "../github/service"
 import type { PullRequestFile } from "./diff"
-import type { ReviewFinding } from "./prompt"
+import { findingLabel, type ReviewFinding } from "./prompt"
 
 type Repository = typeof repository.$inferSelect
 type PullRequestReviewComment = {
@@ -203,9 +203,6 @@ export const reviewFailedBody =
 export const reviewBalanceBlockedBody =
   "I cannot start this review because this workspace has no remaining usage balance. Please update billing or wait for the next allowance reset."
 
-const severityLabel = (severity: ReviewFinding["severity"]) =>
-  severity.toUpperCase()
-
 const renderFixPrompt = (finding: ReviewFinding) => {
   const prompt = [
     "Fix the following issue found in this pull request.",
@@ -238,7 +235,7 @@ const renderFixPrompt = (finding: ReviewFinding) => {
 
 export const renderInlineReviewComment = (finding: ReviewFinding) =>
   [
-    `**[${severityLabel(finding.severity)}] ${finding.title}**`,
+    `**[${findingLabel(finding)}] ${finding.title}**`,
     "",
     finding.body,
     "",
@@ -270,6 +267,7 @@ export const publishPullRequestReview = async ({
   headSha,
   findings,
   event = "COMMENT",
+  body = "",
 }: {
   repo: Repository
   installationId: string
@@ -277,6 +275,7 @@ export const publishPullRequestReview = async ({
   headSha: string
   findings: ReviewFinding[]
   event?: PullRequestReviewEvent
+  body?: string
 }) => {
   if (findings.length === 0) {
     return null
@@ -303,7 +302,7 @@ export const publishPullRequestReview = async ({
       pull_number: pullRequestNumber,
       review_id: review.data.id,
       event,
-      body: "",
+      body,
     },
   )
 

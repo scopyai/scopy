@@ -20,7 +20,10 @@ import {
   calculateVectorWriteCostMicrocents,
   resolveOpenRouterGenerationCost,
 } from "../billing/usage"
+import type { PullRequestFile } from "./diff"
 import {
+  annotatePullRequestFilesForReview,
+  batchNaturalLanguageLinterFiles,
   countPullRequestChangedLines,
   filterPullRequestFiles,
   getDiffSkipReason,
@@ -38,7 +41,10 @@ import {
 import { validateReviewReportEvidence } from "./evidence"
 import {
   buildMainReviewPrompt,
+  buildNaturalLanguageLinterPrompt,
   mainReviewAgentInstructions,
+  naturalLanguageLinterInstructions,
+  naturalLanguageLinterOutputSchema,
   renderAffectedSymbols,
   renderReviewSummaryComment,
   renderSemanticCoverage,
@@ -274,12 +280,20 @@ export const runReviewAgent = async ({
     reviewConfig.pathIncludePatterns,
     reviewConfig.pathExcludePatterns
   )
-  const diff = serializePullRequestFiles(filteredFiles)
+  const visibleFiles = annotatePullRequestFilesForReview(
+    files,
+    reviewConfig.pathIncludePatterns,
+    reviewConfig.pathExcludePatterns
+  )
+  const omittedFiles = visibleFiles.filter((file) => file.omittedReason)
+  const diff = serializePullRequestFiles(visibleFiles)
   const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)
   const diffChangedLineCount = countPullRequestChangedLines(filteredFiles)
   await recorder.writeJson("review-config.json", reviewConfig)
   await recorder.writeJson("github-files.json", files)
   await recorder.writeJson("filtered-files.json", filteredFiles)
+  await recorder.writeJson("visible-files.json", visibleFiles)
+  await recorder.writeJson("omitted-files.json", omittedFiles)
   await recorder.writeText("context/diff.md", diff)
   await recorder.writeText("context/unified.diff", unifiedDiff)
   logger.info("Review agent stage completed", {
@@ -287,18 +301,31 @@ export const runReviewAgent = async ({
     stage: "diff",
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
+    omittedFileCount: omittedFiles.length,
     diffChangedLineCount,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "diff",
     fetchedFileCount: files.length,
     filteredFileCount: filteredFiles.length,
+    omittedFileCount: omittedFiles.length,
     diffChangedLineCount,
   })
 
   const skipReason =
     filteredFiles.length === 0
-      ? "No reviewable changes matched this repository's path filters."
+      ? [
+          "No reviewable file contents matched this repository's path filters.",
+          ...(omittedFiles.length > 0
+            ? [
+                "",
+                "Omitted changed files:",
+                ...omittedFiles.map(
+                  (file) => `- ${file.filename}: ${file.omittedReason}`
+                ),
+              ]
+            : []),
+        ].join("\n")
       : getDiffSkipReason(
           diffChangedLineCount,
           reviewConfig.maxReviewChangedLines
@@ -372,6 +399,19 @@ export const runReviewAgent = async ({
     changedFiles: filteredFiles.map((file) => file.filename),
   })
   const parsedDiffFiles = parseUnifiedDiff(unifiedDiff)
+  const changedLinesByFile = new Map<string, number[]>()
+  for (const diffFile of parsedDiffFiles) {
+    const file =
+      diffFile.newPath && diffFile.newPath !== "/dev/null"
+        ? diffFile.newPath
+        : diffFile.oldPath
+    if (!file || file === "/dev/null" || diffFile.status === "deleted") {
+      continue
+    }
+    changedLinesByFile.set(file, [
+      ...new Set(diffFile.hunks.flatMap((hunk) => hunk.touchedNewLines)),
+    ])
+  }
   const diffContext = await buildDiffContext({
     repository: runtime.paths.repositoryPath,
     diffFiles: parsedDiffFiles,
@@ -651,6 +691,7 @@ export const runReviewAgent = async ({
   }
 
   const subagentUsages: unknown[] = []
+  const linterUsages: unknown[] = []
   const suspicionIds = new Set<string>()
   let spawnBatch = 0
   const spawnReviewAgents = tool({
@@ -793,6 +834,171 @@ ${affectedSymbols}`
     },
   })
 
+  const runNaturalLanguageLinter = async (): Promise<
+    ReviewReport["findings"]
+  > => {
+    const rules = reviewConfig.naturalLanguageRules
+    if (rules.length === 0 || filteredFiles.length === 0) {
+      return []
+    }
+
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "natural-language-linter",
+      rules: rules.length,
+      files: filteredFiles.length,
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "natural-language-linter",
+      rules: rules.length,
+      files: filteredFiles.length,
+    })
+
+    const batches = batchNaturalLanguageLinterFiles(filteredFiles)
+    await recorder.writeJson("natural-language-linter/batches.json", {
+      rules,
+      batches: batches.map((batch) => batch.map((file) => file.filename)),
+    })
+
+    const runBatch = async (batch: PullRequestFile[], index: number) => {
+      const batchId = String(index + 1).padStart(2, "0")
+      const assignedFiles = batch.map((file) => file.filename)
+      const fileContext = (
+        await Promise.all(
+          assignedFiles.map(async (file) => {
+            const lines = changedLinesByFile.get(file) ?? []
+            if (lines.length === 0) return `## ${file}\nNo changed head lines.`
+            const startLine = Math.max(1, Math.min(...lines) - 8)
+            const maxLines = Math.min(180, Math.max(...lines) - startLine + 9)
+            try {
+              const excerpt = await readRepositoryFile({
+                repository: runtime.paths.repositoryPath,
+                file,
+                startLine,
+                maxLines,
+              })
+              return `## ${file}\nChanged head lines: ${lines.join(", ")}\n\n${excerpt.content}`
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Could not read file."
+              return `## ${file}\nChanged head lines: ${lines.join(", ")}\nCould not read numbered excerpt: ${message}`
+            }
+          })
+        )
+      ).join("\n\n")
+      const prompt = buildNaturalLanguageLinterPrompt({
+        rules,
+        diff: serializePullRequestFiles(batch),
+        fileContext,
+      })
+      await recorder.writeText(
+        `natural-language-linter/batch-${batchId}/prompt.txt`,
+        prompt
+      )
+
+      const agent = new ToolLoopAgent({
+        model: subagentModel,
+        instructions: naturalLanguageLinterInstructions,
+        tools: {},
+        providerOptions: verifierModelProviderOptions,
+        output: Output.object({
+          schema: naturalLanguageLinterOutputSchema,
+          name: "natural_language_linter_findings",
+          description:
+            "Natural-language rule findings grouped by assigned file",
+        }),
+        maxRetries: 2,
+        onStepFinish: async (step) => recorder.recordStep(step),
+      })
+      const generation = await agent.generate({ prompt })
+      linterUsages.push(generation.totalUsage)
+      await recordLlmBilling(
+        llmBilling,
+        "natural_language_linter",
+        REVIEW_VERIFIER_MODEL,
+        generation
+      )
+
+      const output = naturalLanguageLinterOutputSchema.parse(generation.output)
+      const outputByFile = new Map<string, (typeof output.files)[number]>()
+      const duplicateFiles = new Set<string>()
+      for (const file of output.files) {
+        if (outputByFile.has(file.file)) {
+          duplicateFiles.add(file.file)
+          continue
+        }
+        outputByFile.set(file.file, file)
+      }
+      const missingFiles = assignedFiles.filter(
+        (file) => !outputByFile.has(file)
+      )
+      const extraFiles = output.files
+        .map((file) => file.file)
+        .filter((file) => !assignedFiles.includes(file))
+      await recorder.writeJson(
+        `natural-language-linter/batch-${batchId}/output.json`,
+        {
+          assignedFiles,
+          coverage: {
+            missingFiles,
+            extraFiles,
+            duplicateFiles: [...duplicateFiles],
+          },
+          finishReason: generation.finishReason,
+          usage: generation.totalUsage,
+          providerMetadata: generation.providerMetadata,
+          output,
+          text: generation.text,
+        }
+      )
+
+      const validRuleIndexes = new Set(rules.map((_, ruleIndex) => ruleIndex))
+      return assignedFiles.flatMap((assignedFile) => {
+        const file = outputByFile.get(assignedFile)
+        if (!file) return []
+        return file.findings
+          .filter((finding) => validRuleIndexes.has(finding.ruleIndex))
+          .map((finding) => ({
+            severity: "low" as const,
+            source: "natural_language_linter" as const,
+            file: file.file,
+            startLine: finding.startLine,
+            endLine: finding.endLine,
+            title: finding.title,
+            body: `Rule: ${rules[finding.ruleIndex]}\n\n${finding.body}`,
+            confidence: finding.confidence,
+          }))
+      })
+    }
+
+    const findings: ReviewReport["findings"] = []
+    for (let offset = 0; offset < batches.length; offset += 4) {
+      findings.push(
+        ...(
+          await Promise.all(
+            batches
+              .slice(offset, offset + 4)
+              .map((batch, index) => runBatch(batch, offset + index))
+          )
+        ).flat()
+      )
+    }
+
+    await recorder.writeJson("natural-language-linter/findings.json", findings)
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "natural-language-linter",
+      batches: batches.length,
+      findings: findings.length,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "natural-language-linter",
+      batches: batches.length,
+      findings: findings.length,
+    })
+    return findings
+  }
+
   const mainPrompt = buildMainReviewPrompt({
     title: pullRequest.title,
     body: pullRequest.body,
@@ -892,6 +1098,11 @@ ${affectedSymbols}`
   )
   const mainOutput = mainOutputSchema.parse(mainGeneration.output)
   const generatedReport = reviewReportSchema.parse(mainOutput)
+  const linterFindings = await runNaturalLanguageLinter()
+  const candidateReport: ReviewReport = {
+    ...generatedReport,
+    findings: [...generatedReport.findings, ...linterFindings],
+  }
   await recorder.writeJson("main-agent-output.json", {
     finishReason: mainGeneration.finishReason,
     usage: mainGeneration.totalUsage,
@@ -915,16 +1126,74 @@ ${affectedSymbols}`
   const reportValidation = await validateReviewReportEvidence({
     repository: runtime.paths.repositoryPath,
     diffFiles: parsedDiffFiles,
-    report: generatedReport,
+    report: candidateReport,
   })
-  const invalidEvidenceFindings = generatedReport.findings.filter(
+  const invalidEvidenceFindings = candidateReport.findings.filter(
     (_, index) => !reportValidation.findings[index]?.valid
   )
+  const generatedFindingCount = generatedReport.findings.length
+  const validCandidateEntries = candidateReport.findings
+    .map((finding, index) => ({ finding, index }))
+    .filter((entry) => reportValidation.findings[entry.index]?.valid)
+  const validMainFindings = validCandidateEntries
+    .filter((entry) => entry.index < generatedFindingCount)
+    .map((entry, order) => ({ finding: entry.finding, order }))
+  const validLinterFindings = validCandidateEntries
+    .filter((entry) => entry.index >= generatedFindingCount)
+    .map((entry) => entry.finding)
+  const meaningfulTokens = (text: string) =>
+    new Set(
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(/\s+/)
+        .filter((token) => token.length > 2)
+        .map((token) =>
+          token.length > 3 && token.endsWith("s") ? token.slice(0, -1) : token
+        )
+    )
+  const overlap = (
+    first: ReviewReport["findings"][number],
+    second: ReviewReport["findings"][number]
+  ) =>
+    first.file === second.file &&
+    first.startLine <= second.endLine &&
+    second.startLine <= first.endLine
+  const tokenOverlapScore = (first: Set<string>, second: Set<string>) => {
+    if (first.size === 0 || second.size === 0) return 0
+    const shared = [...first].filter((token) => second.has(token)).length
+    return shared / Math.min(first.size, second.size)
+  }
+  const tokensForFinding = (finding: ReviewReport["findings"][number]) =>
+    new Set([
+      ...meaningfulTokens(finding.title),
+      ...meaningfulTokens(finding.body),
+    ])
+  const shouldDropLinterFinding = (
+    linterFinding: ReviewReport["findings"][number]
+  ) => {
+    const linterTokens = tokensForFinding(linterFinding)
+    return validMainFindings.some(({ finding }) => {
+      if (!overlap(linterFinding, finding)) return false
+      return tokenOverlapScore(linterTokens, tokensForFinding(finding)) >= 0.7
+    })
+  }
+  const severityRank = { critical: 0, high: 1, medium: 2, low: 3 }
   const finalReport: ReviewReport = {
-    ...generatedReport,
-    findings: generatedReport.findings.filter(
-      (_, index) => reportValidation.findings[index]?.valid
-    ),
+    ...candidateReport,
+    findings: [
+      ...validMainFindings
+        .sort(
+          (first, second) =>
+            severityRank[first.finding.severity] -
+              severityRank[second.finding.severity] ||
+            first.order - second.order
+        )
+        .map((entry) => entry.finding),
+      ...validLinterFindings.filter(
+        (finding) => !shouldDropLinterFinding(finding)
+      ),
+    ],
   }
   await recorder.writeJson(
     "candidate-review-report-validation.json",
@@ -940,7 +1209,11 @@ ${affectedSymbols}`
     inlineReview: { kind: "not_needed" },
   })
   await recorder.writeText("rendered-comment.md", renderedReport)
-  const generationUsage = { main: mainUsage, subagents: subagentUsages }
+  const generationUsage = {
+    main: mainUsage,
+    subagents: subagentUsages,
+    naturalLanguageLinter: linterUsages,
+  }
   logger.info("Review agent stage completed", {
     ...context,
     stage: "generation",
@@ -950,6 +1223,7 @@ ${affectedSymbols}`
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings.length,
     generatedFindings: generatedReport.findings.length,
+    naturalLanguageLinterFindings: linterFindings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
   })
   await recorder.appendEvent("stage.completed", {
@@ -960,6 +1234,7 @@ ${affectedSymbols}`
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings.length,
     generatedFindings: generatedReport.findings.length,
+    naturalLanguageLinterFindings: linterFindings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
   })
 
@@ -979,19 +1254,42 @@ ${affectedSymbols}`
   let inlineCommentCount: number | undefined
   let inlineReviewPublishError: string | undefined
   if (finalReport.findings.length > 0) {
-    let inlineReview: {
+    type PublishedInlineReview = {
       reviewId: number
       inlineCommentCount: number
       event: PullRequestReviewEvent
-    } | null = null
+    }
+    const inlineReviews: PublishedInlineReview[] = []
     try {
-      inlineReview = await publishPullRequestReview({
-        repo: repository,
-        installationId,
-        pullRequestNumber: pullRequest.number,
-        headSha: pullRequest.headSha,
-        findings: finalReport.findings,
-      })
+      const bugFindings = finalReport.findings.filter(
+        (finding) => finding.source !== "natural_language_linter"
+      )
+      const lintFindings = finalReport.findings.filter(
+        (finding) => finding.source === "natural_language_linter"
+      )
+
+      if (bugFindings.length > 0) {
+        const bugReview = await publishPullRequestReview({
+          repo: repository,
+          installationId,
+          pullRequestNumber: pullRequest.number,
+          headSha: pullRequest.headSha,
+          findings: bugFindings,
+        })
+        if (bugReview) inlineReviews.push(bugReview)
+      }
+
+      if (lintFindings.length > 0) {
+        const lintReview = await publishPullRequestReview({
+          repo: repository,
+          installationId,
+          pullRequestNumber: pullRequest.number,
+          headSha: pullRequest.headSha,
+          findings: lintFindings,
+          body: "Linting rule violations from configured natural-language rules:",
+        })
+        if (lintReview) inlineReviews.push(lintReview)
+      }
     } catch (error) {
       inlineReviewPublishError =
         error instanceof Error
@@ -1010,6 +1308,11 @@ ${affectedSymbols}`
       await recorder.appendEvent("inline_review.failed", {
         message: inlineReviewPublishError,
         findings: finalReport.findings.length,
+        publishedInlineReviewCount: inlineReviews.length,
+        publishedInlineCommentCount: inlineReviews.reduce(
+          (total, review) => total + review.inlineCommentCount,
+          0
+        ),
       })
       publishedReport = renderReviewSummaryComment({
         report: finalReport,
@@ -1036,6 +1339,17 @@ ${affectedSymbols}`
         })
       }
     }
+    const lastInlineReview = inlineReviews.at(-1)
+    const inlineReview = lastInlineReview
+      ? {
+          reviewId: lastInlineReview.reviewId,
+          event: lastInlineReview.event,
+          inlineCommentCount: inlineReviews.reduce(
+            (total, review) => total + review.inlineCommentCount,
+            0
+          ),
+        }
+      : null
     if (inlineReview) {
       reviewId = inlineReview.reviewId
       reviewEvent = inlineReview.event
@@ -1133,6 +1447,7 @@ ${affectedSymbols}`
     qdrantIgnoredFiles,
     qdrantLogicalWriteBytes,
     generatedFindings: generatedReport.findings.length,
+    naturalLanguageLinterFindings: linterFindings.length,
     evidenceFilteredFindings: invalidEvidenceFindings.length,
     suspicionDecisions: decisionCounts,
     confirmedFindings: finalReport.findings.length,

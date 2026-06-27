@@ -5,36 +5,33 @@ import { Separator } from "@workspace/ui/components/separator"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { cn } from "@workspace/ui/lib/utils"
 import { SettingsSection } from "@/components/repositories/settings-section"
-import { useNaturalLanguageLinter } from "@/hooks/use-natural-language-linter"
 
 interface NaturalLanguageLinterPanelProps {
-  workspaceId: string
-  repositoryId: string
+  rules: string[]
+  onChange: (rules: string[]) => void
   disabled?: boolean
 }
 
 export function NaturalLanguageLinterPanel({
-  workspaceId,
-  repositoryId,
+  rules,
+  onChange,
   disabled = false,
 }: NaturalLanguageLinterPanelProps) {
-  const { rules, addRule, removeRule } = useNaturalLanguageLinter(
-    workspaceId,
-    repositoryId,
-  )
   const [draft, setDraft] = useState("")
 
   const commitDraft = () => {
     if (disabled) return
     const next = draft.trim()
     if (!next) return
-    addRule(next)
+    if (!rules.includes(next)) {
+      onChange([...rules, next])
+    }
     setDraft("")
   }
 
   const handleRemoveRule = (rule: string) => {
     if (disabled) return
-    removeRule(rule)
+    onChange(rules.filter((item) => item !== rule))
   }
 
   return (

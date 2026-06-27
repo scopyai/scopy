@@ -61,6 +61,7 @@ const selectReviewConfigValues = (
   baseBranchPatterns: config.baseBranchPatterns,
   pathIncludePatterns: config.pathIncludePatterns,
   pathExcludePatterns: config.pathExcludePatterns,
+  naturalLanguageRules: config.naturalLanguageRules,
   maxReviewChangedLines: config.maxReviewChangedLines,
 })
 
@@ -71,6 +72,7 @@ const selectReviewConfigOverrides = (
   baseBranchPatterns: config?.baseBranchPatterns ?? null,
   pathIncludePatterns: config?.pathIncludePatterns ?? null,
   pathExcludePatterns: config?.pathExcludePatterns ?? null,
+  naturalLanguageRules: config?.naturalLanguageRules ?? null,
   maxReviewChangedLines: config?.maxReviewChangedLines ?? null,
 })
 

@@ -8,6 +8,13 @@
       "when": 1782155214051,
       "tag": "0000_swift_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782590400000,
+      "tag": "0001_natural_language_rules",
+      "breakpoints": true
     }
   ]
 }
