@@ -11,7 +11,31 @@ export const reviewFindingSchema = z.object({
   confidence: z.number().min(0).max(1),
 })
 
-export type ReviewFinding = z.infer<typeof reviewFindingSchema>
+export type ReviewFinding = z.infer<typeof reviewFindingSchema> & {
+  source?: "review" | "natural_language_linter"
+}
+
+export const naturalLanguageLinterFindingSchema = z.object({
+  ruleIndex: z.number().int().nonnegative(),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  title: z.string().min(1),
+  body: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+})
+
+export const naturalLanguageLinterOutputSchema = z.object({
+  files: z.array(
+    z.object({
+      file: z.string().min(1),
+      findings: z.array(naturalLanguageLinterFindingSchema),
+    })
+  ),
+})
+
+export type NaturalLanguageLinterOutput = z.infer<
+  typeof naturalLanguageLinterOutputSchema
+>
 
 export const reviewSuspicionSchema = z.object({
   file: z.string().min(1),
@@ -51,7 +75,12 @@ export const reviewReportSchema = z.object({
   findings: z.array(reviewFindingSchema),
 })
 
-export type ReviewReport = z.infer<typeof reviewReportSchema>
+export type ReviewReport = Omit<
+  z.infer<typeof reviewReportSchema>,
+  "findings"
+> & {
+  findings: ReviewFinding[]
+}
 
 export const safePathSegment = (value: string) =>
   value.replace(/[^A-Za-z0-9_.-]/g, "_")
@@ -222,6 +251,18 @@ Rules:
 - For each suspicion return only the most relevant repository-relative file, head-side start and end lines, and a detailed explanation of what might go wrong and in what scenario.
 - Return an empty suspicions array only after thoroughly exploring the assigned area and finding no plausible failure.`
 
+export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.
+
+Rules:
+- Only report violations of the configured natural-language rules. Do not look for general bugs.
+- Evaluate every assigned file against every rule.
+- For each assigned file, return exactly one files entry with the exact repository-relative path.
+- Use findings: [] when a file has no rule violations.
+- Report only concrete violations visible in the provided patch.
+- Every finding must point to a small head-side changed line range in the assigned file.
+- Do not report findings for deleted files or unchanged context lines.
+- ruleIndex must be the zero-based index of the violated rule.`
+
 export const mainReviewAgentInstructions = `Review a pull request for actionable bugs using repository tools and delegated exploration.
 
 You are the central reviewer and the only agent responsible for judgment. First understand the changed architecture, areas, and end-to-end flows. Use spawn_review_agents to delegate focused explorations to cheaper agents. You may call it repeatedly, including follow-up batches based on earlier results.
@@ -274,6 +315,23 @@ ${diff}
 Changed symbol index:
 ${affectedSymbols}`
 
+export const buildNaturalLanguageLinterPrompt = ({
+  rules,
+  diff,
+  fileContext,
+}: {
+  rules: string[]
+  diff: string
+  fileContext: string
+}) => `Natural-language rules:
+${rules.map((rule, index) => `${index}. ${rule}`).join("\n")}
+
+Assigned changed files:
+${diff}
+
+Head-side numbered file excerpts:
+${fileContext}`
+
 const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 1) return "1/5 - extremely unsafe"
   if (score === 2) return "2/5 - unsafe"
@@ -281,6 +339,11 @@ const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 4) return "4/5 - mostly safe"
   return "5/5 - safe"
 }
+
+export const findingLabel = (finding: ReviewFinding) =>
+  finding.source === "natural_language_linter"
+    ? "LINTING"
+    : finding.severity.toUpperCase()
 
 export const renderReviewReport = (report: ReviewReport) => {
   const sections = [
@@ -303,7 +366,7 @@ export const renderReviewReport = (report: ReviewReport) => {
   } else {
     for (const finding of report.findings) {
       sections.push(
-        `### [${finding.severity}] ${finding.title}`,
+        `### [${findingLabel(finding)}] ${finding.title}`,
         "",
         `Location: \`${finding.file}:${finding.startLine}-${finding.endLine}\``,
         `Confidence: ${Math.round(finding.confidence * 100)}%`,
@@ -337,7 +400,7 @@ const renderInlineFindingSummary = (report: ReviewReport) => {
   return report.findings
     .map(
       (finding) =>
-        `- [${finding.severity}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``
+        `- [${findingLabel(finding)}] ${finding.title} at \`${finding.file}:${finding.startLine}-${finding.endLine}\``
     )
     .join("\n")
 }

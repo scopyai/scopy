@@ -37,6 +37,23 @@ export const filterPullRequestFiles = (
 export const countPullRequestChangedLines = (files: PullRequestFile[]) =>
   files.reduce((total, file) => total + file.additions + file.deletions, 0)
 
+export const batchNaturalLanguageLinterFiles = (
+  files: PullRequestFile[],
+  targetSize = 4
+) => {
+  const batches: PullRequestFile[][] = []
+  for (let index = 0; index < files.length; index += targetSize) {
+    batches.push(files.slice(index, index + targetSize))
+  }
+  const last = batches.at(-1)
+  const previous = batches.at(-2)
+  if (last && previous && last.length < 3) {
+    previous.push(...last)
+    batches.pop()
+  }
+  return batches
+}
+
 export const serializePullRequestFiles = (files: PullRequestFile[]) =>
   files
     .map((file) =>
