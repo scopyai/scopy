@@ -55,7 +55,7 @@ function OnboardingTrialPage() {
           <Skeleton className="h-32 w-full rounded-xl" />
         ) : (
           <>
-            {!billing.starterUsed && (
+            {billing.account.tier === "free" && !billing.starterUsed && (
               <StarterCard
                 isOwner={isOwner ?? false}
                 workspaceId={activeWorkspace.id}

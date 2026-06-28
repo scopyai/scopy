@@ -38,6 +38,8 @@ type CreditResetSubscription = {
   periodEnd: Date
 }
 
+const STARTER_CHECKOUT_RESERVATION_TTL_MS = 60 * 60 * 1000
+
 const toDate = (value: Date | string | number, field: string) => {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) {
@@ -65,6 +67,38 @@ const getWorkspace = async (workspaceId: string) =>
     where: eq(workspace.id, workspaceId),
   })) ?? null
 
+const createPendingStarterCheckoutId = (requestId: string) =>
+  `pending:${Date.now()}:${requestId}`
+
+const parsePendingStarterCheckoutId = (value: string | null) => {
+  if (!value?.startsWith("pending:")) return null
+  const parts = value.split(":")
+  if (parts.length === 2) {
+    return { createdAt: null, requestId: parts[1] }
+  }
+  const createdAt = Number(parts[1])
+  if (!Number.isFinite(createdAt)) return null
+  return { createdAt, requestId: parts.slice(2).join(":") }
+}
+
+const hasActiveStarterCheckoutReservation = (value: string | null) => {
+  const pending = parsePendingStarterCheckoutId(value)
+  if (!pending) return Boolean(value)
+  if (!pending.createdAt) return true
+  return Date.now() - pending.createdAt < STARTER_CHECKOUT_RESERVATION_TTL_MS
+}
+
+const matchesStarterCheckoutReservation = (
+  value: string | null,
+  checkoutId: string,
+  requestId: string | null,
+) => {
+  if (!value) return true
+  if (value === checkoutId) return true
+  const pending = parsePendingStarterCheckoutId(value)
+  return Boolean(pending && requestId && pending.requestId === requestId)
+}
+
 const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
   workspaceId: value.id,
   tier: value.billingTier,
@@ -82,7 +116,7 @@ const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
 
 type CreditHistoryRow = {
   id: string
-  type: "usage_week" | "reset" | "revoke"
+  type: "usage_week" | "reset" | "revoke" | "starter_grant"
   amount: number
   balanceAfter: number
   reason: string
@@ -325,6 +359,11 @@ const grantStarter = async (
       : null
   if (!userId) return
   const checkoutId = event.object.id
+  const checkoutRequestId =
+    event.object.request_id ??
+    (typeof event.object.metadata?.starterRequestId === "string"
+      ? event.object.metadata.starterRequestId
+      : null)
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
@@ -332,12 +371,22 @@ const grantStarter = async (
       where: eq(user.id, userId),
     })
     if (!currentUser || currentUser.starterGrantedAt) return
+    if (
+      !matchesStarterCheckoutReservation(
+        currentUser.starterCreemCheckoutId,
+        checkoutId,
+        checkoutRequestId,
+      )
+    ) {
+      return
+    }
 
     await lockWorkspace(tx, workspaceId)
     const currentWorkspace = await tx.query.workspace.findFirst({
       where: eq(workspace.id, workspaceId),
     })
     if (!currentWorkspace) return
+    if (isPaidTier(currentWorkspace.billingTier)) return
 
     const balanceAfter =
       currentWorkspace.creditBalance + env.STARTER_CREDIT_MICRO_USD
@@ -364,6 +413,61 @@ const grantStarter = async (
       .onConflictDoNothing({
         target: workspaceCreditTransaction.idempotencyKey,
       })
+  })
+}
+
+const getEntityId = (value: { id: string } | string | undefined) =>
+  typeof value === "string" ? value : value?.id ?? null
+
+const applyStarterFinancialRevoke = async (
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+) => {
+  const checkoutId = getEntityId(event.object.checkout)
+  if (!checkoutId) return false
+
+  return db.transaction(async (tx) => {
+    const currentUser = await tx.query.user.findFirst({
+      where: eq(user.starterCreemCheckoutId, checkoutId),
+    })
+    if (!currentUser?.starterGrantedAt) return false
+
+    const grantTransaction = await tx.query.workspaceCreditTransaction.findFirst({
+      where: eq(workspaceCreditTransaction.idempotencyKey, `starter:${checkoutId}`),
+    })
+    if (!grantTransaction) return false
+
+    await lockWorkspace(tx, grantTransaction.workspaceId)
+    const currentWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, grantTransaction.workspaceId),
+    })
+    if (!currentWorkspace || isPaidTier(currentWorkspace.billingTier)) return false
+
+    const idempotencyKey = `starter:${checkoutId}:${event.eventType}:revoke`
+    const existing = await tx.query.workspaceCreditTransaction.findFirst({
+      where: eq(workspaceCreditTransaction.idempotencyKey, idempotencyKey),
+    })
+    if (existing) return true
+
+    const revokeAmount = Math.min(
+      currentWorkspace.creditBalance,
+      env.STARTER_CREDIT_MICRO_USD,
+    )
+    const balanceAfter = currentWorkspace.creditBalance - revokeAmount
+    await tx
+      .update(workspace)
+      .set({ creditBalance: balanceAfter, updatedAt: new Date() })
+      .where(eq(workspace.id, currentWorkspace.id))
+
+    await appendTransaction(tx, {
+      workspaceId: currentWorkspace.id,
+      type: "revoke",
+      amount: -revokeAmount,
+      balanceAfter,
+      idempotencyKey,
+      reason: event.eventType,
+      metadata: { userId: currentUser.id, checkoutId },
+    })
+    return true
   })
 }
 
@@ -399,6 +503,8 @@ const getFinancialSubscriptionId = (
 const applyFinancialRevoke = async (
   event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
 ) => {
+  if (await applyStarterFinancialRevoke(event)) return
+
   const subscriptionId = getFinancialSubscriptionId(event)
   if (!subscriptionId) return
 
@@ -533,32 +639,69 @@ export const createStarterCheckout = async (
   email: string,
   requestId: string,
 ) => {
-  const currentUser = await db.query.user.findFirst({
-    where: eq(user.id, userId),
+  const pendingCheckoutId = createPendingStarterCheckoutId(requestId)
+  const currentWorkspace = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
+    const currentUser = await tx.query.user.findFirst({
+      where: eq(user.id, userId),
+    })
+    if (!currentUser) throw new BillingError("User not found", 404)
+    if (
+      currentUser.starterGrantedAt ||
+      hasActiveStarterCheckoutReservation(currentUser.starterCreemCheckoutId)
+    ) {
+      throw new BillingError("Starter already used", 409)
+    }
+
+    await lockWorkspace(tx, workspaceId)
+    const currentWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, workspaceId),
+    })
+    if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
+    if (isPaidTier(currentWorkspace.billingTier)) {
+      throw new BillingError("Workspace already has a billing plan", 409)
+    }
+
+    await tx
+      .update(user)
+      .set({ starterCreemCheckoutId: pendingCheckoutId })
+      .where(eq(user.id, userId))
+
+    return currentWorkspace
   })
-  if (!currentUser) throw new BillingError("User not found", 404)
-  if (currentUser.starterGrantedAt) {
-    throw new BillingError("Starter already used", 409)
-  }
-  const currentWorkspace = await getWorkspace(workspaceId)
-  if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
-  if (isPaidTier(currentWorkspace.billingTier)) {
-    throw new BillingError("Workspace already has a billing plan", 409)
+
+  let checkout: Awaited<ReturnType<typeof creem.checkouts.create>>
+  try {
+    checkout = await creem.checkouts.create({
+      productId: env.CREEM_STARTER_PRODUCT_ID,
+      requestId,
+      customer: { email },
+      successUrl: new URL(
+        `/${encodeURIComponent(currentWorkspace.providerAccountLogin)}/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
+        env.FRONTEND_URL,
+      ).toString(),
+      metadata: { referenceId: workspaceId, userId, starterRequestId: requestId },
+    })
+  } catch (error) {
+    await db
+      .update(user)
+      .set({ starterCreemCheckoutId: null })
+      .where(
+        sql`${user.id} = ${userId} and ${user.starterCreemCheckoutId} = ${pendingCheckoutId}`
+      )
+    throw error
   }
 
-  const checkout = await creem.checkouts.create({
-    productId: env.CREEM_STARTER_PRODUCT_ID,
-    requestId,
-    customer: { email },
-    successUrl: new URL(
-      `/${encodeURIComponent(currentWorkspace.providerAccountLogin)}/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
-      env.FRONTEND_URL,
-    ).toString(),
-    metadata: { referenceId: workspaceId, userId },
-  })
   if (!checkout.checkoutUrl) {
+    await db
+      .update(user)
+      .set({ starterCreemCheckoutId: null })
+      .where(
+        sql`${user.id} = ${userId} and ${user.starterCreemCheckoutId} = ${pendingCheckoutId}`
+      )
     throw new Error("Creem checkout did not include a redirect URL")
   }
+
   return { url: checkout.checkoutUrl }
 }
 
