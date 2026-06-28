@@ -7,6 +7,10 @@
     "./plans": {
       "types": "./src/plans.ts",
       "default": "./src/plans.ts"
+    },
+    "./contact": {
+      "types": "./src/contact.ts",
+      "default": "./src/contact.ts"
     }
   }
 }

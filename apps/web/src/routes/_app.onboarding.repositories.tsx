@@ -11,14 +11,14 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Switch } from "@workspace/ui/components/switch"
 import { Input } from "@workspace/ui/components/input"
-import { CheckIcon, SearchIcon } from "lucide-react"
+import { ArrowRightIcon, SearchIcon } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { useRepositories } from "@/hooks/use-repositories"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { hasSeenOnboardingOverview } from "@/lib/onboarding-flow"
-import { getActiveWorkspaces, getWorkspaceSlug } from "@/lib/workspace-slug"
+import { getActiveWorkspaces } from "@/lib/workspace-slug"
 
 export const Route = createFileRoute("/_app/onboarding/repositories")({
   component: OnboardingRepositoriesPage,
@@ -86,13 +86,7 @@ function OnboardingRepositoriesPage() {
         }),
       ])
 
-      if (activeWorkspace) {
-        navigate({
-          to: "/$workspaceSlug/repositories",
-          params: { workspaceSlug: getWorkspaceSlug(activeWorkspace) },
-          replace: true,
-        })
-      }
+      navigate({ to: "/onboarding/trial", replace: true })
     },
     onError: () => {
       toast.error("Failed to save repository selection")
@@ -131,7 +125,7 @@ function OnboardingRepositoriesPage() {
       <div className="flex min-h-0 w-full min-w-0 max-w-3xl flex-col gap-6">
         <div className="flex shrink-0 flex-col gap-2">
           <p className="text-sm font-medium text-muted-foreground">
-            Step 3 of 3
+            Step 3 of 4
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
             Enable repositories for review
@@ -236,8 +230,8 @@ function OnboardingRepositoriesPage() {
               "Saving..."
             ) : (
               <>
-                <CheckIcon data-icon="inline-start" />
-                Continue to dashboard
+                Continue
+                <ArrowRightIcon data-icon="inline-end" />
               </>
             )}
           </Button>

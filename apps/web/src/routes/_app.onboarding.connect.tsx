@@ -29,7 +29,7 @@ function OnboardingConnectPage() {
     <div className="flex h-full items-center justify-center px-6">
       <ConnectGitHub
         source="onboarding"
-        stepLabel="Step 1 of 3"
+        stepLabel="Step 1 of 4"
         title="Connect your GitHub repositories"
         description="Review starts after the GitHub App is installed on your account or organization. You will choose which repositories to enable next."
       />

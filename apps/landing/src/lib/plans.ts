@@ -1,5 +1,7 @@
 import { env } from "#/env"
+import { contactFounderHref } from "@workspace/billing/contact"
 import {
+  ENTERPRISE_BILLING_PLAN,
   PREMIUM_BILLING_PLAN,
   ULTRA_BILLING_PLAN,
 } from "@workspace/billing/plans"
@@ -19,6 +21,7 @@ export type LandingPlan = {
   href: string
   variant: "ghost" | "solid"
   featured: boolean
+  wide?: boolean
 }
 
 export function getLandingPlans(): LandingPlan[] {
@@ -55,10 +58,10 @@ export function getLandingPlans(): LandingPlan[] {
         "Team workspace management",
         "Email support",
       ],
-      cta: "Get started",
+      cta: "Try for $1",
       href: env.appUrl,
-      variant: "solid",
-      featured: true,
+      variant: "ghost",
+      featured: false,
     },
     {
       name: ULTRA_BILLING_PLAN.name,
@@ -71,10 +74,27 @@ export function getLandingPlans(): LandingPlan[] {
         "Higher monthly review usage",
         "Priority support",
       ],
-      cta: "Get started",
+      cta: "Try for $1",
       href: env.appUrl,
+      variant: "solid",
+      featured: true,
+    },
+    {
+      name: ENTERPRISE_BILLING_PLAN.name,
+      priceLabel: "Custom",
+      period: "",
+      computeLabel: "Tailored usage for your organization",
+      desc: "For teams with custom requirements, higher volume, or dedicated support needs.",
+      features: [
+        "Custom usage & pricing",
+        "Dedicated onboarding",
+        "Priority support & SLAs",
+      ],
+      cta: "Talk to founder",
+      href: contactFounderHref,
       variant: "ghost",
       featured: false,
+      wide: true,
     },
   ]
 }

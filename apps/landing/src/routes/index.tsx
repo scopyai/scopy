@@ -297,7 +297,7 @@ function OpenSource() {
               className="l-btn l-btn-solid"
               {...externalLinkProps(env.appUrl)}
             >
-              Start free
+              Try for $1
               <ArrowRight size={14} />
             </a>
           </div>
@@ -320,7 +320,8 @@ function Pricing() {
         <div className="l-price-header">
           <h2 className="l-price-title">Simple usage-based pricing</h2>
           <p className="l-price-sub">
-            Hosted Scopy includes monthly review usage with no per-seat pricing.
+            Try hosted Scopy for $1, then pick a monthly plan. Review usage
+            included — no per-seat pricing.
           </p>
         </div>
 
@@ -328,7 +329,13 @@ function Pricing() {
           {plans.map((plan) => (
             <div
               key={plan.name}
-              className={plan.featured ? "l-plan l-plan-featured" : "l-plan"}
+              className={
+                plan.featured
+                  ? "l-plan l-plan-featured"
+                  : plan.wide
+                    ? "l-plan l-plan-wide"
+                    : "l-plan"
+              }
             >
               <div className="l-plan-head">
                 <div className="l-plan-name">{plan.name}</div>
@@ -383,7 +390,7 @@ const FAQS = [
   },
   {
     q: "How does billing work?",
-    a: "Billing is managed per workspace. Hosted Scopy plans include review credits, and reviews debit workspace credits based on the actual usage recorded during review runs. This means, you pay only for what you actually utilize, not a fixed monthly fee. Billing changes apply to the selected workspace, not every workspace on your account.",
+    a: "Billing is managed per workspace. You can start with a one-time $1 trial that covers a few pull request reviews. Premium and Ultra are monthly plans with included review usage; reviews debit workspace credits based on actual usage during review runs. Billing changes apply to the selected workspace, not every workspace on your account.",
   },
   {
     q: "Can we self-host Scopy?",
@@ -479,8 +486,7 @@ function FinalCTA() {
     <section className="l-cta l-section">
       <div className="l-wrap">
         <div className="l-cta-inner">
-          <h2 className="l-cta-title">Catch more bugs</h2>
-          <p className="l-cta-sub">Setup usually takes under ten minutes.</p>
+          <h2 className="l-cta-title">Catch more bugs.</h2>
           <div className="l-cta-btns">
             <a
               href={env.githubUrl}

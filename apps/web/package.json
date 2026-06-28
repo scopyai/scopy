@@ -26,6 +26,7 @@
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/react-start": "latest",
     "@tanstack/router-plugin": "^1.132.0",
+    "@workspace/billing": "workspace:*",
     "@workspace/ui": "workspace:*",
     "api": "workspace:*",
     "better-auth": "^1.6.5",

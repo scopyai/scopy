@@ -29,7 +29,7 @@ function BillingSuccessPage() {
       await queryClient.refetchQueries({
         queryKey: billingKeys.all(workspaceId),
       })
-      toast.success("Subscription activated")
+      toast.success("You're all set")
       navigate({
         to: "/$workspaceSlug/billing",
         params: { workspaceSlug },

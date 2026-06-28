@@ -4,6 +4,7 @@ import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { AccountSummary } from "./account-summary"
 import { PlanCards } from "./plan-cards"
+import { StarterCard } from "./starter-card"
 import { CreditHistory } from "./credit-history"
 
 function BillingLoadingSkeleton() {
@@ -70,8 +71,16 @@ export function BillingPage() {
       <AccountSummary
         account={billing.account}
         isOwner={isOwner ?? false}
+        starterUsed={billing.starterUsed}
         workspaceId={selectedWorkspaceId}
       />
+
+      {billing.account.tier === "free" && !billing.starterUsed && (
+        <StarterCard
+          isOwner={isOwner ?? false}
+          workspaceId={selectedWorkspaceId}
+        />
+      )}
 
       <section className="relative flex flex-col gap-6 overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 -top-8 h-48 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/8 via-transparent to-transparent" />
