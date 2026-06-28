@@ -14,7 +14,12 @@ import { LandingFooter, LandingNav } from "#/components/landing-chrome"
 import { env, externalLinkProps } from "#/env"
 import { getLandingPlans } from "#/lib/plans"
 
-export const Route = createFileRoute("/")({ component: Home })
+export const Route = createFileRoute("/")({
+  head: () => ({
+    links: [{ rel: "canonical", href: env.siteUrl }],
+  }),
+  component: Home,
+})
 
 function Home() {
   return (
@@ -48,7 +53,9 @@ function Hero() {
           <h1 className="l-hero-title">Open-source AI code reviewer</h1>
 
           <p className="l-hero-sub">
-            Scopy is an AI code reviewer that understands your repository, catches bugs and improves code quality. Self-host it or run it in the cloud.
+            Scopy is an AI code reviewer that understands your repository,
+            catches bugs and improves code quality. Self-host it or run it in
+            the cloud.
           </p>
 
           <div className="l-hero-ctas">

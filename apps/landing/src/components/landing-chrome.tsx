@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router"
 import { env, externalLinkProps } from "#/env"
 
 export function LandingNav() {
@@ -6,7 +7,12 @@ export function LandingNav() {
       <div className="l-wrap">
         <div className="l-nav-row">
           <a href="/" className="l-logo">
-            <img src="/logo.svg" alt="" className="l-logo-img" aria-hidden="true" />
+            <img
+              src="/logo.svg"
+              alt=""
+              className="l-logo-img"
+              aria-hidden="true"
+            />
             scopy
           </a>
           <div className="l-nav-right">
@@ -17,6 +23,9 @@ export function LandingNav() {
             >
               GitHub
             </a>
+            <Link to="/blog" className="l-nav-a">
+              Blog
+            </Link>
             <a href={env.docsUrl} className="l-nav-a">
               Docs
             </a>
@@ -51,6 +60,9 @@ export function LandingFooter() {
             >
               GitHub
             </a>
+            <Link to="/blog" className="l-footer-a">
+              Blog
+            </Link>
             <a href={env.docsUrl} className="l-footer-a">
               Docs
             </a>

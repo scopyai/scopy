@@ -3,7 +3,8 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router"
 import { env } from "#/env"
 import appCss from "../styles.css?url"
 
-const siteTitle = "Scopy | Open-Source AI Code Reviewer | Catch bugs and improve code quality"
+const siteTitle =
+  "Scopy | Open-Source AI Code Reviewer | Catch bugs and improve code quality"
 const siteDescription =
   "Scopy is an open-source AI code reviewer. Self-host it or use hosted Scopy to catch bugs, enforce review rules and improve code quality."
 const siteUrl = env.siteUrl
@@ -71,7 +72,9 @@ export const Route = createRootRoute({
       { name: "twitter:image", content: `${siteUrl}/logo.svg` },
     ],
     links: [
-      { rel: "canonical", href: siteUrl },
+      // NOTE: canonical is intentionally set per-route (see index/privacy/blog
+      // routes), not here — a root canonical would append to every page and
+      // point them all at the homepage.
       { rel: "icon", href: "/favicon.ico" },
       { rel: "manifest", href: "/manifest.json" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

@@ -5,6 +5,7 @@ import { env, externalLinkProps } from "#/env"
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [{ title: "Terms of Service & Privacy Policy — Scopy" }],
+    links: [{ rel: "canonical", href: `${env.siteUrl}/privacy` }],
   }),
   component: LegalPage,
 })
@@ -15,7 +16,9 @@ function LegalPage() {
       <LandingNav />
       <main className="l-legal">
         <div className="l-wrap l-legal-wrap">
-          <h1 className="l-legal-title">Terms of Service &amp; Privacy Policy</h1>
+          <h1 className="l-legal-title">
+            Terms of Service &amp; Privacy Policy
+          </h1>
           <p className="l-legal-updated">Last updated: June 14, 2026</p>
 
           <div className="l-legal-body">
@@ -26,11 +29,11 @@ function LegalPage() {
               <a href={env.appUrl} {...externalLinkProps(env.appUrl)}>
                 {env.appUrl}
               </a>{" "}
-              and related websites, APIs, and support channels operated by
-              Scopy through scopy.dev (collectively, the &ldquo;Service&rdquo;).
-              Scopy is an open-source AI code review product. If you self-host
-              the Scopy software, your deployment is outside this Agreement
-              unless you separately connect it to Scopy cloud services.
+              and related websites, APIs, and support channels operated by Scopy
+              through scopy.dev (collectively, the &ldquo;Service&rdquo;). Scopy
+              is an open-source AI code review product. If you self-host the
+              Scopy software, your deployment is outside this Agreement unless
+              you separately connect it to Scopy cloud services.
             </p>
 
             <section>
@@ -113,8 +116,8 @@ function LegalPage() {
                   your jurisdiction if higher, to use the Service. The Service
                   is intended for software development and business use. You may
                   not use the Service if you are barred from doing so under
-                  applicable law or if we have previously suspended or terminated
-                  your account for violation of this Agreement.
+                  applicable law or if we have previously suspended or
+                  terminated your account for violation of this Agreement.
                 </p>
               </section>
 
@@ -124,8 +127,8 @@ function LegalPage() {
                   To use the hosted Service, you must create an account. We
                   currently support sign-in through Google OAuth. You are
                   responsible for maintaining the security of the accounts and
-                  credentials you use to access the Service and for all
-                  activity that occurs under your account.
+                  credentials you use to access the Service and for all activity
+                  that occurs under your account.
                 </p>
                 <p>
                   You must provide accurate account information and keep it
@@ -146,8 +149,8 @@ function LegalPage() {
                   review.
                 </p>
                 <p>
-                  Your use of GitHub is also governed by GitHub&apos;s terms
-                  and policies. You may revoke Scopy&apos;s access at any time
+                  Your use of GitHub is also governed by GitHub&apos;s terms and
+                  policies. You may revoke Scopy&apos;s access at any time
                   through GitHub settings, but doing so may prevent the Service
                   from functioning for that workspace.
                 </p>
@@ -216,12 +219,12 @@ function LegalPage() {
               <section>
                 <h2>8. AI-generated output</h2>
                 <p>
-                  Scopy uses large language models and related tools to
-                  generate review comments, summaries, and findings. AI output
-                  may be inaccurate, incomplete, or unsuitable for your
-                  environment. You must review AI-generated output before relying
-                  on it. The Service does not replace human code review,
-                  security review, legal review, or your own release processes.
+                  Scopy uses large language models and related tools to generate
+                  review comments, summaries, and findings. AI output may be
+                  inaccurate, incomplete, or unsuitable for your environment.
+                  You must review AI-generated output before relying on it. The
+                  Service does not replace human code review, security review,
+                  legal review, or your own release processes.
                 </p>
                 <p>
                   We do not claim ownership of AI-generated review output posted
@@ -331,9 +334,8 @@ function LegalPage() {
                   DISCLAIM ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, OR
                   STATUTORY, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY,
                   FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
-                  WE DO NOT WARRANT THAT THE SERVICE WILL BE SECURE, ERROR
-                  FREE, OR THAT AI-GENERATED OUTPUT WILL BE ACCURATE OR
-                  COMPLETE.
+                  WE DO NOT WARRANT THAT THE SERVICE WILL BE SECURE, ERROR FREE,
+                  OR THAT AI-GENERATED OUTPUT WILL BE ACCURATE OR COMPLETE.
                 </p>
                 <p>
                   Some jurisdictions do not allow certain warranty exclusions.
@@ -362,8 +364,8 @@ function LegalPage() {
                 </p>
                 <p>
                   Nothing in this Agreement limits liability that cannot be
-                  limited under applicable law, including liability for fraud
-                  or intentional misconduct.
+                  limited under applicable law, including liability for fraud or
+                  intentional misconduct.
                 </p>
               </section>
 
@@ -382,10 +384,10 @@ function LegalPage() {
               <section>
                 <h2>16. Governing law and disputes</h2>
                 <p>
-                  This Agreement is governed by the laws applicable where
-                  Scopy is operated, without regard to conflict-of-law rules,
-                  except that mandatory consumer protection laws in your country
-                  of residence may apply where they cannot be waived.
+                  This Agreement is governed by the laws applicable where Scopy
+                  is operated, without regard to conflict-of-law rules, except
+                  that mandatory consumer protection laws in your country of
+                  residence may apply where they cannot be waived.
                 </p>
                 <p>
                   Before filing a claim, you agree to contact us at{" "}
@@ -429,18 +431,18 @@ function LegalPage() {
               <section>
                 <h2>1. Scope and roles</h2>
                 <p>
-                  This Privacy Policy explains how Scopy collects, uses,
-                  shares, and protects personal information when you use the
-                  hosted Service, visit our websites, contact support, or
-                  otherwise interact with us online.
+                  This Privacy Policy explains how Scopy collects, uses, shares,
+                  and protects personal information when you use the hosted
+                  Service, visit our websites, contact support, or otherwise
+                  interact with us online.
                 </p>
                 <p>
                   For purposes of applicable privacy law, Scopy is the data
                   controller for personal information processed through the
                   hosted Service. When you connect organization repositories,
-                  you and your organization may also have independent obligations
-                  regarding code, contributor information, and repository
-                  metadata in your GitHub account.
+                  you and your organization may also have independent
+                  obligations regarding code, contributor information, and
+                  repository metadata in your GitHub account.
                 </p>
                 <p>
                   This Privacy Policy does not apply to self-hosted Scopy
@@ -490,8 +492,8 @@ function LegalPage() {
                   </li>
                   <li>
                     Pull request metadata and content needed for reviews,
-                    including titles, descriptions, branches, labels,
-                    assignees, authors, comments, review events, and diffs.
+                    including titles, descriptions, branches, labels, assignees,
+                    authors, comments, review events, and diffs.
                   </li>
                   <li>
                     Webhook delivery identifiers and payloads received from
@@ -577,8 +579,8 @@ function LegalPage() {
                     communications.
                   </li>
                   <li>
-                    Monitor performance, troubleshoot issues, prevent abuse,
-                    and improve reliability and security.
+                    Monitor performance, troubleshoot issues, prevent abuse, and
+                    improve reliability and security.
                   </li>
                   <li>Comply with law and enforce our Terms.</li>
                 </ul>
@@ -607,10 +609,10 @@ function LegalPage() {
                 <p>
                   To generate reviews, relevant pull request content and
                   repository context may be transmitted to AI inference
-                  providers. On hosted plans, we currently use OpenRouter and the
-                  model providers available through that service to run review
-                  and verification models. We may change model providers or model
-                  versions over time.
+                  providers. On hosted plans, we currently use OpenRouter and
+                  the model providers available through that service to run
+                  review and verification models. We may change model providers
+                  or model versions over time.
                 </p>
                 <p>
                   When semantic code search is enabled, code chunks may also be
@@ -645,9 +647,9 @@ function LegalPage() {
                   site.
                 </p>
                 <p>
-                  You can control cookies through your browser settings. Disabling
-                  essential cookies may prevent you from using the hosted
-                  application.
+                  You can control cookies through your browser settings.
+                  Disabling essential cookies may prevent you from using the
+                  hosted application.
                 </p>
               </section>
 
@@ -676,10 +678,10 @@ function LegalPage() {
                     legal obligations.
                   </li>
                   <li>
-                    <strong>Repository and pull request data:</strong> while
-                    the repository remains connected and enabled, and for a
-                    limited period after disconnection so you can reconnect or
-                    resolve billing and support issues.
+                    <strong>Repository and pull request data:</strong> while the
+                    repository remains connected and enabled, and for a limited
+                    period after disconnection so you can reconnect or resolve
+                    billing and support issues.
                   </li>
                   <li>
                     <strong>Review artifacts and analytics:</strong> for as long
@@ -701,8 +703,8 @@ function LegalPage() {
                 <p>
                   You may request deletion by contacting{" "}
                   <a href={`mailto:${env.supportEmail}`}>{env.supportEmail}</a>.
-                  Some information may be retained in backups for a limited
-                  time or where retention is required by law.
+                  Some information may be retained in backups for a limited time
+                  or where retention is required by law.
                 </p>
               </section>
 
@@ -721,9 +723,9 @@ function LegalPage() {
               <section>
                 <h2>10. Automated decision-making</h2>
                 <p>
-                  Scopy uses automated systems, including AI models, to
-                  generate code review suggestions and post them to GitHub. These
-                  outputs are advisory and do not by themselves produce legal or
+                  Scopy uses automated systems, including AI models, to generate
+                  code review suggestions and post them to GitHub. These outputs
+                  are advisory and do not by themselves produce legal or
                   similarly significant effects on you. You and your team remain
                   responsible for deciding whether to act on review feedback.
                 </p>
