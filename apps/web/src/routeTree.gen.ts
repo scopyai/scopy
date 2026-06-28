@@ -18,6 +18,7 @@ import { Route as AppOnboardingTrialRouteImport } from './routes/_app.onboarding
 import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
 import { Route as AppOnboardingOverviewRouteImport } from './routes/_app.onboarding.overview'
 import { Route as AppOnboardingConnectRouteImport } from './routes/_app.onboarding.connect'
+import { Route as AppFeedbackFindingRouteImport } from './routes/_app.feedback.finding'
 import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
 import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
 import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
@@ -70,6 +71,11 @@ const AppOnboardingOverviewRoute = AppOnboardingOverviewRouteImport.update({
 const AppOnboardingConnectRoute = AppOnboardingConnectRouteImport.update({
   id: '/onboarding/connect',
   path: '/onboarding/connect',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedbackFindingRoute = AppFeedbackFindingRouteImport.update({
+  id: '/feedback/finding',
+  path: '/feedback/finding',
   getParentRoute: () => AppRoute,
 } as any)
 const AppWorkspaceSlugSettingsRoute =
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/feedback/finding': typeof AppFeedbackFindingRoute
   '/onboarding/connect': typeof AppOnboardingConnectRoute
   '/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/feedback/finding': typeof AppFeedbackFindingRoute
   '/onboarding/connect': typeof AppOnboardingConnectRoute
   '/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/_app/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/_app/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/_app/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/_app/feedback/finding': typeof AppFeedbackFindingRoute
   '/_app/onboarding/connect': typeof AppOnboardingConnectRoute
   '/_app/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/_app/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/manage-team'
     | '/$workspaceSlug/repositories'
     | '/$workspaceSlug/settings'
+    | '/feedback/finding'
     | '/onboarding/connect'
     | '/onboarding/overview'
     | '/onboarding/repositories'
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
     | '/$workspaceSlug/settings'
+    | '/feedback/finding'
     | '/onboarding/connect'
     | '/onboarding/overview'
     | '/onboarding/repositories'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/_app/$workspaceSlug/manage-team'
     | '/_app/$workspaceSlug/repositories'
     | '/_app/$workspaceSlug/settings'
+    | '/_app/feedback/finding'
     | '/_app/onboarding/connect'
     | '/_app/onboarding/overview'
     | '/_app/onboarding/repositories'
@@ -301,6 +313,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/connect'
       fullPath: '/onboarding/connect'
       preLoaderRoute: typeof AppOnboardingConnectRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/feedback/finding': {
+      id: '/_app/feedback/finding'
+      path: '/feedback/finding'
+      fullPath: '/feedback/finding'
+      preLoaderRoute: typeof AppFeedbackFindingRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/$workspaceSlug/settings': {
@@ -417,6 +436,7 @@ const AppWorkspaceSlugRouteWithChildren =
 interface AppRouteChildren {
   AppWorkspaceSlugRoute: typeof AppWorkspaceSlugRouteWithChildren
   AppConnectRoute: typeof AppConnectRoute
+  AppFeedbackFindingRoute: typeof AppFeedbackFindingRoute
   AppOnboardingConnectRoute: typeof AppOnboardingConnectRoute
   AppOnboardingOverviewRoute: typeof AppOnboardingOverviewRoute
   AppOnboardingRepositoriesRoute: typeof AppOnboardingRepositoriesRoute
@@ -426,6 +446,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceSlugRoute: AppWorkspaceSlugRouteWithChildren,
   AppConnectRoute: AppConnectRoute,
+  AppFeedbackFindingRoute: AppFeedbackFindingRoute,
   AppOnboardingConnectRoute: AppOnboardingConnectRoute,
   AppOnboardingOverviewRoute: AppOnboardingOverviewRoute,
   AppOnboardingRepositoriesRoute: AppOnboardingRepositoriesRoute,

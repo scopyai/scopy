@@ -1,3 +1,4 @@
+import { env } from "../../env"
 import type { repository } from "../../db/schema"
 import { createGitHubApp } from "../github/service"
 import type { PullRequestFile } from "./diff"
@@ -57,11 +58,11 @@ export const startReviewCheck = async ({
         ref: headSha,
         check_name: REVIEW_CHECK_NAME,
         per_page: 100,
-      },
+      }
     )
-    existingCheckRunId = response.data.check_runs.find(
-      (checkRun) => checkRun.external_id === reviewRunId,
-    )?.id.toString()
+    existingCheckRunId = response.data.check_runs
+      .find((checkRun) => checkRun.external_id === reviewRunId)
+      ?.id.toString()
   }
 
   if (existingCheckRunId) {
@@ -78,7 +79,7 @@ export const startReviewCheck = async ({
           title: "Review in progress",
           summary: "Analyzing the changes in this pull request.",
         },
-      },
+      }
     )
     return existingCheckRunId
   }
@@ -98,7 +99,7 @@ export const startReviewCheck = async ({
         title: "Review in progress",
         summary: "Analyzing the changes in this pull request.",
       },
-    },
+    }
   )
 
   return response.data.id.toString()
@@ -131,7 +132,7 @@ export const completeReviewCheck = async ({
       completed_at: new Date().toISOString(),
       details_url: detailsUrl,
       output,
-    },
+    }
   )
 }
 
@@ -217,7 +218,7 @@ const renderFixPrompt = (finding: ReviewFinding) => {
   ].join("\n")
   const longestFence = Math.max(
     0,
-    ...(prompt.match(/`+/g) ?? []).map((match) => match.length),
+    ...(prompt.match(/`+/g) ?? []).map((match) => match.length)
   )
   const fence = "`".repeat(Math.max(3, longestFence + 1))
 
@@ -233,7 +234,23 @@ const renderFixPrompt = (finding: ReviewFinding) => {
   ].join("\n")
 }
 
-export const renderInlineReviewComment = (finding: ReviewFinding) =>
+const feedbackLink = (finding: ReviewFinding, repoFullName: string) => {
+  const data = Buffer.from(
+    JSON.stringify({
+      repo: repoFullName,
+      file: `${finding.file}:${finding.startLine}-${finding.endLine}`,
+      severity: finding.severity,
+      title: finding.title,
+      comment: finding.body,
+    })
+  ).toString("base64url")
+  return `[💬 Leave feedback on this](${env.FRONTEND_URL}/feedback/finding?data=${data})`
+}
+
+export const renderInlineReviewComment = (
+  finding: ReviewFinding,
+  repoFullName: string
+) =>
   [
     `**[${findingLabel(finding)}] ${finding.title}**`,
     "",
@@ -242,14 +259,17 @@ export const renderInlineReviewComment = (finding: ReviewFinding) =>
     `Confidence: ${Math.round(finding.confidence * 100)}%`,
     "",
     renderFixPrompt(finding),
+    "",
+    feedbackLink(finding, repoFullName),
   ].join("\n")
 
 export const buildPullRequestReviewComments = (
   findings: ReviewFinding[],
+  repoFullName: string
 ): PullRequestReviewComment[] =>
   findings.map((finding) => ({
     path: finding.file,
-    body: renderInlineReviewComment(finding),
+    body: renderInlineReviewComment(finding, repoFullName),
     line: finding.endLine,
     side: "RIGHT",
     ...(finding.startLine !== finding.endLine
@@ -282,7 +302,7 @@ export const publishPullRequestReview = async ({
   }
 
   const octokit = await getOctokit(installationId)
-  const comments = buildPullRequestReviewComments(findings)
+  const comments = buildPullRequestReviewComments(findings, repo.fullName)
   const review = await octokit.request(
     "POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
     {
@@ -291,7 +311,7 @@ export const publishPullRequestReview = async ({
       pull_number: pullRequestNumber,
       commit_id: headSha,
       comments,
-    },
+    }
   )
 
   await octokit.request(
@@ -303,7 +323,7 @@ export const publishPullRequestReview = async ({
       review_id: review.data.id,
       event,
       body,
-    },
+    }
   )
 
   return {
@@ -336,11 +356,11 @@ export const findOrCreateReviewComment = async ({
       repo: repo.name,
       issue_number: pullRequestNumber,
       per_page: 100,
-    },
+    }
   )
   const existing = comments.find(
     (comment) =>
-      typeof comment.body === "string" && comment.body.includes(marker),
+      typeof comment.body === "string" && comment.body.includes(marker)
   )
 
   if (existing) {
@@ -362,7 +382,7 @@ export const findOrCreateReviewComment = async ({
       repo: repo.name,
       issue_number: pullRequestNumber,
       body: withMarker(reviewStartedBody, scope),
-    },
+    }
   )
 
   return response.data.id
@@ -391,7 +411,7 @@ export const updateReviewComment = async ({
       repo: repo.name,
       comment_id: commentId,
       body: withMarker(body, { pullRequestId, reviewRunId }),
-    },
+    }
   )
 }
 
@@ -412,7 +432,7 @@ export const listPullRequestFiles = async ({
       repo: repo.name,
       pull_number: pullRequestNumber,
       per_page: 100,
-    },
+    }
   )
 
   return files.map(
@@ -423,6 +443,6 @@ export const listPullRequestFiles = async ({
       deletions: file.deletions,
       changes: file.changes,
       patch: file.patch,
-    }),
+    })
   )
 }
