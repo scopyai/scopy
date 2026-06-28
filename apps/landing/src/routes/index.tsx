@@ -1,5 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { CodeIcon, ZapIcon, FilterIcon, ArrowRight } from "lucide-react"
+import {
+  CodeIcon,
+  ZapIcon,
+  FilterIcon,
+  ArrowRight,
+  GitPullRequestIcon,
+  MessageSquareIcon,
+  PlugIcon,
+} from "lucide-react"
 import { useState } from "react"
 import { GitHubIcon } from "#/components/github-icon"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
@@ -14,6 +22,7 @@ function Home() {
       <LandingNav />
       <main>
         <Hero />
+        <HowItWorks />
         <Features />
         <OpenSource />
         <Pricing />
@@ -39,8 +48,7 @@ function Hero() {
           <h1 className="l-hero-title">Open-source AI code reviewer</h1>
 
           <p className="l-hero-sub">
-            Scopy works with your codebase to find bugs and improve code
-            quality.
+            Scopy is an AI code reviewer that understands your repository, catches bugs and improves code quality. Self-host it or run it in the cloud.
           </p>
 
           <div className="l-hero-ctas">
@@ -123,6 +131,56 @@ function Shards() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// How it works
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STEPS = [
+  {
+    icon: <PlugIcon size={22} />,
+    name: "Connect your repository",
+    desc: "Install the Scopy GitHub App and choose which repositories should get automated code reviews. Setup takes under ten minutes.",
+  },
+  {
+    icon: <GitPullRequestIcon size={22} />,
+    name: "Open a pull request",
+    desc: "Scopy reviews each new pull request automatically, building context from the diff, the affected symbols and the wider repository before it comments.",
+  },
+  {
+    icon: <MessageSquareIcon size={22} />,
+    name: "Get actionable feedback",
+    desc: "AI code review comments land on the exact lines that matter - flagging bugs, risky changes and rule violations so your team can fix them before merge.",
+  },
+]
+
+function HowItWorks() {
+  return (
+    <section className="l-how l-section" id="how-it-works">
+      <div className="l-wrap">
+        <div className="l-how-header">
+          <h2 className="l-how-title">How AI code review works with Scopy</h2>
+          <p className="l-how-sub">
+            From connecting a repository to your first reviewed pull request in
+            three steps — no change to how your team already works.
+          </p>
+        </div>
+
+        <ol className="l-how-grid">
+          {STEPS.map((step) => (
+            <li key={step.name} className="l-how-card">
+              <div className="l-how-head">
+                <div className="l-how-icon">{step.icon}</div>
+                <h3 className="l-how-name">{step.name}</h3>
+              </div>
+              <p className="l-how-desc">{step.desc}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Features
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -140,7 +198,7 @@ const FEATURES = [
   {
     icon: <GitHubIcon size={22} className="l-icon" />,
     name: "Right in your PR",
-    desc: "Inline comments on the lines that matter — right in your PR.",
+    desc: "Inline comments on the exact lines that matter, posted straight to your GitHub pull request.",
   },
   {
     icon: <FilterIcon size={22} />,
@@ -155,6 +213,10 @@ function Features() {
       <div className="l-wrap">
         <div className="l-feat-header">
           <h2 className="l-feat-title">For devs who care about code quality</h2>
+          <p className="l-feat-sub">
+            Automated pull request reviews that understand your whole codebase —
+            not just the diff.
+          </p>
         </div>
 
         <div className="l-feat-grid">
@@ -411,7 +473,7 @@ function FinalCTA() {
       <div className="l-wrap">
         <div className="l-cta-inner">
           <h2 className="l-cta-title">Catch more bugs</h2>
-          <p className="l-cta-sub">Setup usually takes under five minutes.</p>
+          <p className="l-cta-sub">Setup usually takes under ten minutes.</p>
           <div className="l-cta-btns">
             <a
               href={env.githubUrl}
