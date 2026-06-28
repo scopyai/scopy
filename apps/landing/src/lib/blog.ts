@@ -1,5 +1,23 @@
 import { marked } from "marked"
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"])
+
+function isSafeUrl(url: string): boolean {
+  const cleaned = url.replace(/[\u0000-\u0020]/g, "").toLowerCase()
+  const scheme = /^([a-z][a-z0-9+.-]*):/.exec(cleaned)
+  if (!scheme) return true
+  return SAFE_URL_SCHEMES.has(scheme[1])
+}
+
 export type BlogPost = {
   slug: string
   title: string
@@ -26,6 +44,22 @@ const rawPosts = import.meta.glob("../content/blog/*.md", {
 }) as Record<string, string>
 
 marked.setOptions({ gfm: true, breaks: false })
+marked.use({
+  renderer: {
+    html({ text }) {
+      return escapeHtml(text)
+    },
+  },
+  walkTokens(token) {
+    if (
+      (token.type === "link" || token.type === "image") &&
+      typeof token.href === "string" &&
+      !isSafeUrl(token.href)
+    ) {
+      token.href = "#"
+    }
+  },
+})
 
 function parseFrontmatter(raw: string): { data: Frontmatter; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw)
