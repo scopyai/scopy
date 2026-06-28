@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { CodeIcon, ZapIcon, FilterIcon, ArrowRight } from "lucide-react"
+import { useState } from "react"
 import { GitHubIcon } from "#/components/github-icon"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
 import { env, externalLinkProps } from "#/env"
@@ -16,8 +17,10 @@ function Home() {
         <Features />
         <OpenSource />
         <Pricing />
+        <FAQ />
         <FinalCTA />
       </main>
+      <FAQJsonLd />
       <LandingFooter />
     </>
   )
@@ -289,6 +292,112 @@ function Pricing() {
         </div>
       </div>
     </section>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FAQ
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FAQS = [
+  {
+    q: "How does Scopy work?",
+    a: "Scopy runs reviews where your team already works. It builds context from the pull request diff, affected symbols and repository files in general, then returns actionable findings back to you.",
+  },
+  {
+    q: "When does Scopy run a review?",
+    a: "Reviews run automatically for enabled repositories when relevant pull request activity arrives from GitHub, such as a new pull request or a draft PR being marked ready for review. You can also request a fresh review by mentioning Scopy in a PR comment.",
+  },
+  {
+    q: "What GitHub access does Scopy need?",
+    a: "Scopy uses a GitHub App installation to receive webhook events, read repository metadata and code for selected repositories, and publish pull request feedback. GitHub controls which repositories are visible to the app, and Scopy can only review repositories granted to that installation.",
+  },
+  {
+    q: "How does billing work?",
+    a: "Billing is managed per workspace. Hosted Scopy plans include review credits, and reviews debit workspace credits based on the actual usage recorded during review runs. This means, you pay only for what you actually utilize, not a fixed monthly fee. Billing changes apply to the selected workspace, not every workspace on your account.",
+  },
+  {
+    q: "Can we self-host Scopy?",
+    a: "Yes. Scopy is MIT licensed and the source code is available on GitHub. Self-hosting lets you run Scopy on your own infrastructure and connect your preferred model provider.",
+  },
+  {
+    q: "Are reviews customizable?",
+    a: "Yes. You can configure repositories and review criteria so Scopy focuses on the rules and risks that matter for your team, including custom linting guidance and review settings.",
+  },
+] as const
+
+function FAQ() {
+  return (
+    <section className="l-faq l-section">
+      <div className="l-wrap">
+        <div className="l-faq-grid">
+          <div className="l-faq-head">
+            <h2 className="l-faq-title">Frequently asked questions</h2>
+            <p className="l-faq-sub">
+              The basics on access, reviews, billing and deployment.
+            </p>
+          </div>
+
+          <div className="l-faq-list">
+            {FAQS.map((item, index) => (
+              <FAQItem key={item.q} item={item} index={index} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FAQItem({
+  item,
+  index,
+}: {
+  item: (typeof FAQS)[number]
+  index: number
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const answerId = `faq-answer-${index}`
+
+  return (
+    <div className="l-faq-item" data-open={isOpen ? "true" : "false"}>
+      <button
+        type="button"
+        className="l-faq-question"
+        aria-expanded={isOpen}
+        aria-controls={answerId}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        {item.q}
+      </button>
+      <div id={answerId} className="l-faq-answer-shell">
+        <div className="l-faq-answer-inner">
+          <p className="l-faq-answer">{item.a}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FAQJsonLd() {
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQS.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.a,
+      },
+    })),
+  }
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+    />
   )
 }
 
