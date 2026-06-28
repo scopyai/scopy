@@ -35,15 +35,15 @@ export function formatUsageBalance(microcents: number): string {
   }).format(microcents / 1_000_000)
 }
 
-export function formatCreditTransactionType(
-  eventType: "reset" | "revoke" | "usage_debit" | "usage_week",
-): string {
-  return {
+export function formatCreditTransactionType(eventType: string): string {
+  const labels: Record<string, string> = {
     reset: "Allowance reset",
     revoke: "Revoked",
     usage_debit: "Scopy usage",
     usage_week: "Scopy usage",
-  }[eventType]
+    starter_grant: "Starter credit",
+  }
+  return labels[eventType] ?? "Adjustment"
 }
 
 export function formatCreditTransactionAmount(microcents: number): string {

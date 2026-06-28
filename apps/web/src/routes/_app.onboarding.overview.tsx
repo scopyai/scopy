@@ -92,7 +92,7 @@ function OnboardingOverviewPage() {
 
         <div className="flex flex-col gap-2 text-center">
           <p className="text-sm font-medium text-muted-foreground">
-            Step 2 of 3
+            Step 2 of 4
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
             How review works
