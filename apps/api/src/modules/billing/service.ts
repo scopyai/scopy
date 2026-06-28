@@ -8,7 +8,7 @@ import type {
 } from "@creem_io/webhook-types"
 import { eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
-import { workspace, workspaceCreditTransaction } from "../../db/schema"
+import { user, workspace, workspaceCreditTransaction } from "../../db/schema"
 import { env } from "../../env"
 import { creem } from "./creem"
 import {
@@ -315,9 +315,65 @@ const applySubscriptionEvent = async (
   })
 }
 
+const grantStarter = async (
+  event: NormalizedCheckoutCompletedEvent,
+  workspaceId: string,
+) => {
+  const userId =
+    typeof event.object.metadata?.userId === "string"
+      ? event.object.metadata.userId
+      : null
+  if (!userId) return
+  const checkoutId = event.object.id
+
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
+    const currentUser = await tx.query.user.findFirst({
+      where: eq(user.id, userId),
+    })
+    if (!currentUser || currentUser.starterGrantedAt) return
+
+    await lockWorkspace(tx, workspaceId)
+    const currentWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, workspaceId),
+    })
+    if (!currentWorkspace) return
+
+    const balanceAfter =
+      currentWorkspace.creditBalance + env.STARTER_CREDIT_MICRO_USD
+    await tx
+      .update(workspace)
+      .set({ creditBalance: balanceAfter, updatedAt: new Date() })
+      .where(eq(workspace.id, workspaceId))
+    await tx
+      .update(user)
+      .set({ starterGrantedAt: new Date(), starterCreemCheckoutId: checkoutId })
+      .where(eq(user.id, userId))
+    await tx
+      .insert(workspaceCreditTransaction)
+      .values({
+        id: randomUUID(),
+        workspaceId,
+        type: "starter_grant",
+        amount: env.STARTER_CREDIT_MICRO_USD,
+        balanceAfter,
+        idempotencyKey: `starter:${checkoutId}`,
+        reason: "starter_purchase",
+        metadata: { userId, checkoutId },
+      })
+      .onConflictDoNothing({
+        target: workspaceCreditTransaction.idempotencyKey,
+      })
+  })
+}
+
 const applyCheckoutCompleted = async (event: NormalizedCheckoutCompletedEvent) => {
   const referenceId = getWorkspaceReferenceId(event.object.metadata)
   if (!referenceId) return
+
+  if (event.object.product.id === env.CREEM_STARTER_PRODUCT_ID) {
+    return grantStarter(event, referenceId)
+  }
 
   const subscriptionId =
     typeof event.object.subscription === "object"
@@ -366,10 +422,23 @@ export const applyCreemWebhook = async (event: NormalizedWebhookEvent) => {
   return applySubscriptionEvent(event)
 }
 
-export const getWorkspaceBilling = async (workspaceId: string) => {
+export const getWorkspaceBilling = async (
+  workspaceId: string,
+  userId?: string,
+) => {
   const currentWorkspace = await getWorkspace(workspaceId)
   if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
-  return { plans: publicBillingPlans, account: toBillingAccount(currentWorkspace) }
+  const currentUser = userId
+    ? await db.query.user.findFirst({
+        where: eq(user.id, userId),
+        columns: { starterGrantedAt: true },
+      })
+    : null
+  return {
+    plans: publicBillingPlans,
+    account: toBillingAccount(currentWorkspace),
+    starterUsed: Boolean(currentUser?.starterGrantedAt),
+  }
 }
 
 export const listWorkspaceCreditTransactions = async (
@@ -451,6 +520,41 @@ export const createWorkspaceCheckout = async (
       env.FRONTEND_URL,
     ).toString(),
     metadata: { referenceId: workspaceId },
+  })
+  if (!checkout.checkoutUrl) {
+    throw new Error("Creem checkout did not include a redirect URL")
+  }
+  return { url: checkout.checkoutUrl }
+}
+
+export const createStarterCheckout = async (
+  workspaceId: string,
+  userId: string,
+  email: string,
+  requestId: string,
+) => {
+  const currentUser = await db.query.user.findFirst({
+    where: eq(user.id, userId),
+  })
+  if (!currentUser) throw new BillingError("User not found", 404)
+  if (currentUser.starterGrantedAt) {
+    throw new BillingError("Starter already used", 409)
+  }
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
+  if (isPaidTier(currentWorkspace.billingTier)) {
+    throw new BillingError("Workspace already has a billing plan", 409)
+  }
+
+  const checkout = await creem.checkouts.create({
+    productId: env.CREEM_STARTER_PRODUCT_ID,
+    requestId,
+    customer: { email },
+    successUrl: new URL(
+      `/${encodeURIComponent(currentWorkspace.providerAccountLogin)}/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
+      env.FRONTEND_URL,
+    ).toString(),
+    metadata: { referenceId: workspaceId, userId },
   })
   if (!checkout.checkoutUrl) {
     throw new Error("Creem checkout did not include a redirect URL")

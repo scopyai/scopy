@@ -21,6 +21,14 @@ export const env = z
       .transform((value) => value === "true"),
     CREEM_PREMIUM_PRODUCT_ID: z.string().min(1),
     CREEM_ULTRA_PRODUCT_ID: z.string().min(1),
+    CREEM_STARTER_PRODUCT_ID: z.string().min(1),
+    // Credit granted by the one-time $1 starter, in micro-USD. Sized to roughly
+    // 3-5 typical reviews; keep small since it also caps fraud exposure.
+    STARTER_CREDIT_MICRO_USD: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1_500_000),
     GITHUB_APP_ID: z.string().min(1).optional(),
     GITHUB_APP_SLUG: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),
