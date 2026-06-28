@@ -1,11 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { CodeIcon, ZapIcon, FilterIcon, ArrowRight } from "lucide-react"
+import {
+  CodeIcon,
+  ZapIcon,
+  FilterIcon,
+  ArrowRight,
+  GitPullRequestIcon,
+  MessageSquareIcon,
+  PlugIcon,
+} from "lucide-react"
+import { useState } from "react"
 import { GitHubIcon } from "#/components/github-icon"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
 import { env, externalLinkProps } from "#/env"
 import { getLandingPlans } from "#/lib/plans"
 
-export const Route = createFileRoute("/")({ component: Home })
+export const Route = createFileRoute("/")({
+  head: () => ({
+    links: [{ rel: "canonical", href: env.siteUrl }],
+  }),
+  component: Home,
+})
 
 function Home() {
   return (
@@ -13,11 +27,14 @@ function Home() {
       <LandingNav />
       <main>
         <Hero />
+        <HowItWorks />
         <Features />
         <OpenSource />
         <Pricing />
+        <FAQ />
         <FinalCTA />
       </main>
+      <FAQJsonLd />
       <LandingFooter />
     </>
   )
@@ -36,8 +53,9 @@ function Hero() {
           <h1 className="l-hero-title">Open-source AI code reviewer</h1>
 
           <p className="l-hero-sub">
-            Scopy works with your codebase to find bugs and improve code
-            quality.
+            Scopy is an AI code reviewer that understands your repository,
+            catches bugs and improves code quality. Self-host it or run it in
+            the cloud.
           </p>
 
           <div className="l-hero-ctas">
@@ -120,6 +138,56 @@ function Shards() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// How it works
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STEPS = [
+  {
+    icon: <PlugIcon size={22} />,
+    name: "Connect your repository",
+    desc: "Install the Scopy GitHub App and choose which repositories should get automated code reviews. Setup takes under ten minutes.",
+  },
+  {
+    icon: <GitPullRequestIcon size={22} />,
+    name: "Open a pull request",
+    desc: "Scopy reviews each new pull request automatically, building context from the diff, the affected symbols and the wider repository before it comments.",
+  },
+  {
+    icon: <MessageSquareIcon size={22} />,
+    name: "Get actionable feedback",
+    desc: "AI code review comments land on the exact lines that matter - flagging bugs, risky changes and rule violations so your team can fix them before merge.",
+  },
+]
+
+function HowItWorks() {
+  return (
+    <section className="l-how l-section" id="how-it-works">
+      <div className="l-wrap">
+        <div className="l-how-header">
+          <h2 className="l-how-title">How AI code review works with Scopy</h2>
+          <p className="l-how-sub">
+            From connecting a repository to your first reviewed pull request in
+            three steps — no change to how your team already works.
+          </p>
+        </div>
+
+        <ol className="l-how-grid">
+          {STEPS.map((step) => (
+            <li key={step.name} className="l-how-card">
+              <div className="l-how-head">
+                <div className="l-how-icon">{step.icon}</div>
+                <h3 className="l-how-name">{step.name}</h3>
+              </div>
+              <p className="l-how-desc">{step.desc}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Features
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -137,7 +205,7 @@ const FEATURES = [
   {
     icon: <GitHubIcon size={22} className="l-icon" />,
     name: "Right in your PR",
-    desc: "Inline comments on the lines that matter — right in your PR.",
+    desc: "Inline comments on the exact lines that matter, posted straight to your GitHub pull request.",
   },
   {
     icon: <FilterIcon size={22} />,
@@ -152,6 +220,10 @@ function Features() {
       <div className="l-wrap">
         <div className="l-feat-header">
           <h2 className="l-feat-title">For devs who care about code quality</h2>
+          <p className="l-feat-sub">
+            Automated pull request reviews that understand your whole codebase —
+            not just the diff.
+          </p>
         </div>
 
         <div className="l-feat-grid">
@@ -293,6 +365,112 @@ function Pricing() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FAQ
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FAQS = [
+  {
+    q: "How does Scopy work?",
+    a: "Scopy runs reviews where your team already works. It builds context from the pull request diff, affected symbols and repository files in general, then returns actionable findings back to you.",
+  },
+  {
+    q: "When does Scopy run a review?",
+    a: "Reviews run automatically for enabled repositories when relevant pull request activity arrives from GitHub, such as a new pull request or a draft PR being marked ready for review. You can also request a fresh review by mentioning Scopy in a PR comment.",
+  },
+  {
+    q: "What GitHub access does Scopy need?",
+    a: "Scopy uses a GitHub App installation to receive webhook events, read repository metadata and code for selected repositories, and publish pull request feedback. GitHub controls which repositories are visible to the app, and Scopy can only review repositories granted to that installation.",
+  },
+  {
+    q: "How does billing work?",
+    a: "Billing is managed per workspace. Hosted Scopy plans include review credits, and reviews debit workspace credits based on the actual usage recorded during review runs. This means, you pay only for what you actually utilize, not a fixed monthly fee. Billing changes apply to the selected workspace, not every workspace on your account.",
+  },
+  {
+    q: "Can we self-host Scopy?",
+    a: "Yes. Scopy is MIT licensed and the source code is available on GitHub. Self-hosting lets you run Scopy on your own infrastructure and connect your preferred model provider.",
+  },
+  {
+    q: "Are reviews customizable?",
+    a: "Yes. You can configure repositories and review criteria so Scopy focuses on the rules and risks that matter for your team, including custom linting guidance and review settings.",
+  },
+] as const
+
+function FAQ() {
+  return (
+    <section className="l-faq l-section">
+      <div className="l-wrap">
+        <div className="l-faq-grid">
+          <div className="l-faq-head">
+            <h2 className="l-faq-title">Frequently asked questions</h2>
+            <p className="l-faq-sub">
+              The basics on access, reviews, billing and deployment.
+            </p>
+          </div>
+
+          <div className="l-faq-list">
+            {FAQS.map((item, index) => (
+              <FAQItem key={item.q} item={item} index={index} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FAQItem({
+  item,
+  index,
+}: {
+  item: (typeof FAQS)[number]
+  index: number
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const answerId = `faq-answer-${index}`
+
+  return (
+    <div className="l-faq-item" data-open={isOpen ? "true" : "false"}>
+      <button
+        type="button"
+        className="l-faq-question"
+        aria-expanded={isOpen}
+        aria-controls={answerId}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        {item.q}
+      </button>
+      <div id={answerId} className="l-faq-answer-shell">
+        <div className="l-faq-answer-inner">
+          <p className="l-faq-answer">{item.a}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FAQJsonLd() {
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQS.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.a,
+      },
+    })),
+  }
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+    />
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Final CTA
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -302,7 +480,7 @@ function FinalCTA() {
       <div className="l-wrap">
         <div className="l-cta-inner">
           <h2 className="l-cta-title">Catch more bugs</h2>
-          <p className="l-cta-sub">Setup usually takes under five minutes.</p>
+          <p className="l-cta-sub">Setup usually takes under ten minutes.</p>
           <div className="l-cta-btns">
             <a
               href={env.githubUrl}

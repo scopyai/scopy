@@ -4,6 +4,7 @@ function envVar(key: keyof ImportMetaEnv, fallback: string): string {
 }
 
 export const env = {
+  siteUrl: envVar("VITE_SITE_URL", "https://scopy.dev").replace(/\/+$/, ""),
   githubUrl: envVar("VITE_GITHUB_URL", "https://github.com/scopyai/scopy"),
   appUrl: envVar("VITE_APP_URL", "http://localhost:3000"),
   docsUrl: envVar("VITE_DOCS_URL", "/docs"),

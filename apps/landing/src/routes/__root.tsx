@@ -1,20 +1,82 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router"
 
+import { env } from "#/env"
 import appCss from "../styles.css?url"
+
+const siteTitle =
+  "Scopy | Open-Source AI Code Reviewer | Catch bugs and improve code quality"
+const siteDescription =
+  "Scopy is an open-source AI code reviewer. Self-host it or use hosted Scopy to catch bugs, enforce review rules and improve code quality."
+const siteUrl = env.siteUrl
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${siteUrl}/#organization`,
+      name: "Scopy",
+      url: siteUrl,
+      logo: `${siteUrl}/logo.svg`,
+      sameAs: [env.githubUrl],
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${siteUrl}/#website`,
+      name: "Scopy",
+      url: siteUrl,
+      description: siteDescription,
+      publisher: { "@id": `${siteUrl}/#organization` },
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${siteUrl}/#software`,
+      name: "Scopy",
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Web",
+      description: siteDescription,
+      url: siteUrl,
+      codeRepository: env.githubUrl,
+      license: "https://opensource.org/license/mit",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+        url: siteUrl,
+      },
+      publisher: { "@id": `${siteUrl}/#organization` },
+    },
+  ],
+}
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Scopy - AI Code Review" },
+      { title: siteTitle },
       {
         name: "description",
-        content:
-          "Open-source AI code review tool. Catches bugs and improves code quality.",
+        content: siteDescription,
       },
+      { name: "robots", content: "index, follow" },
+      { name: "theme-color", content: "#1c1c26" },
+      { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "Scopy" },
+      { property: "og:title", content: siteTitle },
+      { property: "og:description", content: siteDescription },
+      { property: "og:url", content: siteUrl },
+      { property: "og:image", content: `${siteUrl}/logo.svg` },
+      { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: siteTitle },
+      { name: "twitter:description", content: siteDescription },
+      { name: "twitter:image", content: `${siteUrl}/logo.svg` },
     ],
     links: [
+      // NOTE: canonical is intentionally set per-route (see index/privacy/blog
+      // routes), not here — a root canonical would append to every page and
+      // point them all at the homepage.
+      { rel: "icon", href: "/favicon.ico" },
+      { rel: "manifest", href: "/manifest.json" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com" },
       {
@@ -32,6 +94,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
       </head>
       <body>
         {children}

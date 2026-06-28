@@ -331,6 +331,103 @@ body {
   margin: 0;
 }
 
+.l-feat-sub {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--l-muted);
+  max-width: 48ch;
+  text-wrap: balance;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* How it works                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.l-how {
+  padding: 96px 0;
+}
+
+.l-how-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  margin-bottom: 52px;
+}
+
+.l-how-title {
+  font-size: clamp(1.75rem, 3.5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  max-width: 20ch;
+}
+
+.l-how-sub {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--l-muted);
+  max-width: 52ch;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.l-how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.l-how-card {
+  position: relative;
+  background: var(--l-surface);
+  border: 1px solid var(--l-border);
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.l-how-num {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  font-family: var(--l-mono);
+  font-size: 13px;
+  color: var(--l-dim);
+}
+
+.l-how-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.l-how-icon {
+  flex-shrink: 0;
+  color: var(--l-accent);
+}
+
+.l-how-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--l-fg);
+  margin: 0;
+}
+
+.l-how-desc {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--l-muted);
+  margin: 0;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Open source                                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -585,6 +682,121 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/* FAQ                                                                         */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.l-faq {
+  padding: 96px 0;
+}
+
+.l-faq-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.78fr) minmax(0, 1.22fr);
+  gap: 72px;
+  align-items: start;
+}
+
+.l-faq-head {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.l-faq-title {
+  font-size: clamp(1.75rem, 3.5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  max-width: 12ch;
+}
+
+.l-faq-sub {
+  font-size: 1rem;
+  line-height: 1.72;
+  color: var(--l-muted);
+  max-width: 28ch;
+}
+
+.l-faq-list {
+  border-top: 1px solid var(--l-border);
+}
+
+.l-faq-item {
+  border-bottom: 1px solid var(--l-border);
+}
+
+.l-faq-question {
+  position: relative;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  padding: 24px 44px 24px 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--l-font);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+  color: var(--l-fg);
+  list-style: none;
+  text-align: left;
+}
+
+.l-faq-question:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 4px;
+}
+
+.l-faq-question::after {
+  content: "+";
+  position: absolute;
+  top: 24px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  color: var(--l-accent);
+  font-family: var(--l-mono);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 20px;
+  text-align: center;
+  transition: transform 0.18s ease;
+}
+
+.l-faq-item[data-open="true"] .l-faq-question::after {
+  transform: rotate(45deg);
+}
+
+.l-faq-answer-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.24s ease,
+    opacity 0.18s ease;
+}
+
+.l-faq-item[data-open="true"] .l-faq-answer-shell {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.l-faq-answer-inner {
+  overflow: hidden;
+}
+
+.l-faq-answer {
+  margin: -6px 0 24px;
+  max-width: 66ch;
+  font-size: 15px;
+  line-height: 1.72;
+  color: var(--l-muted);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /* Final CTA                                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -785,6 +997,297 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/* Blog — listing                                                              */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.l-blog {
+  padding: 72px 0 96px;
+}
+
+.l-blog-wrap {
+  max-width: 760px;
+}
+
+.l-blog-head {
+  margin-bottom: 48px;
+}
+
+.l-blog-title {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  margin: 0 0 12px;
+}
+
+.l-blog-sub {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--l-muted);
+  max-width: 52ch;
+}
+
+.l-blog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.l-blog-card {
+  border-top: 1px solid var(--l-border);
+}
+
+.l-blog-card:last-child {
+  border-bottom: 1px solid var(--l-border);
+}
+
+.l-blog-card-link {
+  display: block;
+  padding: 20px 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.l-blog-card-link:hover .l-blog-card-title {
+  color: var(--l-accent);
+}
+
+.l-blog-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--l-mono);
+  font-size: 12.5px;
+  color: var(--l-dim);
+  margin-bottom: 10px;
+}
+
+.l-blog-card-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin: 0 0 8px;
+  color: var(--l-fg);
+  transition: color 0.12s;
+}
+
+.l-blog-card-desc {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--l-muted);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Blog — post                                                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.l-post-wrap {
+  max-width: 720px;
+}
+
+.l-post-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--l-muted);
+  text-decoration: none;
+  margin-bottom: 32px;
+  transition: color 0.12s;
+}
+
+.l-post-back:hover {
+  color: var(--l-fg);
+}
+
+.l-post-head {
+  margin-bottom: 40px;
+}
+
+.l-post-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--l-mono);
+  font-size: 12.5px;
+  color: var(--l-dim);
+  margin-bottom: 16px;
+}
+
+.l-post-author {
+  color: var(--l-muted);
+}
+
+.l-post-title {
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin: 0 0 16px;
+  text-wrap: balance;
+}
+
+.l-post-lede {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--l-muted);
+}
+
+/* Rendered markdown body */
+.l-post-body {
+  color: var(--l-muted);
+  font-size: 16.5px;
+  line-height: 1.75;
+}
+
+.l-post-body > :first-child {
+  margin-top: 0;
+}
+
+.l-post-body h1 {
+  /* Markdown often starts with an H1 that duplicates the title — hide it. */
+  display: none;
+}
+
+.l-post-body h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--l-fg);
+  margin: 44px 0 16px;
+}
+
+.l-post-body h3 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--l-fg);
+  margin: 32px 0 12px;
+}
+
+.l-post-body p {
+  margin: 0 0 20px;
+}
+
+.l-post-body ul,
+.l-post-body ol {
+  margin: 0 0 20px;
+  padding-left: 24px;
+}
+
+.l-post-body ul {
+  list-style: disc;
+}
+
+.l-post-body ol {
+  list-style: decimal;
+}
+
+.l-post-body li {
+  display: list-item;
+  line-height: 1.65;
+  padding-left: 4px;
+}
+
+.l-post-body li + li {
+  margin-top: 10px;
+}
+
+.l-post-body li::marker {
+  color: var(--l-dim);
+}
+
+.l-post-body a {
+  color: var(--l-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.l-post-body a:hover {
+  color: #6183ff;
+}
+
+.l-post-body strong {
+  color: var(--l-fg);
+  font-weight: 600;
+}
+
+.l-post-body code {
+  font-family: var(--l-mono);
+  font-size: 0.875em;
+  background: var(--l-surface);
+  border: 1px solid var(--l-border);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.l-post-body pre {
+  background: var(--l-surface);
+  border: 1px solid var(--l-border);
+  padding: 18px 20px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0 0 24px;
+}
+
+.l-post-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.l-post-body blockquote {
+  margin: 0 0 24px;
+  padding-left: 18px;
+  border-left: 2px solid var(--l-edge);
+  color: var(--l-muted);
+  font-style: italic;
+}
+
+.l-post-foot {
+  margin-top: 56px;
+  padding: 36px;
+  background: var(--l-surface);
+  border: 1px solid var(--l-border);
+  text-align: center;
+}
+
+.l-post-foot-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+  color: var(--l-fg);
+}
+
+.l-post-foot-sub {
+  margin: 0 0 22px;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--l-muted);
+  max-width: 46ch;
+  margin-inline: auto;
+}
+
+.l-post-foot-ctas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /* Responsive                                                                  */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -795,8 +1298,29 @@ body {
 
   .l-feat-grid,
   .l-oss-box,
-  .l-price-grid {
+  .l-price-grid,
+  .l-how-grid {
     grid-template-columns: 1fr;
+  }
+
+  .l-faq-grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+
+  .l-faq-head {
+    position: static;
+    align-items: center;
+    text-align: center;
+  }
+
+  .l-faq-title {
+    max-width: 14ch;
+  }
+
+  .l-faq-sub {
+    max-width: 34ch;
+    text-align: center;
   }
 
   .l-feat-grid::before,
@@ -833,6 +1357,15 @@ body {
     align-items: stretch;
     width: 100%;
     max-width: 280px;
+  }
+
+  .l-post-foot-ctas {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .l-post-foot {
+    padding: 28px 22px;
   }
 
   .l-nav-a {
