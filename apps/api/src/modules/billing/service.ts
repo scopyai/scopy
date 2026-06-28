@@ -413,13 +413,6 @@ const grantStarter = async (
       where: eq(workspace.id, workspaceId),
     })
     if (!currentWorkspace) return
-    if (isPaidTier(currentWorkspace.billingTier)) {
-      await tx
-        .update(user)
-        .set({ starterGrantedAt: new Date(), starterCreemCheckoutId: checkoutId })
-        .where(eq(user.id, userId))
-      return
-    }
 
     const balanceAfter =
       currentWorkspace.creditBalance + env.STARTER_CREDIT_MICRO_USD
@@ -514,12 +507,10 @@ const applyStarterFinancialRevoke = async (
     })
     if (existing) return true
 
-    const revokeAmount = isPaidTier(currentWorkspace.billingTier)
-      ? 0
-      : Math.min(
-          Math.max(currentWorkspace.creditBalance, 0),
-          env.STARTER_CREDIT_MICRO_USD,
-        )
+    const revokeAmount = Math.min(
+      Math.max(currentWorkspace.creditBalance, 0),
+      env.STARTER_CREDIT_MICRO_USD,
+    )
     const balanceAfter = currentWorkspace.creditBalance - revokeAmount
     await tx
       .update(workspace)
@@ -547,7 +538,7 @@ const applyCheckoutCompleted = async (event: NormalizedCheckoutCompletedEvent) =
   const referenceId = getWorkspaceReferenceId(event.object.metadata)
   if (!referenceId) return
 
-  if (event.object.product.id === env.CREEM_STARTER_PRODUCT_ID) {
+  if (getCheckoutProductId(event.object) === env.CREEM_STARTER_PRODUCT_ID) {
     return grantStarter(event, referenceId)
   }
 
@@ -730,7 +721,7 @@ export const createStarterCheckout = async (
       where: eq(workspace.id, workspaceId),
     })
     if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
-    if (isPaidTier(currentWorkspace.billingTier)) {
+    if (currentWorkspace.billingTier !== "free") {
       throw new BillingError("Workspace already has a billing plan", 409)
     }
 
@@ -759,6 +750,12 @@ export const createStarterCheckout = async (
   }
 
   if (!checkout.checkoutUrl) {
+    await db
+      .update(user)
+      .set({ starterCreemCheckoutId: null })
+      .where(
+        sql`${user.id} = ${userId} and ${user.starterCreemCheckoutId} = ${pendingCheckoutId}`
+      )
     throw new Error("Creem checkout did not include a redirect URL")
   }
 
