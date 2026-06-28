@@ -15,7 +15,7 @@ import {
 import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
 import { formatPlanPriceAmount, formatUsageBalance } from "@/lib/billing-format"
-import { contactSalesHref } from "@/lib/billing-contact"
+import { contactFounderHref } from "@workspace/billing/contact"
 import {
   useCheckoutBilling,
   useChangeBillingPlan,
@@ -157,9 +157,9 @@ function PlanCard({
       <div className="mt-6">
         {action === "contact" && (
           <Button variant="outline" className="w-full" asChild>
-            <a href={contactSalesHref}>
+            <a href={contactFounderHref}>
               <MailIcon />
-              Contact sales
+              Talk to founder
             </a>
           </Button>
         )}
