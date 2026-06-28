@@ -18,9 +18,12 @@ function OnboardingTrialPage() {
   const entry = getActiveWorkspaces(workspaces).at(0)
   const activeWorkspace = entry?.workspace
   const isOwner = entry?.role === "owner"
-  const { data: billing, isPending: billingPending } = useWorkspaceBilling(
-    activeWorkspace?.id
-  )
+  const {
+    data: billing,
+    isError: billingError,
+    isPending: billingPending,
+    refetch: refetchBilling,
+  } = useWorkspaceBilling(activeWorkspace?.id)
 
   if (workspacesPending) return null
   if (!activeWorkspace) return <Navigate to="/onboarding/connect" replace />
@@ -51,8 +54,17 @@ function OnboardingTrialPage() {
           </p>
         </div>
 
-        {billingPending || !billing ? (
+        {billingPending ? (
           <Skeleton className="h-32 w-full rounded-xl" />
+        ) : billingError || !billing ? (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-card p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Billing details could not be loaded.
+            </p>
+            <Button variant="outline" onClick={() => refetchBilling()}>
+              Retry
+            </Button>
+          </div>
         ) : (
           <>
             {billing.account.tier === "free" && !billing.starterUsed && (

@@ -99,6 +99,37 @@ const matchesStarterCheckoutReservation = (
   return Boolean(pending && requestId && pending.requestId === requestId)
 }
 
+const getCheckoutRequestId = (
+  checkout:
+    | NormalizedCheckoutCompletedEvent["object"]
+    | Exclude<
+        NormalizedRefundCreatedEvent["object"]["checkout"],
+        string | undefined
+      >,
+) =>
+  checkout.request_id ??
+  (typeof checkout.metadata?.starterRequestId === "string"
+    ? checkout.metadata.starterRequestId
+    : null)
+
+const getCheckoutProductId = (
+  checkout:
+    | NormalizedCheckoutCompletedEvent["object"]
+    | Exclude<
+        NormalizedRefundCreatedEvent["object"]["checkout"],
+        string | undefined
+      >,
+) => (typeof checkout.product === "string" ? checkout.product : checkout.product.id)
+
+const getCheckoutUserId = (
+  checkout:
+    | NormalizedCheckoutCompletedEvent["object"]
+    | Exclude<
+        NormalizedRefundCreatedEvent["object"]["checkout"],
+        string | undefined
+      >,
+) => (typeof checkout.metadata?.userId === "string" ? checkout.metadata.userId : null)
+
 const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
   workspaceId: value.id,
   tier: value.billingTier,
@@ -359,11 +390,7 @@ const grantStarter = async (
       : null
   if (!userId) return
   const checkoutId = event.object.id
-  const checkoutRequestId =
-    event.object.request_id ??
-    (typeof event.object.metadata?.starterRequestId === "string"
-      ? event.object.metadata.starterRequestId
-      : null)
+  const checkoutRequestId = getCheckoutRequestId(event.object)
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
@@ -386,7 +413,13 @@ const grantStarter = async (
       where: eq(workspace.id, workspaceId),
     })
     if (!currentWorkspace) return
-    if (isPaidTier(currentWorkspace.billingTier)) return
+    if (isPaidTier(currentWorkspace.billingTier)) {
+      await tx
+        .update(user)
+        .set({ starterGrantedAt: new Date(), starterCreemCheckoutId: checkoutId })
+        .where(eq(user.id, userId))
+      return
+    }
 
     const balanceAfter =
       currentWorkspace.creditBalance + env.STARTER_CREDIT_MICRO_USD
@@ -419,28 +452,61 @@ const grantStarter = async (
 const getEntityId = (value: { id: string } | string | undefined) =>
   typeof value === "string" ? value : value?.id ?? null
 
+const getFinancialCheckout = (
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+) => (typeof event.object.checkout === "object" ? event.object.checkout : null)
+
 const applyStarterFinancialRevoke = async (
   event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
 ) => {
   const checkoutId = getEntityId(event.object.checkout)
   if (!checkoutId) return false
+  const checkout = getFinancialCheckout(event)
+  const checkoutRequestId = checkout ? getCheckoutRequestId(checkout) : null
+  const checkoutUserId = checkout ? getCheckoutUserId(checkout) : null
+  const checkoutWorkspaceId = checkout
+    ? getWorkspaceReferenceId(checkout.metadata)
+    : null
+  const isStarterCheckout =
+    checkout ? getCheckoutProductId(checkout) === env.CREEM_STARTER_PRODUCT_ID : false
 
   return db.transaction(async (tx) => {
-    const currentUser = await tx.query.user.findFirst({
-      where: eq(user.starterCreemCheckoutId, checkoutId),
-    })
-    if (!currentUser?.starterGrantedAt) return false
+    const currentUser = checkoutUserId
+      ? await tx.query.user.findFirst({ where: eq(user.id, checkoutUserId) })
+      : await tx.query.user.findFirst({
+          where: eq(user.starterCreemCheckoutId, checkoutId),
+        })
+    if (!currentUser) return false
+    if (!isStarterCheckout && currentUser.starterCreemCheckoutId !== checkoutId) {
+      return false
+    }
+    if (
+      !matchesStarterCheckoutReservation(
+        currentUser.starterCreemCheckoutId,
+        checkoutId,
+        checkoutRequestId,
+      )
+    ) {
+      return false
+    }
 
     const grantTransaction = await tx.query.workspaceCreditTransaction.findFirst({
       where: eq(workspaceCreditTransaction.idempotencyKey, `starter:${checkoutId}`),
     })
-    if (!grantTransaction) return false
+    const workspaceId = grantTransaction?.workspaceId ?? checkoutWorkspaceId
+    if (!workspaceId) {
+      await tx
+        .update(user)
+        .set({ starterGrantedAt: new Date(), starterCreemCheckoutId: checkoutId })
+        .where(eq(user.id, currentUser.id))
+      return true
+    }
 
-    await lockWorkspace(tx, grantTransaction.workspaceId)
+    await lockWorkspace(tx, workspaceId)
     const currentWorkspace = await tx.query.workspace.findFirst({
-      where: eq(workspace.id, grantTransaction.workspaceId),
+      where: eq(workspace.id, workspaceId),
     })
-    if (!currentWorkspace || isPaidTier(currentWorkspace.billingTier)) return false
+    if (!currentWorkspace) return false
 
     const idempotencyKey = `starter:${checkoutId}:${event.eventType}:revoke`
     const existing = await tx.query.workspaceCreditTransaction.findFirst({
@@ -448,10 +514,12 @@ const applyStarterFinancialRevoke = async (
     })
     if (existing) return true
 
-    const revokeAmount = Math.min(
-      currentWorkspace.creditBalance,
-      env.STARTER_CREDIT_MICRO_USD,
-    )
+    const revokeAmount = isPaidTier(currentWorkspace.billingTier)
+      ? 0
+      : Math.min(
+          Math.max(currentWorkspace.creditBalance, 0),
+          env.STARTER_CREDIT_MICRO_USD,
+        )
     const balanceAfter = currentWorkspace.creditBalance - revokeAmount
     await tx
       .update(workspace)
@@ -467,6 +535,10 @@ const applyStarterFinancialRevoke = async (
       reason: event.eventType,
       metadata: { userId: currentUser.id, checkoutId },
     })
+    await tx
+      .update(user)
+      .set({ starterGrantedAt: new Date(), starterCreemCheckoutId: checkoutId })
+      .where(eq(user.id, currentUser.id))
     return true
   })
 }
@@ -683,22 +755,10 @@ export const createStarterCheckout = async (
       metadata: { referenceId: workspaceId, userId, starterRequestId: requestId },
     })
   } catch (error) {
-    await db
-      .update(user)
-      .set({ starterCreemCheckoutId: null })
-      .where(
-        sql`${user.id} = ${userId} and ${user.starterCreemCheckoutId} = ${pendingCheckoutId}`
-      )
     throw error
   }
 
   if (!checkout.checkoutUrl) {
-    await db
-      .update(user)
-      .set({ starterCreemCheckoutId: null })
-      .where(
-        sql`${user.id} = ${userId} and ${user.starterCreemCheckoutId} = ${pendingCheckoutId}`
-      )
     throw new Error("Creem checkout did not include a redirect URL")
   }
 
