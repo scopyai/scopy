@@ -21,6 +21,10 @@ const severityClass: Record<string, string> = {
   low: "bg-muted text-muted-foreground",
 }
 
+const FEEDBACK_MESSAGE_MAX_LENGTH = 4000
+const USER_NOTE_MAX_LENGTH = 1500
+const TRUNCATION_SUFFIX = "\n\n[truncated]"
+
 export const Route = createFileRoute("/_app/feedback/finding")({
   validateSearch: (search) => ({ data: String(search.data ?? "") }),
   component: FindingFeedback,
@@ -44,6 +48,38 @@ function decode(data: string): Finding | null {
   }
 }
 
+function truncate(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value
+  if (maxLength <= TRUNCATION_SUFFIX.length) {
+    return value.slice(0, maxLength)
+  }
+  return `${value.slice(0, maxLength - TRUNCATION_SUFFIX.length)}${TRUNCATION_SUFFIX}`
+}
+
+function buildFeedbackMessage(finding: Finding, note: string) {
+  const normalizedNote = truncate(note.trim(), USER_NOTE_MAX_LENGTH)
+  const prefix = [
+    `Finding feedback — ${finding.repo}`,
+    `${finding.file} [${finding.severity}]`,
+    finding.title,
+    "",
+    "Agent comment:",
+  ].join("\n")
+  const suffix = ["", "User note:", normalizedNote].join("\n")
+  const reservedLength = prefix.length + suffix.length + 2
+  const commentMaxLength = Math.max(
+    0,
+    FEEDBACK_MESSAGE_MAX_LENGTH - reservedLength
+  )
+  const message = [
+    prefix,
+    truncate(finding.comment, commentMaxLength),
+    suffix,
+  ].join("\n")
+
+  return truncate(message, FEEDBACK_MESSAGE_MAX_LENGTH)
+}
+
 function FindingFeedback() {
   const { data } = Route.useSearch()
   const navigate = useNavigate()
@@ -58,18 +94,7 @@ function FindingFeedback() {
 
   function send() {
     if (!finding || !note.trim()) return
-    const message = [
-      `Finding feedback — ${finding.repo}`,
-      `${finding.file} [${finding.severity}]`,
-      finding.title,
-      "",
-      "Agent comment:",
-      finding.comment,
-      "",
-      "User note:",
-      note.trim(),
-    ].join("\n")
-    mutate(message, { onSuccess: close })
+    mutate(buildFeedbackMessage(finding, note), { onSuccess: close })
   }
 
   return (
@@ -117,11 +142,16 @@ function FindingFeedback() {
                 id="finding-feedback-note"
                 autoFocus
                 rows={3}
+                className="max-h-48 resize-none overflow-y-auto"
                 placeholder="What's wrong or right about this finding?"
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
+                maxLength={USER_NOTE_MAX_LENGTH}
                 disabled={isPending}
               />
+              <p className="text-right text-xs text-muted-foreground">
+                {note.length}/{USER_NOTE_MAX_LENGTH}
+              </p>
             </div>
           </div>
         ) : (

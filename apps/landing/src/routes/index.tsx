@@ -72,7 +72,7 @@ function Hero() {
               className="l-btn l-btn-solid l-btn-lg"
               {...externalLinkProps(env.appUrl)}
             >
-              Start in cloud
+              Get started
               <ArrowRight size={16} />
             </a>
           </div>
@@ -297,7 +297,7 @@ function OpenSource() {
               className="l-btn l-btn-solid"
               {...externalLinkProps(env.appUrl)}
             >
-              Start with included usage
+              Get started
               <ArrowRight size={14} />
             </a>
           </div>
@@ -501,7 +501,7 @@ function FinalCTA() {
               className="l-btn l-btn-solid l-btn-lg"
               {...externalLinkProps(env.appUrl)}
             >
-              Start in cloud
+              Get started
               <ArrowRight size={16} />
             </a>
           </div>

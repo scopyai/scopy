@@ -112,7 +112,7 @@ function BlogPost() {
                 className="l-btn l-btn-solid l-btn-lg"
                 {...externalLinkProps(env.appUrl)}
               >
-                Start in cloud
+                Get started
                 <ArrowRight size={16} />
               </a>
             </div>

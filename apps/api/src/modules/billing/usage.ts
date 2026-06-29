@@ -226,7 +226,6 @@ const extractGatewayGenerationId = (generation: unknown) => {
 
 type GatewayGenerationInfo = {
   totalCost?: number
-  usage?: number
 }
 
 export const resolveGatewayGenerationCost = async (
@@ -240,7 +239,6 @@ export const resolveGatewayGenerationCost = async (
       : null
     const cost =
       generationUsage?.totalCost ??
-      generationUsage?.usage ??
       numberAt(step, ["providerMetadata", "gateway", "cost"]) ??
       numberAt(step, ["providerMetadata", "gateway", "totalCost"])
     const costMicrocents = cost === null ? null : usdToMicroUsd(cost)
