@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { Output, ToolLoopAgent, tool } from "ai"
+import { createGateway, Output, ToolLoopAgent, tool } from "ai"
 import {
   buildDiffContext,
   chunksForRepositoryIndex,
@@ -18,6 +18,7 @@ import {
   calculateVectorNetworkCostMicrocents,
   calculateVectorQueryCostMicrocents,
   calculateVectorWriteCostMicrocents,
+  resolveGatewayGenerationCost,
   resolveOpenRouterGenerationCost,
 } from "../billing/usage"
 import type { PullRequestFile } from "./diff"
@@ -140,13 +141,15 @@ export type ReviewAgentResult = {
   durationMs: number
 }
 
-const requireOpenRouterApiKey = () => {
-  if (!env.OPENROUTER_API_KEY) {
-    throw new Error("OPENROUTER_API_KEY is required to run the review agent")
-  }
-
-  return env.OPENROUTER_API_KEY
-}
+const openRouterChat = (
+  openrouter: ReturnType<typeof createOpenRouter>,
+  modelId: string
+) =>
+  modelId.startsWith("openai/")
+    ? openrouter.chat(modelId, {
+        extraBody: { service_tier: reviewAgentConfig.openai.serviceTier },
+      })
+    : openrouter.chat(modelId)
 
 const toolText = (text: string, maxBytes = 90_000) => {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
@@ -163,11 +166,13 @@ const recordLlmBilling = async (
   stages: Record<string, unknown>,
   stage: string,
   modelId: string,
-  generation: unknown
+  generation: unknown,
+  provider: "openrouter" | "gateway",
+  resolveGenerationCost: typeof resolveOpenRouterGenerationCost
 ) => {
-  const cost = await resolveOpenRouterGenerationCost(generation)
+  const cost = await resolveGenerationCost(generation)
   if (cost.costMicrocents === null) {
-    throw new Error(`OpenRouter cost is missing for ${stage}`)
+    throw new Error(`${provider} cost is missing for ${stage}`)
   }
   const usage =
     typeof generation === "object" &&
@@ -177,6 +182,7 @@ const recordLlmBilling = async (
       : undefined
   const entry = {
     modelId,
+    provider,
     usage,
     billingUnit: "micro_usd",
     costUsd: cost.cost,
@@ -379,18 +385,43 @@ export const runReviewAgent = async ({
 
   logger.info("Review agent stage started", { ...context, stage: "runtime" })
   await recorder.appendEvent("stage.started", { stage: "runtime" })
-  const openrouter = createOpenRouter({ apiKey: requireOpenRouterApiKey() })
-  const mainModel = REVIEW_MODEL.startsWith("openai/")
-    ? openrouter.chat(REVIEW_MODEL, {
-        extraBody: { service_tier: reviewAgentConfig.openai.serviceTier },
-      })
-    : openrouter.chat(REVIEW_MODEL)
-  const subagentModel = REVIEW_VERIFIER_MODEL.startsWith("openai/")
-    ? openrouter.chat(REVIEW_VERIFIER_MODEL, {
-        extraBody: { service_tier: reviewAgentConfig.openai.serviceTier },
-      })
-    : openrouter.chat(REVIEW_VERIFIER_MODEL)
+  const openrouter = env.OPENROUTER_API_KEY
+    ? createOpenRouter({ apiKey: env.OPENROUTER_API_KEY })
+    : null
+  const gateway =
+    !openrouter && env.AI_GATEWAY_API_KEY
+      ? createGateway({ apiKey: env.AI_GATEWAY_API_KEY })
+      : null
+  if (!openrouter && !gateway) {
+    throw new Error(
+      "OPENROUTER_API_KEY or AI_GATEWAY_API_KEY is required to run the review agent"
+    )
+  }
+  const provider = openrouter ? "openrouter" : "gateway"
+  const mainModel = openrouter
+    ? openRouterChat(openrouter, REVIEW_MODEL)
+    : gateway!.chat(REVIEW_MODEL)
+  const subagentModel = openrouter
+    ? openRouterChat(openrouter, REVIEW_VERIFIER_MODEL)
+    : gateway!.chat(REVIEW_VERIFIER_MODEL)
+  const resolveGenerationCost = openrouter
+    ? resolveOpenRouterGenerationCost
+    : (generation: unknown) =>
+        resolveGatewayGenerationCost(generation, gateway!.getGenerationInfo)
+  const mainProviderOptions = openrouter ? reviewModelProviderOptions : undefined
+  const subagentProviderOptions = openrouter
+    ? verifierModelProviderOptions
+    : undefined
   const llmBilling: Record<string, unknown> = {}
+  const recordBilling = (stage: string, modelId: string, generation: unknown) =>
+    recordLlmBilling(
+      llmBilling,
+      stage,
+      modelId,
+      generation,
+      provider,
+      resolveGenerationCost
+    )
   const runtime = await prepareReviewRuntime({
     reviewRunId,
     repo: repository,
@@ -522,13 +553,12 @@ export const runReviewAgent = async ({
     baseSha: runtime.baseSha,
     contextModel: mainModel,
     contextModelId: REVIEW_MODEL,
-    contextProviderOptions: reviewModelProviderOptions,
+    contextProviderOptions: mainProviderOptions,
     recorder,
     logger,
   })
   if (preparedRepositoryContext.billingGeneration) {
-    await recordLlmBilling(
-      llmBilling,
+    await recordBilling(
       "repository_context",
       REVIEW_MODEL,
       preparedRepositoryContext.billingGeneration
@@ -747,7 +777,7 @@ ${affectedSymbols}`
               tools: createRepositoryTools(
                 `subagent.${batch}.${safeId}.${attempt}`
               ),
-              providerOptions: verifierModelProviderOptions,
+              providerOptions: subagentProviderOptions,
               output: Output.object({
                 schema: reviewSubagentOutputSchema,
                 name: "review_suspicions",
@@ -758,12 +788,7 @@ ${affectedSymbols}`
             })
             const generation = await agent.generate({ prompt })
             subagentUsages.push(generation.totalUsage)
-            await recordLlmBilling(
-              llmBilling,
-              "subagents",
-              REVIEW_VERIFIER_MODEL,
-              generation
-            )
+            await recordBilling("subagents", REVIEW_VERIFIER_MODEL, generation)
             const output = reviewSubagentOutputSchema.parse(generation.output)
             const suspicions = output.suspicions.map((suspicion, index) => {
               const suspicionId = `batch-${batch}:${task.id}:${index + 1}`
@@ -900,7 +925,7 @@ ${affectedSymbols}`
         model: subagentModel,
         instructions: naturalLanguageLinterInstructions,
         tools: {},
-        providerOptions: verifierModelProviderOptions,
+        providerOptions: subagentProviderOptions,
         output: Output.object({
           schema: naturalLanguageLinterOutputSchema,
           name: "natural_language_linter_findings",
@@ -912,8 +937,7 @@ ${affectedSymbols}`
       })
       const generation = await agent.generate({ prompt })
       linterUsages.push(generation.totalUsage)
-      await recordLlmBilling(
-        llmBilling,
+      await recordBilling(
         "natural_language_linter",
         REVIEW_VERIFIER_MODEL,
         generation
@@ -1079,7 +1103,7 @@ ${affectedSymbols}`
       ...createRepositoryTools("main"),
       spawn_review_agents: spawnReviewAgents,
     },
-    providerOptions: reviewModelProviderOptions,
+    providerOptions: mainProviderOptions,
     output: Output.object({
       schema: mainOutputSchema,
       name: "review_report",
@@ -1090,12 +1114,7 @@ ${affectedSymbols}`
     onStepFinish: async (step) => recorder.recordStep(step),
   })
   const mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
-  const mainUsage = await recordLlmBilling(
-    llmBilling,
-    "main",
-    REVIEW_MODEL,
-    mainGeneration
-  )
+  const mainUsage = await recordBilling("main", REVIEW_MODEL, mainGeneration)
   const mainOutput = mainOutputSchema.parse(mainGeneration.output)
   const generatedReport = reviewReportSchema.parse(mainOutput)
   const linterFindings = await runNaturalLanguageLinter()

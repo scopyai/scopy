@@ -72,7 +72,7 @@ function Hero() {
               className="l-btn l-btn-solid l-btn-lg"
               {...externalLinkProps(env.appUrl)}
             >
-              Start in cloud
+              Get started
               <ArrowRight size={16} />
             </a>
           </div>
@@ -297,7 +297,7 @@ function OpenSource() {
               className="l-btn l-btn-solid"
               {...externalLinkProps(env.appUrl)}
             >
-              Try for $1
+              Get started
               <ArrowRight size={14} />
             </a>
           </div>
@@ -320,8 +320,8 @@ function Pricing() {
         <div className="l-price-header">
           <h2 className="l-price-title">Simple usage-based pricing</h2>
           <p className="l-price-sub">
-            Try hosted Scopy for $1, then pick a monthly plan. Review usage
-            included — no per-seat pricing.
+            New cloud workspaces start with $1 of included review usage. Pick a
+            monthly plan when you need ongoing reviews — no per-seat pricing.
           </p>
         </div>
 
@@ -390,7 +390,7 @@ const FAQS = [
   },
   {
     q: "How does billing work?",
-    a: "Billing is managed per workspace. You can start with a one-time $1 trial that covers a few pull request reviews. Premium and Ultra are monthly plans with included review usage; reviews debit workspace credits based on actual usage during review runs. Billing changes apply to the selected workspace, not every workspace on your account.",
+    a: "Billing is managed per workspace. New workspaces start with $1 of included review usage by default. Premium and Ultra are monthly plans with included review usage; reviews debit workspace credits based on actual usage during review runs. Billing changes apply to the selected workspace, not every workspace on your account.",
   },
   {
     q: "Can we self-host Scopy?",
@@ -501,7 +501,7 @@ function FinalCTA() {
               className="l-btn l-btn-solid l-btn-lg"
               {...externalLinkProps(env.appUrl)}
             >
-              Start in cloud
+              Get started
               <ArrowRight size={16} />
             </a>
           </div>

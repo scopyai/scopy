@@ -1,5 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { useEffect } from "react"
 import { useMutation } from "@tanstack/react-query"
+import { z } from "zod"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -11,7 +13,15 @@ import {
 import { authClient } from "@/lib/auth-client"
 import { env } from "@/env"
 import { WorkspaceHomeRedirect } from "@/components/workspace-home-redirect"
-export const Route = createFileRoute("/login")({ component: LoginPage })
+
+const searchSchema = z.object({
+  redirect: z.string().optional(),
+})
+
+export const Route = createFileRoute("/login")({
+  validateSearch: searchSchema,
+  component: LoginPage,
+})
 
 function GoogleIcon() {
   return (
@@ -42,13 +52,17 @@ function GoogleIcon() {
 }
 
 function LoginPage() {
+  const { redirect } = Route.useSearch()
   const { data: session, isPending } = authClient.useSession()
+  const navigate = useNavigate()
+  const safeRedirect =
+    redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : "/"
 
   const mutation = useMutation({
     mutationFn: async () => {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: `${env.VITE_WEB_BASE_URL}/`,
+        callbackURL: new URL(safeRedirect, env.VITE_WEB_BASE_URL).toString(),
       })
 
       if (error) {
@@ -57,8 +71,26 @@ function LoginPage() {
     },
   })
 
+  const shouldRedirect = !!session && safeRedirect !== "/"
+
+  useEffect(() => {
+    if (!shouldRedirect) return
+    // Client-side (SPA) navigation — NOT window.location.href. A hard reload
+    // would re-initialize the auth store and re-race the cross-origin session
+    // fetch, which can flap null<->present between _app and /login and cause a
+    // reload loop. Parse the query string so search params (e.g. ?data=) are
+    // preserved through the typed router.
+    const url = new URL(safeRedirect, window.location.origin)
+    navigate({
+      to: url.pathname,
+      search: Object.fromEntries(url.searchParams.entries()),
+      replace: true,
+    })
+  }, [shouldRedirect, safeRedirect, navigate])
+
   if (isPending) return null
 
+  if (shouldRedirect) return null
   if (session) return <WorkspaceHomeRedirect />
 
   return (

@@ -41,7 +41,6 @@ export function formatCreditTransactionType(eventType: string): string {
     revoke: "Revoked",
     usage_debit: "Scopy usage",
     usage_week: "Scopy usage",
-    starter_grant: "Starter credit",
   }
   return labels[eventType] ?? "Adjustment"
 }

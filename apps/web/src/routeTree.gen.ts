@@ -14,10 +14,11 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppConnectRouteImport } from './routes/_app.connect'
 import { Route as AppWorkspaceSlugRouteImport } from './routes/_app.$workspaceSlug'
-import { Route as AppOnboardingTrialRouteImport } from './routes/_app.onboarding.trial'
+import { Route as AppOnboardingUsageRouteImport } from './routes/_app.onboarding.usage'
 import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
 import { Route as AppOnboardingOverviewRouteImport } from './routes/_app.onboarding.overview'
 import { Route as AppOnboardingConnectRouteImport } from './routes/_app.onboarding.connect'
+import { Route as AppFeedbackFindingRouteImport } from './routes/_app.feedback.finding'
 import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
 import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
 import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
@@ -51,9 +52,9 @@ const AppWorkspaceSlugRoute = AppWorkspaceSlugRouteImport.update({
   path: '/$workspaceSlug',
   getParentRoute: () => AppRoute,
 } as any)
-const AppOnboardingTrialRoute = AppOnboardingTrialRouteImport.update({
-  id: '/onboarding/trial',
-  path: '/onboarding/trial',
+const AppOnboardingUsageRoute = AppOnboardingUsageRouteImport.update({
+  id: '/onboarding/usage',
+  path: '/onboarding/usage',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOnboardingRepositoriesRoute =
@@ -70,6 +71,11 @@ const AppOnboardingOverviewRoute = AppOnboardingOverviewRouteImport.update({
 const AppOnboardingConnectRoute = AppOnboardingConnectRouteImport.update({
   id: '/onboarding/connect',
   path: '/onboarding/connect',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedbackFindingRoute = AppFeedbackFindingRouteImport.update({
+  id: '/feedback/finding',
+  path: '/feedback/finding',
   getParentRoute: () => AppRoute,
 } as any)
 const AppWorkspaceSlugSettingsRoute =
@@ -130,10 +136,11 @@ export interface FileRoutesByFullPath {
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/feedback/finding': typeof AppFeedbackFindingRoute
   '/onboarding/connect': typeof AppOnboardingConnectRoute
   '/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
-  '/onboarding/trial': typeof AppOnboardingTrialRoute
+  '/onboarding/usage': typeof AppOnboardingUsageRoute
   '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -147,10 +154,11 @@ export interface FileRoutesByTo {
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/feedback/finding': typeof AppFeedbackFindingRoute
   '/onboarding/connect': typeof AppOnboardingConnectRoute
   '/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
-  '/onboarding/trial': typeof AppOnboardingTrialRoute
+  '/onboarding/usage': typeof AppOnboardingUsageRoute
   '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -167,10 +175,11 @@ export interface FileRoutesById {
   '/_app/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
   '/_app/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/_app/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
+  '/_app/feedback/finding': typeof AppFeedbackFindingRoute
   '/_app/onboarding/connect': typeof AppOnboardingConnectRoute
   '/_app/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/_app/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
-  '/_app/onboarding/trial': typeof AppOnboardingTrialRoute
+  '/_app/onboarding/usage': typeof AppOnboardingUsageRoute
   '/_app/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/_app/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/_app/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -187,10 +196,11 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/manage-team'
     | '/$workspaceSlug/repositories'
     | '/$workspaceSlug/settings'
+    | '/feedback/finding'
     | '/onboarding/connect'
     | '/onboarding/overview'
     | '/onboarding/repositories'
-    | '/onboarding/trial'
+    | '/onboarding/usage'
     | '/$workspaceSlug/billing/success'
     | '/$workspaceSlug/repositories/$repositoryId'
     | '/$workspaceSlug/repositories/'
@@ -204,10 +214,11 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
     | '/$workspaceSlug/settings'
+    | '/feedback/finding'
     | '/onboarding/connect'
     | '/onboarding/overview'
     | '/onboarding/repositories'
-    | '/onboarding/trial'
+    | '/onboarding/usage'
     | '/$workspaceSlug/billing/success'
     | '/$workspaceSlug/repositories/$repositoryId'
     | '/$workspaceSlug/repositories'
@@ -223,10 +234,11 @@ export interface FileRouteTypes {
     | '/_app/$workspaceSlug/manage-team'
     | '/_app/$workspaceSlug/repositories'
     | '/_app/$workspaceSlug/settings'
+    | '/_app/feedback/finding'
     | '/_app/onboarding/connect'
     | '/_app/onboarding/overview'
     | '/_app/onboarding/repositories'
-    | '/_app/onboarding/trial'
+    | '/_app/onboarding/usage'
     | '/_app/$workspaceSlug/billing/success'
     | '/_app/$workspaceSlug/repositories/$repositoryId'
     | '/_app/$workspaceSlug/repositories/'
@@ -275,11 +287,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceSlugRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/onboarding/trial': {
-      id: '/_app/onboarding/trial'
-      path: '/onboarding/trial'
-      fullPath: '/onboarding/trial'
-      preLoaderRoute: typeof AppOnboardingTrialRouteImport
+    '/_app/onboarding/usage': {
+      id: '/_app/onboarding/usage'
+      path: '/onboarding/usage'
+      fullPath: '/onboarding/usage'
+      preLoaderRoute: typeof AppOnboardingUsageRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/onboarding/repositories': {
@@ -301,6 +313,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/connect'
       fullPath: '/onboarding/connect'
       preLoaderRoute: typeof AppOnboardingConnectRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/feedback/finding': {
+      id: '/_app/feedback/finding'
+      path: '/feedback/finding'
+      fullPath: '/feedback/finding'
+      preLoaderRoute: typeof AppFeedbackFindingRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/$workspaceSlug/settings': {
@@ -417,19 +436,21 @@ const AppWorkspaceSlugRouteWithChildren =
 interface AppRouteChildren {
   AppWorkspaceSlugRoute: typeof AppWorkspaceSlugRouteWithChildren
   AppConnectRoute: typeof AppConnectRoute
+  AppFeedbackFindingRoute: typeof AppFeedbackFindingRoute
   AppOnboardingConnectRoute: typeof AppOnboardingConnectRoute
   AppOnboardingOverviewRoute: typeof AppOnboardingOverviewRoute
   AppOnboardingRepositoriesRoute: typeof AppOnboardingRepositoriesRoute
-  AppOnboardingTrialRoute: typeof AppOnboardingTrialRoute
+  AppOnboardingUsageRoute: typeof AppOnboardingUsageRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceSlugRoute: AppWorkspaceSlugRouteWithChildren,
   AppConnectRoute: AppConnectRoute,
+  AppFeedbackFindingRoute: AppFeedbackFindingRoute,
   AppOnboardingConnectRoute: AppOnboardingConnectRoute,
   AppOnboardingOverviewRoute: AppOnboardingOverviewRoute,
   AppOnboardingRepositoriesRoute: AppOnboardingRepositoriesRoute,
-  AppOnboardingTrialRoute: AppOnboardingTrialRoute,
+  AppOnboardingUsageRoute: AppOnboardingUsageRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

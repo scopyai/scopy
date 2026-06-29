@@ -18,15 +18,24 @@ export const Route = createFileRoute("/_app")({
 function AppLayout() {
   const { data: session, isPending } = authClient.useSession()
   const { data: user, isPending: userPending } = useMeUser()
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
+  const location = useRouterState({
+    select: (state) => state.location,
   })
+  const pathname = location.pathname
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
     null
   )
 
   if (isPending) return null
-  if (!session) return <Navigate to="/login" />
+  if (!session) {
+    return (
+      <Navigate
+        to="/login"
+        search={{ redirect: location.href }}
+        replace
+      />
+    )
+  }
 
   if (userPending) return null
 

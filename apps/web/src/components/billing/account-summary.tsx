@@ -27,19 +27,15 @@ const tierLabel: Record<Tier, string> = {
 export function AccountSummary({
   account,
   isOwner,
-  starterUsed,
   workspaceId,
 }: {
   account: Account
   isOwner: boolean
-  starterUsed?: boolean
   workspaceId: string
 }) {
   const isPaid =
     account.tier !== "free" && account.tier !== "enterprise"
-  const hasStarterCredit = account.tier === "free" && account.creditBalance > 0
-  const starterDrained =
-    account.tier === "free" && !!starterUsed && account.creditBalance <= 0
+  const hasFreeCredit = account.tier === "free" && account.creditBalance > 0
   const usagePercent =
     account.monthlyAllowance > 0
       ? Math.min(
@@ -119,18 +115,17 @@ export function AccountSummary({
           </>
         )}
 
-        {hasStarterCredit && (
+        {hasFreeCredit && (
           <Stat
-            label="Starter usage remaining"
+            label="Included usage remaining"
             value={formatUsageBalance(account.creditBalance)}
             large
           />
         )}
 
-        {starterDrained && (
+        {account.tier === "free" && account.creditBalance <= 0 && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-            You've used your $1 starter usage. Choose a plan below to keep
-            reviewing pull requests.
+            Choose a plan below to keep reviewing pull requests.
           </div>
         )}
 

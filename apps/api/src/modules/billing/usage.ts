@@ -148,11 +148,24 @@ const usageOf = (value: unknown) => {
   return "usage" in value ? value.usage : undefined
 }
 
-export const resolveOpenRouterGenerationCost = async (generation: unknown) => {
+type ResolvedStepCost = {
+  cost: number | null
+  costMicrocents: number | null
+  providerMetadata?: unknown
+  generationId?: string
+  generationUsage?: unknown
+}
+
+const resolveGenerationCost = async (
+  generation: unknown,
+  resolveStepCost: (
+    step: unknown
+  ) => Promise<ResolvedStepCost> | ResolvedStepCost
+) => {
   const steps = stepsFromGeneration(generation)
   const resolvedSteps = await Promise.all(
     steps.map(async (step, index) => {
-      const cost = await resolveOpenRouterCost(step)
+      const cost = await resolveStepCost(step)
       return {
         stepNumber: stepNumberOf(step, index),
         usage: usageOf(step),
@@ -163,7 +176,7 @@ export const resolveOpenRouterGenerationCost = async (generation: unknown) => {
         generationId: cost.generationId,
         generationUsage: cost.generationUsage,
       }
-    }),
+    })
   )
 
   if (resolvedSteps.some((step) => step.costMicrocents === null)) {
@@ -178,11 +191,65 @@ export const resolveOpenRouterGenerationCost = async (generation: unknown) => {
     cost: resolvedSteps.reduce((total, step) => total + (step.costUsd ?? 0), 0),
     costMicrocents: resolvedSteps.reduce(
       (total, step) => total + (step.costMicrocents ?? 0),
-      0,
+      0
     ),
     steps: resolvedSteps,
   }
 }
+
+export const resolveOpenRouterGenerationCost = (generation: unknown) =>
+  resolveGenerationCost(generation, async (step) => {
+    const cost = await resolveOpenRouterCost(step)
+    return {
+      cost: cost.cost,
+      costMicrocents: cost.costMicrocents,
+      providerMetadata: cost.providerMetadata,
+      generationId: cost.generationId,
+      generationUsage: cost.generationUsage,
+    }
+  })
+
+const extractGatewayGenerationId = (generation: unknown) => {
+  const generationId = numberAt(generation, [
+    "providerMetadata",
+    "gateway",
+    "generationId",
+  ])
+  if (generationId !== null) return String(generationId)
+  return isRecord(generation) &&
+    isRecord(generation.providerMetadata) &&
+    isRecord(generation.providerMetadata.gateway) &&
+    typeof generation.providerMetadata.gateway.generationId === "string"
+    ? generation.providerMetadata.gateway.generationId
+    : null
+}
+
+type GatewayGenerationInfo = {
+  totalCost?: number
+}
+
+export const resolveGatewayGenerationCost = async (
+  generation: unknown,
+  getGenerationInfo: (params: { id: string }) => Promise<GatewayGenerationInfo>
+) =>
+  resolveGenerationCost(generation, async (step) => {
+    const generationId = extractGatewayGenerationId(step)
+    const generationUsage = generationId
+      ? await getGenerationInfo({ id: generationId }).catch(() => null)
+      : null
+    const cost =
+      generationUsage?.totalCost ??
+      numberAt(step, ["providerMetadata", "gateway", "cost"]) ??
+      numberAt(step, ["providerMetadata", "gateway", "totalCost"])
+    const costMicrocents = cost === null ? null : usdToMicroUsd(cost)
+    return {
+      cost,
+      costMicrocents,
+      providerMetadata: isRecord(step) ? step.providerMetadata : undefined,
+      generationId: generationId ?? undefined,
+      generationUsage,
+    }
+  })
 
 export const hasPositiveUsageBalance = async (workspaceId: string) => {
   const currentWorkspace = await db.query.workspace.findFirst({
