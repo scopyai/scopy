@@ -161,7 +161,8 @@ export const inviteWorkspaceMemberByEmail = async ({
 
 export const upsertGitHubWorkspace = async (
   installation: GitHubInstallation,
-  userId: string
+  userId: string,
+  options: { initialCreditMicroUsd?: number } = {}
 ) => {
   if (!installation.account) {
     throw new Error("GitHub installation does not include an account")
@@ -217,6 +218,7 @@ export const upsertGitHubWorkspace = async (
     connectionStatus,
     installedByUserId: userId,
     installedAt: new Date(),
+    creditBalance: options.initialCreditMicroUsd ?? 0,
     updatedAt: new Date(),
   }
 

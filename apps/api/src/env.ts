@@ -21,14 +21,12 @@ export const env = z
       .transform((value) => value === "true"),
     CREEM_PREMIUM_PRODUCT_ID: z.string().min(1),
     CREEM_ULTRA_PRODUCT_ID: z.string().min(1),
-    CREEM_STARTER_PRODUCT_ID: z.string().min(1),
-    // Credit granted by the one-time $1 starter, in micro-USD. Sized to roughly
-    // 3-5 typical reviews; keep small since it also caps fraud exposure.
-    STARTER_CREDIT_MICRO_USD: z.coerce
+    // Default usage balance for a newly onboarded workspace, in micro-USD.
+    SIGNUP_CREDIT_MICRO_USD: z.coerce
       .number()
       .int()
       .positive()
-      .default(1_500_000),
+      .default(1_000_000),
     GITHUB_APP_ID: z.string().min(1).optional(),
     GITHUB_APP_SLUG: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),
@@ -36,7 +34,8 @@ export const env = z
     GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
     GITHUB_APP_WEBHOOK_SECRET: z.string().min(1).optional(),
     OPENROUTER_API_KEY: z.string().min(1).optional(),
-    REVIEW_MODEL: z.string().min(1).default("z-ai/glm-5.1"),
+    AI_GATEWAY_API_KEY: z.string().min(1).optional(),
+    REVIEW_MODEL: z.string().min(1).default("openai/gpt-5.5"),
     REVIEW_VERIFIER_MODEL: z.string().min(1).default("openai/gpt-5.4-mini"),
     REVIEW_WORKDIR: z.string().min(1).default(".data/reviews"),
     REVIEW_RUNS_DIR: z.string().min(1).default(".runs"),

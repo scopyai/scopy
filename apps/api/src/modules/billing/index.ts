@@ -3,7 +3,6 @@ import { protectedRoute } from "../auth";
 import {
   BillingError,
   cancelWorkspaceSubscription,
-  createStarterCheckout,
   createWorkspaceCheckout,
   createWorkspacePortal,
   getWorkspaceBilling,
@@ -21,9 +20,6 @@ const checkoutSchema = z.object({
 });
 const changePlanSchema = z.object({
   tier: z.enum(["premium", "ultra"]),
-});
-const starterCheckoutSchema = z.object({
-  requestId: z.uuid(),
 });
 
 const paginationSchema = z.object({
@@ -48,7 +44,7 @@ export const billingRoutes = protectedRoute("/workspaces")
       return status(404, { error: "Workspace not found" });
     }
 
-    return getWorkspaceBilling(params.workspaceId, user.id);
+    return getWorkspaceBilling(params.workspaceId);
   })
   .get(
     "/:workspaceId/billing/credits",
@@ -86,31 +82,6 @@ export const billingRoutes = protectedRoute("/workspaces")
           params.workspaceId,
           user.email,
           parsed.data.tier,
-          parsed.data.requestId,
-        );
-      } catch (error) {
-        const billingError = asBillingError(error);
-        return status(billingError.statusCode, { error: billingError.error });
-      }
-    },
-  )
-  .post(
-    "/:workspaceId/billing/starter",
-    async ({ body, params, user, status }) => {
-      if (!(await requireOwner(params.workspaceId, user.id))) {
-        return status(404, { error: "Workspace not found" });
-      }
-
-      const parsed = starterCheckoutSchema.safeParse(body);
-      if (!parsed.success) {
-        return status(400, { error: "Invalid checkout request" });
-      }
-
-      try {
-        return await createStarterCheckout(
-          params.workspaceId,
-          user.id,
-          user.email,
           parsed.data.requestId,
         );
       } catch (error) {

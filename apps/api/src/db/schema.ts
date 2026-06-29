@@ -67,7 +67,7 @@ export const workspaceBillingTier = pgEnum("workspace_billing_tier", [
 ])
 export const workspaceCreditTransactionType = pgEnum(
   "workspace_credit_transaction_type",
-  ["reset", "revoke", "usage_debit", "starter_grant"]
+  ["reset", "revoke", "usage_debit"]
 )
 export const userOnboardingStatus = pgEnum("user_onboarding_status", [
   "connect_github",
@@ -91,10 +91,6 @@ export const user = pgTable("user", {
   onboardingStatus: userOnboardingStatus("onboarding_status")
     .default("connect_github")
     .notNull(),
-  // Set the first time the user buys the one-time $1 starter. Its presence is
-  // the per-user guard that prevents buying the starter more than once.
-  starterGrantedAt: timestamp("starter_granted_at"),
-  starterCreemCheckoutId: text("starter_creem_checkout_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

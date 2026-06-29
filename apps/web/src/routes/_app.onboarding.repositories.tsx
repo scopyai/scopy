@@ -86,7 +86,7 @@ function OnboardingRepositoriesPage() {
         }),
       ])
 
-      navigate({ to: "/onboarding/trial", replace: true })
+      navigate({ to: "/onboarding/usage", replace: true })
     },
     onError: () => {
       toast.error("Failed to save repository selection")
