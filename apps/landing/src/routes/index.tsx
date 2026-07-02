@@ -200,7 +200,7 @@ const FEATURES = [
   {
     icon: <ZapIcon size={22} />,
     name: "Model-agnostic",
-    desc: "Self-host with OpenAI, Anthropic, local models or anything with a compatible API. No model lock-in.",
+    desc: "Bring your own key on hosted platform, or self-host with any compatible API. No model lock-in.",
   },
   {
     icon: <GitHubIcon size={22} className="l-icon" />,
@@ -391,6 +391,10 @@ const FAQS = [
   {
     q: "How does billing work?",
     a: "Billing is managed per workspace. New workspaces start with $1 of included review usage by default. Premium and Ultra are monthly plans with included review usage; reviews debit workspace credits based on actual usage during review runs. Billing changes apply to the selected workspace, not every workspace on your account.",
+  },
+  {
+    q: "Can I use my own model API keys?",
+    a: "Yes. Any workspace can switch to bring-your-own-key and add an OpenRouter or Vercel AI Gateway key. Those reviews run on your key and are billed to your provider account instead of workspace credits, and you can override the choice per repository. Keys are encrypted at rest, and self-hosted instances can use their own keys too.",
   },
   {
     q: "Can we self-host Scopy?",
