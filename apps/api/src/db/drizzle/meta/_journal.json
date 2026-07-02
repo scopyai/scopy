@@ -15,6 +15,13 @@
       "when": 1782590400000,
       "tag": "0001_natural_language_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783022910034,
+      "tag": "0002_dizzy_agent_brand",
+      "breakpoints": true
     }
   ]
 }

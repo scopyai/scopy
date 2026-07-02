@@ -17,6 +17,7 @@ import {
 import { publishReviewFailure, REVIEW_MODEL, runReviewAgent } from "."
 import { createReviewRunRecorder } from "./debug-run"
 import { resolveReviewConfig, shouldRunAutomaticReview } from "./review-config"
+import { resolveReviewCredential } from "../provider-keys/service"
 
 type JobContext = {
   logger: {
@@ -226,6 +227,9 @@ export const executeReviewPullRequest = async (
     run.pullRequest.repository.workspace,
     run.pullRequest.repository
   )
+  const billingMode =
+    run.pullRequest.repository.reviewBillingMode ??
+    run.pullRequest.repository.workspace.reviewBillingMode
   const reviewCommentRunId = triggerSource === "mention" ? run.id : undefined
 
   if (
@@ -266,7 +270,13 @@ export const executeReviewPullRequest = async (
     return
   }
 
-  if (!(await hasPositiveUsageBalance(workspaceId))) {
+  const skipBlockedReview = async (options: {
+    skipReason: string
+    commentBody: string
+    logMessage: string
+    checkTitle: string
+    checkSummary: string
+  }) => {
     let commentId: number | undefined
     try {
       commentId = await findOrCreateReviewComment({
@@ -284,10 +294,10 @@ export const executeReviewPullRequest = async (
         commentId,
         pullRequestId: run.pullRequest.id,
         reviewRunId: reviewCommentRunId,
-        body: reviewBalanceBlockedBody,
+        body: options.commentBody,
       })
     } catch (publishError) {
-      logger.error("Failed to publish billing blocked notice", {
+      logger.error("Failed to publish review skip notice", {
         reviewRunId: run.id,
         pullRequestId: run.pullRequestId,
         error: publishError,
@@ -304,32 +314,60 @@ export const executeReviewPullRequest = async (
           triggerSource,
           modelId: REVIEW_MODEL,
           commentId,
-          skipReason: "workspace_balance_empty",
+          skipReason: options.skipReason,
           completedAt: completedAt.toISOString(),
         },
         completedAt,
         updatedAt: completedAt,
       })
       .where(eq(reviewRun.id, run.id))
-    logger.info(
-      "Skipped pull request review because workspace balance is empty",
-      {
-        reviewRunId: run.id,
-        pullRequestId: run.pullRequestId,
-        workspaceId,
-      }
-    )
+    logger.info(options.logMessage, {
+      reviewRunId: run.id,
+      pullRequestId: run.pullRequestId,
+      workspaceId,
+    })
     await syncReviewCheck({
       run,
       logger,
       completion: {
         conclusion: "action_required",
-        output: {
-          title: "Review requires billing action",
-          summary:
-            "The review could not start because this workspace has no remaining usage balance. See the pull request comment for details.",
-        },
+        output: { title: options.checkTitle, summary: options.checkSummary },
       },
+    })
+  }
+
+  const credential = await resolveReviewCredential({
+    workspaceId,
+    billingMode,
+    preferredProvider:
+      run.pullRequest.repository.byokProvider ??
+      run.pullRequest.repository.workspace.byokProvider,
+  })
+
+  if (credential.status === "missing_key") {
+    await skipBlockedReview({
+      skipReason: "byok_key_missing",
+      commentBody:
+        "This review is set to use your own provider API key (bring-your-own-key), but no key is configured. Add an OpenRouter or Vercel AI Gateway key in your workspace settings, or switch this repository back to platform billing.",
+      logMessage: "Skipped review because no BYOK key is configured",
+      checkTitle: "Review requires a provider key",
+      checkSummary:
+        "This repository is set to bring-your-own-key but no provider API key is configured. See the pull request comment for details.",
+    })
+    return
+  }
+
+  if (
+    billingMode === "platform" &&
+    !(await hasPositiveUsageBalance(workspaceId))
+  ) {
+    await skipBlockedReview({
+      skipReason: "workspace_balance_empty",
+      commentBody: reviewBalanceBlockedBody,
+      logMessage: "Skipped review because workspace balance is empty",
+      checkTitle: "Review requires billing action",
+      checkSummary:
+        "The review could not start because this workspace has no remaining usage balance. See the pull request comment for details.",
     })
     return
   }
@@ -354,9 +392,14 @@ export const executeReviewPullRequest = async (
         run.pullRequest.repository.workspace.providerInstallationId,
       triggerSource,
       logger,
+      credential,
     })
     let resultToStore = result
-    if (result.kind === "summary" && result.billing) {
+    if (
+      billingMode === "platform" &&
+      result.kind === "summary" &&
+      result.billing
+    ) {
       const transaction = await debitReviewUsage({
         workspaceId,
         reviewRunId: run.id,

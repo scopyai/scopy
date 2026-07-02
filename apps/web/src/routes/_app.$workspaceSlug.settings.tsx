@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { PageHeader } from "@/components/page-header"
 import { WorkspaceReviewSettings } from "@/components/repositories/workspace-review-settings"
+import { ByokSettings } from "@/components/billing/byok-settings"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
@@ -60,6 +61,11 @@ function SettingsRoute() {
         <div className="flex-1 overflow-auto p-6">
           <div className="flex flex-col gap-6">
             <WorkspaceReviewSettings
+              workspaceId={selectedWorkspaceId}
+              canEdit={canEdit}
+            />
+
+            <ByokSettings
               workspaceId={selectedWorkspaceId}
               canEdit={canEdit}
             />
