@@ -13,7 +13,7 @@ export function LandingNav() {
               className="l-logo-img"
               aria-hidden="true"
             />
-            scopy ai
+            scopy
           </a>
           <div className="l-nav-right">
             <a

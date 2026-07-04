@@ -62,7 +62,7 @@ export function getLandingPlans(): LandingPlan[] {
       ],
       cta: "Get started",
       href: env.appUrl,
-      variant: "ghost",
+      variant: "solid",
       featured: false,
     },
     {

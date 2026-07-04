@@ -29,7 +29,7 @@ export const Route = createFileRoute("/blog/$slug")({
       publisher: {
         "@type": "Organization",
         name: "Scopy AI",
-        logo: { "@type": "ImageObject", url: `${env.siteUrl}/logo.svg` },
+        logo: { "@type": "ImageObject", url: `${env.siteUrl}/logo-og.png` },
       },
       mainEntityOfPage: { "@type": "WebPage", "@id": url },
       url,
