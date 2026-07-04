@@ -55,7 +55,6 @@ function Home() {
 function Hero() {
   return (
     <section className="l-hero">
-      <Shards />
       <div className="l-wrap">
         <div className="l-hero-body">
           <h1 className="l-hero-title">{hero.title}</h1>
@@ -83,61 +82,6 @@ function Hero() {
         </div>
       </div>
     </section>
-  )
-}
-
-function Shards() {
-  return (
-    <div className="l-shards" aria-hidden="true">
-      <span
-        className="l-shard"
-        style={{
-          width: 108,
-          height: 108,
-          top: "12%",
-          left: "3%",
-          opacity: 0.08,
-        }}
-      />
-      <span
-        className="l-shard"
-        style={{
-          width: 52,
-          height: 52,
-          top: "55%",
-          left: "7.5%",
-          opacity: 0.06,
-        }}
-      />
-      <span
-        className="l-shard"
-        style={{ width: 68, height: 68, top: "75%", left: "2%", opacity: 0.05 }}
-      />
-      <span
-        className="l-shard"
-        style={{ width: 92, height: 92, top: "8%", right: "4%", opacity: 0.08 }}
-      />
-      <span
-        className="l-shard"
-        style={{
-          width: 40,
-          height: 40,
-          top: "60%",
-          right: "8%",
-          opacity: 0.06,
-        }}
-      />
-      <span
-        className="l-shard"
-        style={{
-          width: 120,
-          height: 120,
-          top: "78%",
-          right: "1.5%",
-          opacity: 0.04,
-        }}
-      />
-    </div>
   )
 }
 
