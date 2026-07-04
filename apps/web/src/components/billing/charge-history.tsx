@@ -16,6 +16,7 @@ import {
   formatChargeType,
   formatDate,
 } from "@/lib/billing-format"
+import { tagToneClassName } from "@/lib/tag-tones"
 import { HistoryPagination } from "./history-pagination"
 
 const PAGE_SIZE = 25
@@ -26,7 +27,7 @@ export function ChargeHistory({
   workspaceId: string | null | undefined
 }) {
   const [page, setPage] = useState(1)
-  const { data, isPending } = useWorkspaceBillingCharges(
+  const { data, isFetching, isPending } = useWorkspaceBillingCharges(
     workspaceId,
     page,
     PAGE_SIZE
@@ -80,8 +81,8 @@ export function ChargeHistory({
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={isCredit ? "outline" : "secondary"}
-                          className="font-normal"
+                          variant="outline"
+                          className={tagToneClassName(item.type)}
                         >
                           {formatChargeType(item.type)}
                         </Badge>
@@ -105,8 +106,9 @@ export function ChargeHistory({
             </Table>
 
             <HistoryPagination
-              page={data.page}
+              page={page}
               totalPages={totalPages}
+              disabled={isFetching}
               onPrevious={() => setPage((p) => p - 1)}
               onNext={() => setPage((p) => p + 1)}
             />

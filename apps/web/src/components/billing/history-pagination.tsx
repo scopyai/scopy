@@ -4,11 +4,13 @@ import { Button } from "@workspace/ui/components/button"
 export function HistoryPagination({
   page,
   totalPages,
+  disabled,
   onPrevious,
   onNext,
 }: {
   page: number
   totalPages: number
+  disabled?: boolean
   onPrevious: () => void
   onNext: () => void
 }) {
@@ -23,7 +25,7 @@ export function HistoryPagination({
         <Button
           variant="outline"
           size="icon-sm"
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
           onClick={onPrevious}
           aria-label="Previous page"
         >
@@ -32,7 +34,7 @@ export function HistoryPagination({
         <Button
           variant="outline"
           size="icon-sm"
-          disabled={page >= lastPage}
+          disabled={disabled || page >= lastPage}
           onClick={onNext}
           aria-label="Next page"
         >

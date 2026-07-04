@@ -11,6 +11,7 @@ import { Separator } from "@workspace/ui/components/separator"
 import { PullRequestTimelineEvent } from "./pr-timeline-event"
 import { getPullRequestStateDisplay } from "./pr-status"
 import { cn } from "@workspace/ui/lib/utils"
+import { tagToneClassName } from "@/lib/tag-tones"
 
 type Author = {
   login: string
@@ -154,7 +155,7 @@ export function PullRequestDetail({
                       />
                     )}
                     <AvatarFallback>
-                      {pullRequest.author.login[0]?.toUpperCase()}
+                      {pullRequest.author.login.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <span className="text-xs text-muted-foreground">
@@ -177,7 +178,11 @@ export function PullRequestDetail({
             {pullRequest.labels.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {pullRequest.labels.map((label) => (
-                  <Badge key={label} variant="secondary" className="h-4 text-[10px]">
+                  <Badge
+                    key={label}
+                    variant="outline"
+                    className={tagToneClassName(label, "h-4 text-[10px]")}
+                  >
                     {label}
                   </Badge>
                 ))}

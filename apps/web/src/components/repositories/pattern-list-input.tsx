@@ -4,6 +4,7 @@ import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { SettingLabelRow } from "@/components/repositories/setting-label-row"
+import { tagToneClassName } from "@/lib/tag-tones"
 
 interface PatternListInputProps {
   id: string
@@ -60,7 +61,11 @@ export function PatternListInput({
         {values.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {values.map((pattern) => (
-              <Badge key={pattern} variant="secondary" className="gap-1 pr-1">
+              <Badge
+                key={pattern}
+                variant="outline"
+                className={tagToneClassName(pattern, "gap-1 pr-1")}
+              >
                 <span className="font-mono text-[11px]">{pattern}</span>
                 <button
                   type="button"

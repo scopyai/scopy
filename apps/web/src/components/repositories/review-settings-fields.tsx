@@ -6,6 +6,7 @@ import { PatternListInput } from "@/components/repositories/pattern-list-input"
 import { MaxReviewChangedLinesInput } from "@/components/repositories/max-review-changed-lines-input"
 import { SettingLabelRow } from "@/components/repositories/setting-label-row"
 import { SettingsSection } from "@/components/repositories/settings-section"
+import { tagToneClassName } from "@/lib/tag-tones"
 
 export type ReviewConfigValues = {
   reviewDrafts: boolean
@@ -171,8 +172,11 @@ function ScopeBadge({ visible }: { visible: boolean }) {
 
   return (
     <Badge
-      variant="secondary"
-      className="h-5 px-1.5 text-[10px] leading-none font-normal"
+      variant="outline"
+      className={tagToneClassName(
+        "default",
+        "h-5 px-1.5 text-[10px] leading-none"
+      )}
     >
       Workspace default
     </Badge>

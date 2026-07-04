@@ -1,6 +1,8 @@
 import { Badge } from "@workspace/ui/components/badge"
-import { getPullRequestStateDisplay, type PullRequestState } from "./pr-status"
+import type { PullRequestState } from "./pr-status"
+import { getPullRequestStateDisplay } from "./pr-status"
 import { cn } from "@workspace/ui/lib/utils"
+import { tagToneClassName } from "@/lib/tag-tones"
 
 interface PullRequestListItemProps {
   id: string
@@ -82,7 +84,11 @@ export function PullRequestListItem({
               {formatRelativeTime(providerUpdatedAt)}
             </span>
             {labels.slice(0, 2).map((label) => (
-              <Badge key={label} variant="secondary" className="h-4 text-[10px] px-1.5 py-0">
+              <Badge
+                key={label}
+                variant="outline"
+                className={tagToneClassName(label, "h-4 px-1.5 py-0 text-[10px]")}
+              >
                 {label}
               </Badge>
             ))}

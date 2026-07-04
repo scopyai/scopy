@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { authClient } from "@/lib/auth-client"
 import { billingKeys } from "@/lib/billing-query-keys"
@@ -28,6 +28,7 @@ export function useWorkspaceBillingUsage(
       return data
     },
     enabled: !!session && !!workspaceId,
+    placeholderData: keepPreviousData,
   })
 }
 

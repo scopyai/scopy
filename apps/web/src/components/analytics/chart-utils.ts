@@ -3,8 +3,16 @@ export const chartAxisTick = {
   fill: "var(--muted-foreground)",
 } as const
 
+const analyticsChartPalette = [
+  "#5B82FF",
+  "#6E6BFF",
+  "#8B5CF6",
+  "#3B9CFF",
+  "#36B6D8",
+] as const
+
 export function chartSeriesColor(chart: 1 | 2 | 3 | 4 | 5): string {
-  return `var(--chart-${chart})`
+  return analyticsChartPalette[chart - 1]
 }
 
 export function formatAnalyticsDate(date: string) {

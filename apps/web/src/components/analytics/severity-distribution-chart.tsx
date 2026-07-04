@@ -1,4 +1,5 @@
 import { Cell, Pie, PieChart } from "recharts"
+import type { ChartConfig } from "@workspace/ui/components/chart"
 import {
   Card,
   CardContent,
@@ -10,9 +11,9 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from "@workspace/ui/components/chart"
 import { ShieldAlertIcon } from "lucide-react"
+import { chartSeriesColor } from "./chart-utils"
 
 type SeverityItem = {
   severity: "critical" | "high" | "medium" | "low"
@@ -20,10 +21,10 @@ type SeverityItem = {
 }
 
 const severityColor: Record<SeverityItem["severity"], string> = {
-  critical: "hsl(0 72% 51%)",
-  high: "hsl(25 95% 53%)",
-  medium: "hsl(48 96% 53%)",
-  low: "hsl(217 91% 60%)",
+  critical: chartSeriesColor(3),
+  high: chartSeriesColor(2),
+  medium: chartSeriesColor(1),
+  low: chartSeriesColor(5),
 }
 
 const severityLabel: Record<SeverityItem["severity"], string> = {

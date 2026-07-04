@@ -21,6 +21,7 @@ import {
   formatDate,
   formatUsageBalance,
 } from "@/lib/billing-format"
+import { tagToneClassName } from "@/lib/tag-tones"
 import { HistoryPagination } from "./history-pagination"
 import { UsageTrendChart } from "./usage-trend-chart"
 
@@ -162,7 +163,7 @@ export function UsageHistory({
 }) {
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const { data, isPending } = useWorkspaceBillingUsage(
+  const { data, isFetching, isPending } = useWorkspaceBillingUsage(
     workspaceId,
     page,
     PAGE_SIZE,
@@ -256,14 +257,17 @@ export function UsageHistory({
                               {badges.slice(0, 2).map((modelId) => (
                                 <Badge
                                   key={modelId}
-                                  variant="secondary"
-                                  className="font-normal"
+                                  variant="outline"
+                                  className={tagToneClassName(modelId)}
                                 >
                                   {shortModel(modelId)}
                                 </Badge>
                               ))}
                               {badges.length > 2 ? (
-                                <Badge variant="outline" className="font-normal">
+                                <Badge
+                                  variant="outline"
+                                  className={tagToneClassName("default")}
+                                >
                                   +{badges.length - 2}
                                 </Badge>
                               ) : null}
@@ -271,12 +275,8 @@ export function UsageHistory({
                           </TableCell>
                           <TableCell>
                             <Badge
-                              variant={
-                                item.billingMode === "byok"
-                                  ? "outline"
-                                  : "secondary"
-                              }
-                              className="font-normal"
+                              variant="outline"
+                              className={tagToneClassName(item.billingMode)}
                             >
                               {item.billingMode === "byok" && item.keyPreview
                                 ? item.keyPreview
@@ -301,8 +301,9 @@ export function UsageHistory({
               </Table>
 
               <HistoryPagination
-                page={data.page}
+                page={page}
                 totalPages={totalPages}
+                disabled={isFetching}
                 onPrevious={() => setPage((p) => p - 1)}
                 onNext={() => setPage((p) => p + 1)}
               />
