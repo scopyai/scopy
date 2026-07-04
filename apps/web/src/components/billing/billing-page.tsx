@@ -5,6 +5,7 @@ import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { AccountSummary } from "./account-summary"
 import { PlanCards } from "./plan-cards"
 import { BillingHistory } from "./billing-history"
+import { SubscriptionActions } from "./subscription-actions"
 
 function BillingLoadingSkeleton() {
   return (
@@ -34,6 +35,9 @@ export function BillingPage() {
     (w) => w.workspace.id === selectedWorkspaceId,
   )
   const isOwner = selectedEntry?.role === "owner"
+
+  const tier = billing?.account.tier
+  const isPaid = tier === "premium" || tier === "ultra"
 
   if (!selectedWorkspaceId) {
     return (
@@ -67,11 +71,7 @@ export function BillingPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-10">
-      <AccountSummary
-        account={billing.account}
-        isOwner={isOwner ?? false}
-        workspaceId={selectedWorkspaceId}
-      />
+      <AccountSummary account={billing.account} isOwner={isOwner ?? false} />
 
       <section className="relative flex flex-col gap-6 overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 -top-8 h-48 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/8 via-transparent to-transparent" />
@@ -96,6 +96,22 @@ export function BillingPage() {
       </section>
 
       <BillingHistory workspaceId={selectedWorkspaceId} />
+
+      {isOwner && isPaid && (
+        <section className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base font-semibold">Manage subscription</h2>
+            <p className="text-sm text-muted-foreground">
+              Update your payment method or cancel your plan
+            </p>
+          </div>
+
+          <SubscriptionActions
+            account={billing.account}
+            workspaceId={selectedWorkspaceId}
+          />
+        </section>
+      )}
     </div>
   )
 }
