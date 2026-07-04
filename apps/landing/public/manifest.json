@@ -1,7 +1,7 @@
 {
-  "short_name": "Scopy",
-  "name": "Scopy - Open-Source AI Code Review",
-  "description": "Open-source AI code reviewer.",
+  "short_name": "Scopy AI",
+  "name": "Scopy AI - Open-Source AI Code Review",
+  "description": "Scopy AI is an open-source AI code reviewer.",
   "icons": [
     {
       "src": "/favicon.ico",

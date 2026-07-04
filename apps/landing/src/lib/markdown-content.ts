@@ -7,7 +7,7 @@ function homeMarkdown(): string {
   const plans = getLandingPlans()
 
   const lines: string[] = [
-    `# Scopy — ${hero.title}`,
+    `# Scopy AI — ${hero.title}`,
     "",
     `> ${hero.subtitle}`,
     "",
@@ -57,7 +57,7 @@ function homeMarkdown(): string {
 function blogIndexMarkdown(): string {
   const posts = getAllPosts()
   const lines: string[] = [
-    "# Scopy blog",
+    "# Scopy AI team blog",
     "",
     "Writing on AI code review, code quality and self-hosting Scopy.",
     "",
@@ -117,7 +117,7 @@ function privacyMarkdown(): string {
 
   return (
     [
-      "# Terms of Service & Privacy Policy — Scopy",
+      "# Terms of Service & Privacy Policy — Scopy AI",
       "",
       "_Last updated: June 14, 2026_",
       "",

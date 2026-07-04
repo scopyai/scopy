@@ -156,7 +156,7 @@ function HowItWorks() {
     <section className="l-how l-section" id="how-it-works">
       <div className="l-wrap">
         <div className="l-how-header">
-          <h2 className="l-how-title">How AI code review works with Scopy</h2>
+          <h2 className="l-how-title">How code review works with Scopy AI</h2>
           <p className="l-how-sub">
             From connecting a repository to your first reviewed pull request in
             three steps — no change to how your team already works.
@@ -257,7 +257,7 @@ function OpenSource() {
           </div>
 
           <div className="l-oss-col">
-            <h3 className="l-oss-col-title">Use Scopy in cloud</h3>
+            <h3 className="l-oss-col-title">Use Scopy AI in cloud</h3>
             {/*<p className="l-oss-col-body">
               Connect GitHub in seconds, pick a plan, and start getting reviews
               immediately. Compute included — no API keys required.

@@ -75,6 +75,6 @@ Every team accumulates rules: "always use the typed client", "never log request 
 
 Fast, high-quality review isn't about reviewing harder. It's about **small PRs, clear intent, low latency, the right focus, and automating everything a machine can handle** so humans spend their judgment where it counts.
 
-Scopy is an [open-source AI code reviewer](/) that handles the first pass for you — full-context analysis of every pull request, your custom rules applied consistently, inline on GitHub. Pair it with the human practices above and review stops being the bottleneck.
+Scopy AI is an [open-source AI code reviewer](/) that handles the first pass for you — full-context analysis of every pull request, your custom rules applied consistently, inline on GitHub. Pair it with the human practices above and review stops being the bottleneck.
 
 Next: learn [what AI code review actually is](/blog/what-is-ai-code-review) under the hood, or how to keep your code private with [self-hosted AI code review](/blog/self-hosted-ai-code-review).

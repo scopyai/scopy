@@ -4,9 +4,9 @@ import { env } from "#/env"
 import appCss from "../styles.css?url"
 
 const siteTitle =
-  "Scopy | Open-Source AI Code Reviewer | Catch bugs and improve code quality"
+  "Scopy AI | Open-Source AI Code Reviewer | Catch bugs and improve code quality"
 const siteDescription =
-  "Scopy is an open-source AI code reviewer. Self-host it or use hosted Scopy to catch bugs, enforce review rules and improve code quality."
+  "Scopy AI is an open-source AI code reviewer. Self-host it or use hosted Scopy AI to catch bugs, enforce review rules and improve code quality."
 const siteUrl = env.siteUrl
 const jsonLd = {
   "@context": "https://schema.org",
@@ -14,7 +14,7 @@ const jsonLd = {
     {
       "@type": "Organization",
       "@id": `${siteUrl}/#organization`,
-      name: "Scopy",
+      name: "Scopy AI",
       url: siteUrl,
       logo: `${siteUrl}/logo.svg`,
       sameAs: [env.githubUrl],
@@ -22,7 +22,7 @@ const jsonLd = {
     {
       "@type": "WebSite",
       "@id": `${siteUrl}/#website`,
-      name: "Scopy",
+      name: "Scopy AI",
       url: siteUrl,
       description: siteDescription,
       publisher: { "@id": `${siteUrl}/#organization` },
@@ -30,7 +30,7 @@ const jsonLd = {
     {
       "@type": "SoftwareApplication",
       "@id": `${siteUrl}/#software`,
-      name: "Scopy",
+      name: "Scopy AI",
       applicationCategory: "DeveloperApplication",
       operatingSystem: "Web",
       description: siteDescription,
@@ -61,7 +61,7 @@ export const Route = createRootRoute({
       { name: "robots", content: "index, follow" },
       { name: "theme-color", content: "#1c1c26" },
       { property: "og:type", content: "website" },
-      { property: "og:site_name", content: "Scopy" },
+      { property: "og:site_name", content: "Scopy AI" },
       { property: "og:title", content: siteTitle },
       { property: "og:description", content: siteDescription },
       { property: "og:url", content: siteUrl },

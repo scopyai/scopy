@@ -13,7 +13,7 @@ export function LandingNav() {
               className="l-logo-img"
               aria-hidden="true"
             />
-            scopy
+            scopy ai
           </a>
           <div className="l-nav-right">
             <a
@@ -50,7 +50,7 @@ export function LandingFooter() {
       <div className="l-wrap">
         <div className="l-footer-row">
           <span className="l-footer-copy">
-            © {new Date().getFullYear()} Scopy.
+            © {new Date().getFullYear()} Scopy AI.
           </span>
           <nav className="l-footer-links">
             <a

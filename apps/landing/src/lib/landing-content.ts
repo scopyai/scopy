@@ -1,7 +1,7 @@
 export const hero = {
   title: "Open-source AI code reviewer",
   subtitle:
-    "Scopy is an AI code reviewer that understands your repository, catches bugs and improves code quality. Self-host it or run it in the cloud.",
+    "Scopy AI is an AI code reviewer that understands your repository, catches bugs and improves code quality. Self-host it or run it in the cloud.",
 } as const
 
 export type NamedItem = { name: string; desc: string }
@@ -44,11 +44,11 @@ export type Faq = { q: string; a: string }
 
 export const faqs: Faq[] = [
   {
-    q: "How does Scopy work?",
+    q: "How does Scopy AI work?",
     a: "Scopy runs reviews where your team already works. It builds context from the pull request diff, affected symbols and repository files in general, then returns actionable findings back to you.",
   },
   {
-    q: "When does Scopy run a review?",
+    q: "When does Scopy AI run a review?",
     a: "Reviews run automatically for enabled repositories when relevant pull request activity arrives from GitHub, such as a new pull request or a draft PR being marked ready for review. You can also request a fresh review by mentioning Scopy in a PR comment.",
   },
   {
@@ -65,7 +65,7 @@ export const faqs: Faq[] = [
   },
   {
     q: "Can we self-host Scopy?",
-    a: "Yes. Scopy is MIT licensed and the source code is available on GitHub. Self-hosting lets you run Scopy on your own infrastructure and connect your preferred model provider.",
+    a: "Yes. Scopy AI is MIT licensed and the source code is available on GitHub. Self-hosting lets you run Scopy AI on your own infrastructure and connect your preferred model provider.",
   },
   {
     q: "Are reviews customizable?",
