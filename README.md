@@ -2,7 +2,7 @@
 
 Scopy is an open-source AI code reviewer.
 
-It reviews understands repository context, finds bugs and gives teams a dashboard for to review statistics and usage.
+It understands repository context, finds bugs and gives teams a dashboard for to review statistics and usage.
 
 ## Features
 
