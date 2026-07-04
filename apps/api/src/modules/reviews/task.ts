@@ -3,7 +3,7 @@ import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "../../db/client"
 import { reviewFinding, reviewRun } from "../../db/schema"
-import { debitReviewUsage, hasPositiveUsageBalance } from "../billing/usage"
+import { hasPositiveUsageBalance, recordReviewUsage } from "../billing/usage"
 import {
   buildCompletedReviewCheckOutput,
   completeReviewCheck,
@@ -394,41 +394,25 @@ export const executeReviewPullRequest = async (
       logger,
       credential,
     })
-    let resultToStore = result
-    if (
-      billingMode === "platform" &&
-      result.kind === "summary" &&
-      result.billing
-    ) {
-      const transaction = await debitReviewUsage({
-        workspaceId,
+    if (result.kind === "summary" && result.billing) {
+      await recordReviewUsage({
         reviewRunId: run.id,
-        pullRequestId: run.pullRequest.id,
+        workspaceId,
         repositoryId: run.pullRequest.repository.id,
+        pullRequestId: run.pullRequest.id,
+        billingMode,
+        provider: credential.status === "byok" ? credential.provider : null,
+        providerKeyId:
+          credential.status === "byok" ? credential.providerKeyId : null,
+        keyPreview:
+          credential.status === "byok" ? credential.keyPreview : null,
         modelId: result.modelId,
         verifierModelId:
           typeof result.verifierModelId === "string"
             ? result.verifierModelId
             : REVIEW_MODEL,
-        llmCostMicrocents: result.billing.llmCostMicrocents,
-        llmUsage: result.billing.llm,
-        vector: {
-          writeBytes: result.billing.vectorWriteBytes,
-          queryBytes: result.billing.vectorQueryBytes,
-          networkBytes: result.billing.vectorNetworkBytes,
-          queryCount: result.billing.vectorQueryCount,
-          writeCostMicrocents: result.billing.vectorWriteCostMicrocents,
-          queryCostMicrocents: result.billing.vectorQueryCostMicrocents,
-          networkCostMicrocents: result.billing.vectorNetworkCostMicrocents,
-        },
+        billing: result.billing,
       })
-      resultToStore = {
-        ...result,
-        billing: {
-          ...result.billing,
-          transactionId: transaction?.id,
-        },
-      }
     }
 
     const completedAt = new Date()
@@ -437,7 +421,7 @@ export const executeReviewPullRequest = async (
         .update(reviewRun)
         .set({
           status: result.kind === "skipped" ? "skipped" : "completed",
-          result: resultToStore,
+          result,
           completedAt,
           updatedAt: completedAt,
         })

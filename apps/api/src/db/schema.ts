@@ -65,10 +65,6 @@ export const workspaceBillingTier = pgEnum("workspace_billing_tier", [
   "ultra",
   "enterprise",
 ])
-export const workspaceCreditTransactionType = pgEnum(
-  "workspace_credit_transaction_type",
-  ["reset", "revoke", "usage_debit"]
-)
 export const userOnboardingStatus = pgEnum("user_onboarding_status", [
   "connect_github",
   "select_repositories",
@@ -81,6 +77,11 @@ export const reviewBillingMode = pgEnum("review_billing_mode", [
 export const providerKeyProvider = pgEnum("provider_key_provider", [
   "openrouter",
   "gateway",
+])
+export const workspaceChargeType = pgEnum("workspace_charge_type", [
+  "payment",
+  "refund",
+  "dispute",
 ])
 
 export type ProviderActor = {
@@ -215,6 +216,7 @@ export const workspace = pgTable(
       .notNull(),
     creemCustomerId: text("creem_customer_id"),
     creemSubscriptionId: text("creem_subscription_id"),
+    lastCreditResetKey: text("last_credit_reset_key"),
     billingPeriodStart: timestamp("billing_period_start"),
     billingPeriodEnd: timestamp("billing_period_end"),
     pendingBillingTier: workspaceBillingTier("pending_billing_tier"),
@@ -512,35 +514,6 @@ export const webhookEvent = pgTable(
   ]
 )
 
-export const workspaceCreditTransaction = pgTable(
-  "workspace_credit_transaction",
-  {
-    id: text("id").primaryKey(),
-    workspaceId: text("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
-    type: workspaceCreditTransactionType("type").notNull(),
-    amount: bigint("amount", { mode: "number" }).notNull(),
-    balanceAfter: bigint("balance_after", { mode: "number" }).notNull(),
-    idempotencyKey: text("idempotency_key").notNull(),
-    reason: text("reason").notNull(),
-    metadata: jsonb("metadata")
-      .$type<Record<string, unknown>>()
-      .default({})
-      .notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex("workspace_credit_transaction_idempotency_key_idx").on(
-      table.idempotencyKey
-    ),
-    index("workspace_credit_transaction_workspace_created_at_idx").on(
-      table.workspaceId,
-      table.createdAt
-    ),
-  ]
-)
-
 export const workspaceProviderKey = pgTable(
   "workspace_provider_key",
   {
@@ -567,6 +540,113 @@ export const workspaceProviderKey = pgTable(
       table.provider
     ),
   ]
+)
+
+export type ReviewUsageModel = {
+  stage: string
+  modelId: string
+  provider: string | null
+  costMicrocents: number
+  usage?: unknown
+}
+
+export const reviewUsage = pgTable(
+  "review_usage",
+  {
+    id: text("id").primaryKey(),
+    reviewRunId: text("review_run_id")
+      .notNull()
+      .references(() => reviewRun.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    repositoryId: text("repository_id").references(() => repository.id, {
+      onDelete: "set null",
+    }),
+    pullRequestId: text("pull_request_id").references(() => pullRequest.id, {
+      onDelete: "set null",
+    }),
+    billingMode: reviewBillingMode("billing_mode").notNull(),
+    provider: providerKeyProvider("provider"),
+    providerKeyId: text("provider_key_id").references(
+      () => workspaceProviderKey.id,
+      { onDelete: "set null" },
+    ),
+    keyPreview: text("key_preview"),
+    balanceAfter: bigint("balance_after", { mode: "number" }),
+    modelId: text("model_id").notNull(),
+    verifierModelId: text("verifier_model_id").notNull(),
+    llmCostMicrocents: bigint("llm_cost_microcents", {
+      mode: "number",
+    }).notNull(),
+    vectorWriteCostMicrocents: bigint("vector_write_cost_microcents", {
+      mode: "number",
+    })
+      .default(0)
+      .notNull(),
+    vectorQueryCostMicrocents: bigint("vector_query_cost_microcents", {
+      mode: "number",
+    })
+      .default(0)
+      .notNull(),
+    vectorNetworkCostMicrocents: bigint("vector_network_cost_microcents", {
+      mode: "number",
+    })
+      .default(0)
+      .notNull(),
+    totalCostMicrocents: bigint("total_cost_microcents", {
+      mode: "number",
+    }).notNull(),
+    vectorWriteBytes: bigint("vector_write_bytes", { mode: "number" })
+      .default(0)
+      .notNull(),
+    vectorQueryBytes: bigint("vector_query_bytes", { mode: "number" })
+      .default(0)
+      .notNull(),
+    vectorNetworkBytes: bigint("vector_network_bytes", { mode: "number" })
+      .default(0)
+      .notNull(),
+    vectorQueryCount: integer("vector_query_count").default(0).notNull(),
+    models: jsonb("models").$type<ReviewUsageModel[]>().default([]).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("review_usage_review_run_id_idx").on(table.reviewRunId),
+    index("review_usage_workspace_created_at_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    index("review_usage_repository_id_idx").on(table.repositoryId),
+  ],
+)
+
+export const workspaceCharge = pgTable(
+  "workspace_charge",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    creemTransactionId: text("creem_transaction_id").notNull(),
+    type: workspaceChargeType("type").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    currency: text("currency").notNull(),
+    status: text("status").notNull(),
+    description: text("description"),
+    productId: text("product_id"),
+    tier: text("tier"),
+    createdAt: timestamp("created_at").notNull(),
+    recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("workspace_charge_creem_transaction_id_idx").on(
+      table.creemTransactionId,
+    ),
+    index("workspace_charge_workspace_created_at_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  ],
 )
 
 export const userRelations = relations(user, ({ many }) => ({
@@ -598,8 +678,9 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   members: many(workspaceMember),
   repositories: many(repository),
   webhookEvents: many(webhookEvent),
-  creditTransactions: many(workspaceCreditTransaction),
   providerKeys: many(workspaceProviderKey),
+  reviewUsage: many(reviewUsage),
+  charges: many(workspaceCharge),
 }))
 
 export const workspaceProviderKeyRelations = relations(
@@ -682,6 +763,7 @@ export const reviewRunRelations = relations(reviewRun, ({ one, many }) => ({
     references: [webhookEvent.id],
   }),
   findings: many(reviewFinding),
+  usage: one(reviewUsage),
 }))
 
 export const reviewFindingRelations = relations(reviewFinding, ({ one }) => ({
@@ -702,11 +784,34 @@ export const webhookEventRelations = relations(
   })
 )
 
-export const workspaceCreditTransactionRelations = relations(
-  workspaceCreditTransaction,
+export const reviewUsageRelations = relations(reviewUsage, ({ one }) => ({
+  reviewRun: one(reviewRun, {
+    fields: [reviewUsage.reviewRunId],
+    references: [reviewRun.id],
+  }),
+  workspace: one(workspace, {
+    fields: [reviewUsage.workspaceId],
+    references: [workspace.id],
+  }),
+  repository: one(repository, {
+    fields: [reviewUsage.repositoryId],
+    references: [repository.id],
+  }),
+  pullRequest: one(pullRequest, {
+    fields: [reviewUsage.pullRequestId],
+    references: [pullRequest.id],
+  }),
+  providerKey: one(workspaceProviderKey, {
+    fields: [reviewUsage.providerKeyId],
+    references: [workspaceProviderKey.id],
+  }),
+}))
+
+export const workspaceChargeRelations = relations(
+  workspaceCharge,
   ({ one }) => ({
     workspace: one(workspace, {
-      fields: [workspaceCreditTransaction.workspaceId],
+      fields: [workspaceCharge.workspaceId],
       references: [workspace.id],
     }),
   })

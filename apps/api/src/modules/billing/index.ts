@@ -6,7 +6,9 @@ import {
   createWorkspaceCheckout,
   createWorkspacePortal,
   getWorkspaceBilling,
-  listWorkspaceCreditTransactions,
+  getWorkspaceUsageTrend,
+  listWorkspaceCharges,
+  listWorkspaceReviewUsage,
   changeWorkspacePlan,
 } from "./service";
 import {
@@ -25,6 +27,11 @@ const changePlanSchema = z.object({
 const paginationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const usageQuerySchema = paginationSchema.extend({
+  repositoryId: z.string().optional(),
+  billingMode: z.enum(["platform", "byok"]).optional(),
 });
 
 const asBillingError = (error: unknown) =>
@@ -47,7 +54,40 @@ export const billingRoutes = protectedRoute("/workspaces")
     return getWorkspaceBilling(params.workspaceId);
   })
   .get(
-    "/:workspaceId/billing/credits",
+    "/:workspaceId/billing/usage",
+    async ({ params, query, user, status }) => {
+      if (!(await requireMember(params.workspaceId, user.id))) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const parsed = usageQuerySchema.safeParse(query);
+      if (!parsed.success) {
+        return status(400, { error: "Invalid usage query parameters" });
+      }
+
+      return listWorkspaceReviewUsage(
+        params.workspaceId,
+        parsed.data.page,
+        parsed.data.pageSize,
+        {
+          repositoryId: parsed.data.repositoryId,
+          billingMode: parsed.data.billingMode,
+        },
+      );
+    },
+  )
+  .get(
+    "/:workspaceId/billing/usage/trend",
+    async ({ params, user, status }) => {
+      if (!(await requireMember(params.workspaceId, user.id))) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      return getWorkspaceUsageTrend(params.workspaceId);
+    },
+  )
+  .get(
+    "/:workspaceId/billing/charges",
     async ({ params, query, user, status }) => {
       if (!(await requireMember(params.workspaceId, user.id))) {
         return status(404, { error: "Workspace not found" });
@@ -58,7 +98,7 @@ export const billingRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid pagination parameters" });
       }
 
-      return listWorkspaceCreditTransactions(
+      return listWorkspaceCharges(
         params.workspaceId,
         parsed.data.page,
         parsed.data.pageSize,

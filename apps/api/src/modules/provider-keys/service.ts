@@ -24,7 +24,13 @@ export class ProviderKeyError extends Error {
 
 export type ReviewCredential =
   | { status: "platform" }
-  | { status: "byok"; provider: ProviderKeyProvider; apiKey: string }
+  | {
+      status: "byok"
+      provider: ProviderKeyProvider
+      apiKey: string
+      providerKeyId: string
+      keyPreview: string
+    }
   | { status: "missing_key" }
 
 const providerLabels: Record<ProviderKeyProvider, string> = {
@@ -211,7 +217,13 @@ export const resolveReviewCredential = async ({
     .set({ lastUsedAt: new Date() })
     .where(eq(workspaceProviderKey.id, chosen.id))
 
-  return { status: "byok", provider: chosen.provider, apiKey }
+  return {
+    status: "byok",
+    provider: chosen.provider,
+    apiKey,
+    providerKeyId: chosen.id,
+    keyPreview: chosen.keyPreview,
+  }
 }
 
 export const getWorkspaceBillingSettings = async (

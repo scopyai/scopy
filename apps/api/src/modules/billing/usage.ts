@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
-import { workspace, workspaceCreditTransaction } from "../../db/schema"
+import { reviewUsage, workspace, type ReviewUsageModel } from "../../db/schema"
 import { env } from "../../env"
 
 export const MICRO_USD_PER_USD = 1_000_000
@@ -57,6 +57,18 @@ const numberAt = (value: unknown, path: string[]) => {
   }
   return typeof current === "number" && Number.isFinite(current) ? current : null
 }
+
+const stringAt = (value: unknown, path: string[]) => {
+  let current = value
+  for (const key of path) {
+    if (!isRecord(current)) return null
+    current = current[key]
+  }
+  return typeof current === "string" && current.length > 0 ? current : null
+}
+
+const sleep = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 export const extractOpenRouterCost = (generation: unknown) => {
   const cost =
@@ -154,6 +166,8 @@ type ResolvedStepCost = {
   providerMetadata?: unknown
   generationId?: string
   generationUsage?: unknown
+  generationLookupError?: string
+  costStatus?: "resolved" | "missing_generation_id" | "generation_lookup_failed"
 }
 
 const resolveGenerationCost = async (
@@ -175,6 +189,8 @@ const resolveGenerationCost = async (
         providerMetadata: cost.providerMetadata,
         generationId: cost.generationId,
         generationUsage: cost.generationUsage,
+        generationLookupError: cost.generationLookupError,
+        costStatus: cost.costStatus,
       }
     })
   )
@@ -210,37 +226,68 @@ export const resolveOpenRouterGenerationCost = (generation: unknown) =>
   })
 
 const extractGatewayGenerationId = (generation: unknown) => {
-  const generationId = numberAt(generation, [
+  return stringAt(generation, [
     "providerMetadata",
     "gateway",
     "generationId",
   ])
-  if (generationId !== null) return String(generationId)
-  return isRecord(generation) &&
-    isRecord(generation.providerMetadata) &&
-    isRecord(generation.providerMetadata.gateway) &&
-    typeof generation.providerMetadata.gateway.generationId === "string"
-    ? generation.providerMetadata.gateway.generationId
-    : null
 }
 
 type GatewayGenerationInfo = {
   totalCost?: number
 }
 
+const DEFAULT_GATEWAY_GENERATION_INFO_RETRY_DELAYS_MS = [
+  250, 500, 1_000, 2_000, 4_000,
+]
+
+const resolveGatewayGenerationInfo = async (
+  generationId: string,
+  getGenerationInfo: (params: { id: string }) => Promise<GatewayGenerationInfo>,
+  retryDelaysMs: number[]
+) => {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return {
+        generationUsage: await getGenerationInfo({ id: generationId }),
+        generationLookupError: undefined,
+      }
+    } catch (error) {
+      lastError = error
+      const retryDelayMs = retryDelaysMs[attempt]
+      if (retryDelayMs !== undefined) {
+        await sleep(retryDelayMs)
+      }
+    }
+  }
+  return {
+    generationUsage: null,
+    generationLookupError:
+      lastError instanceof Error ? lastError.message : String(lastError),
+  }
+}
+
 export const resolveGatewayGenerationCost = async (
   generation: unknown,
-  getGenerationInfo: (params: { id: string }) => Promise<GatewayGenerationInfo>
+  getGenerationInfo: (params: { id: string }) => Promise<GatewayGenerationInfo>,
+  options: { retryDelaysMs?: number[] } = {}
 ) =>
   resolveGenerationCost(generation, async (step) => {
     const generationId = extractGatewayGenerationId(step)
-    const generationUsage = generationId
-      ? await getGenerationInfo({ id: generationId }).catch(() => null)
-      : null
-    const cost =
-      generationUsage?.totalCost ??
-      numberAt(step, ["providerMetadata", "gateway", "cost"]) ??
-      numberAt(step, ["providerMetadata", "gateway", "totalCost"])
+    let generationUsage: GatewayGenerationInfo | null = null
+    let generationLookupError: string | undefined
+    if (generationId) {
+      const resolved = await resolveGatewayGenerationInfo(
+        generationId,
+        getGenerationInfo,
+        options.retryDelaysMs ??
+          DEFAULT_GATEWAY_GENERATION_INFO_RETRY_DELAYS_MS
+      )
+      generationUsage = resolved.generationUsage
+      generationLookupError = resolved.generationLookupError
+    }
+    const cost = generationUsage?.totalCost ?? null
     const costMicrocents = cost === null ? null : usdToMicroUsd(cost)
     return {
       cost,
@@ -248,6 +295,13 @@ export const resolveGatewayGenerationCost = async (
       providerMetadata: isRecord(step) ? step.providerMetadata : undefined,
       generationId: generationId ?? undefined,
       generationUsage,
+      generationLookupError,
+      costStatus:
+        costMicrocents !== null
+          ? "resolved"
+          : generationId
+            ? "generation_lookup_failed"
+            : "missing_generation_id",
     }
   })
 
@@ -259,84 +313,117 @@ export const hasPositiveUsageBalance = async (workspaceId: string) => {
   return (currentWorkspace?.creditBalance ?? 0) > 0
 }
 
-export type ReviewUsageDebitInput = {
-  workspaceId: string
+const numberOrZero = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0
+
+/**
+ * Flattens the per-stage `billing.llm` map produced by the review agent into a
+ * normalized list of one entry per stage so it can be stored and rendered as a
+ * per-model cost breakdown.
+ */
+export const flattenBillingModels = (
+  llm: Record<string, unknown>,
+): ReviewUsageModel[] =>
+  Object.entries(llm).flatMap(([stage, value]) => {
+    if (typeof value !== "object" || value === null) return []
+    const entry = value as Record<string, unknown>
+    return [
+      {
+        stage,
+        modelId: typeof entry.modelId === "string" ? entry.modelId : "unknown",
+        provider: typeof entry.provider === "string" ? entry.provider : null,
+        costMicrocents: numberOrZero(entry.costMicrocents),
+        usage: entry.usage,
+      },
+    ]
+  })
+
+export type RecordReviewUsageInput = {
   reviewRunId: string
-  pullRequestId: string
-  repositoryId: string
+  workspaceId: string
+  repositoryId: string | null
+  pullRequestId: string | null
+  billingMode: "platform" | "byok"
+  provider: "openrouter" | "gateway" | null
+  providerKeyId: string | null
+  keyPreview: string | null
   modelId: string
   verifierModelId: string
-  llmCostMicrocents: number
-  llmUsage: Record<string, unknown>
-  vector: {
-    writeBytes: number
-    queryBytes: number
-    networkBytes: number
-    queryCount: number
-    writeCostMicrocents: number
-    queryCostMicrocents: number
-    networkCostMicrocents: number
+  billing: {
+    llmCostMicrocents: number
+    vectorWriteCostMicrocents: number
+    vectorQueryCostMicrocents: number
+    vectorNetworkCostMicrocents: number
+    totalCostMicrocents: number
+    vectorWriteBytes: number
+    vectorQueryBytes: number
+    vectorNetworkBytes: number
+    vectorQueryCount: number
+    llm: Record<string, unknown>
   }
 }
 
-export const debitReviewUsage = async (input: ReviewUsageDebitInput) =>
+/**
+ * Records the per-review usage breakdown and, for platform-billed reviews,
+ * debits the workspace credit balance in the same transaction. The unique
+ * `reviewRunId` makes this idempotent, so re-running is safe.
+ */
+export const recordReviewUsage = async (input: RecordReviewUsageInput) =>
   db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.workspaceId}))`)
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${input.workspaceId}))`,
+    )
 
-    const idempotencyKey = `review-usage:${input.reviewRunId}`
-    const existing = await tx.query.workspaceCreditTransaction.findFirst({
-      where: eq(workspaceCreditTransaction.idempotencyKey, idempotencyKey),
+    const existing = await tx.query.reviewUsage.findFirst({
+      where: eq(reviewUsage.reviewRunId, input.reviewRunId),
+      columns: { id: true },
     })
-    if (existing) return existing
+    if (existing) return
 
-    const currentWorkspace = await tx.query.workspace.findFirst({
-      where: eq(workspace.id, input.workspaceId),
-    })
-    if (!currentWorkspace) return null
-
-    const totalCostMicrocents =
-      input.llmCostMicrocents +
-      input.vector.writeCostMicrocents +
-      input.vector.queryCostMicrocents +
-      input.vector.networkCostMicrocents
-    if (totalCostMicrocents <= 0) return null
-
-    const balanceAfter = currentWorkspace.creditBalance - totalCostMicrocents
+    let balanceAfter: number | null = null
+    if (
+      input.billingMode === "platform" &&
+      input.billing.totalCostMicrocents > 0
+    ) {
+      const currentWorkspace = await tx.query.workspace.findFirst({
+        where: eq(workspace.id, input.workspaceId),
+        columns: { creditBalance: true },
+      })
+      if (currentWorkspace) {
+        balanceAfter =
+          currentWorkspace.creditBalance - input.billing.totalCostMicrocents
+        await tx
+          .update(workspace)
+          .set({ creditBalance: balanceAfter, updatedAt: new Date() })
+          .where(eq(workspace.id, input.workspaceId))
+      }
+    }
 
     await tx
-      .update(workspace)
-      .set({
-        creditBalance: balanceAfter,
-        updatedAt: new Date(),
-      })
-      .where(eq(workspace.id, input.workspaceId))
-
-    const [transaction] = await tx
-      .insert(workspaceCreditTransaction)
+      .insert(reviewUsage)
       .values({
         id: randomUUID(),
+        reviewRunId: input.reviewRunId,
         workspaceId: input.workspaceId,
-        type: "usage_debit",
-        amount: -totalCostMicrocents,
+        repositoryId: input.repositoryId,
+        pullRequestId: input.pullRequestId,
+        billingMode: input.billingMode,
+        provider: input.provider,
+        providerKeyId: input.providerKeyId,
+        keyPreview: input.keyPreview,
         balanceAfter,
-        idempotencyKey,
-        reason: "review_usage",
-        metadata: {
-          billingUnit: "micro_usd",
-          reviewRunId: input.reviewRunId,
-          pullRequestId: input.pullRequestId,
-          repositoryId: input.repositoryId,
-          modelId: input.modelId,
-          verifierModelId: input.verifierModelId,
-          llmCostMicroUsd: input.llmCostMicrocents,
-          llmCostMicrocents: input.llmCostMicrocents,
-          llmUsage: input.llmUsage,
-          vector: input.vector,
-          totalCostMicroUsd: totalCostMicrocents,
-          totalCostMicrocents,
-        },
+        modelId: input.modelId,
+        verifierModelId: input.verifierModelId,
+        llmCostMicrocents: input.billing.llmCostMicrocents,
+        vectorWriteCostMicrocents: input.billing.vectorWriteCostMicrocents,
+        vectorQueryCostMicrocents: input.billing.vectorQueryCostMicrocents,
+        vectorNetworkCostMicrocents: input.billing.vectorNetworkCostMicrocents,
+        totalCostMicrocents: input.billing.totalCostMicrocents,
+        vectorWriteBytes: input.billing.vectorWriteBytes,
+        vectorQueryBytes: input.billing.vectorQueryBytes,
+        vectorNetworkBytes: input.billing.vectorNetworkBytes,
+        vectorQueryCount: input.billing.vectorQueryCount,
+        models: flattenBillingModels(input.billing.llm),
       })
-      .returning()
-
-    return transaction
+      .onConflictDoNothing({ target: reviewUsage.reviewRunId })
   })

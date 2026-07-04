@@ -35,20 +35,35 @@ export function formatUsageBalance(microcents: number): string {
   }).format(microcents / 1_000_000)
 }
 
-export function formatCreditTransactionType(eventType: string): string {
-  const labels: Record<string, string> = {
-    reset: "Allowance reset",
-    revoke: "Revoked",
-    usage_debit: "Scopy usage",
-    usage_week: "Scopy usage",
-  }
-  return labels[eventType] ?? "Adjustment"
+export function formatChargeAmount(
+  amount: number,
+  currency: string,
+): string {
+  return formatCurrencyAmount(amount, currency.toUpperCase())
 }
 
-export function formatCreditTransactionAmount(microcents: number): string {
-  const formatted = formatUsageBalance(Math.abs(microcents))
-  if (microcents === 0) return formatted
-  return microcents > 0 ? `+${formatted}` : `-${formatted}`
+export function formatChargeType(type: string): string {
+  const labels: Record<string, string> = {
+    payment: "Payment",
+    refund: "Refund",
+    dispute: "Dispute",
+  }
+  return labels[type] ?? type
+}
+
+export function formatBillingMode(mode: string): string {
+  return mode === "byok" ? "Own key" : "Plan balance"
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  )
+  const value = bytes / 1024 ** exponent
+  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`
 }
 
 export function formatPeriodEnd(date: Date | string | null): string {
@@ -67,20 +82,4 @@ export function formatDate(date: Date | string | null): string {
     month: "short",
     day: "numeric",
   }).format(new Date(date))
-}
-
-export function formatDateRange(
-  start: Date | string | null,
-  end: Date | string | null,
-): string {
-  if (!start || !end) return formatDate(start)
-  const startDate = new Date(start)
-  const endDate = new Date(end)
-  endDate.setDate(endDate.getDate() - 1)
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-  return `${formatter.format(startDate)} - ${formatter.format(endDate)}`
 }
