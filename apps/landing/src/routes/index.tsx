@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
+import { FREE_INCLUDED_CREDIT_MICRO_USD } from "@workspace/billing/plans"
 import {
   CodeIcon,
   ZapIcon,
@@ -18,6 +19,7 @@ import {
   hero,
   steps as STEPS,
 } from "#/lib/landing-content"
+import { formatComputeAllowance } from "#/lib/billing-format"
 import { getLandingPlans } from "#/lib/plans"
 
 export const Route = createFileRoute("/")({
@@ -294,8 +296,10 @@ function Pricing() {
         <div className="l-price-header">
           <h2 className="l-price-title">Simple usage-based pricing</h2>
           <p className="l-price-sub">
-            New cloud workspaces start with $1 of included review usage. Pick a
-            monthly plan when you need ongoing reviews — no per-seat pricing.
+            New cloud workspaces start free with{" "}
+            {formatComputeAllowance(FREE_INCLUDED_CREDIT_MICRO_USD)} of included
+            review usage. Pick a monthly plan when you need ongoing reviews — no
+            per-seat pricing.
           </p>
         </div>
 

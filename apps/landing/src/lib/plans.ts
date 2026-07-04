@@ -2,6 +2,7 @@ import { env } from "#/env"
 import { contactFounderHref } from "@workspace/billing/contact"
 import {
   ENTERPRISE_BILLING_PLAN,
+  FREE_INCLUDED_CREDIT_MICRO_USD,
   PREMIUM_BILLING_PLAN,
   ULTRA_BILLING_PLAN,
 } from "@workspace/billing/plans"
@@ -25,6 +26,7 @@ export type LandingPlan = {
 }
 
 export function getLandingPlans(): LandingPlan[] {
+  const freeCompute = formatComputeAllowance(FREE_INCLUDED_CREDIT_MICRO_USD)
   const premiumCompute = formatComputeAllowance(
     PREMIUM_BILLING_PLAN.monthlyCredits
   )
@@ -32,18 +34,18 @@ export function getLandingPlans(): LandingPlan[] {
 
   return [
     {
-      name: "Self-host",
+      name: "Free",
       priceLabel: "Free",
       period: "",
-      computeLabel: "Bring your own model keys",
-      desc: "Run Scopy on your infrastructure without limits.",
+      computeLabel: `${freeCompute} of review usage included`,
+      desc: "Start reviewing in the cloud with usage included — or self-host without limits.",
       features: [
-        "Unlimited pull requests",
-        "Connect any LLM provider",
+        `${freeCompute} of hosted review usage to start`,
+        "Self-host with your own model keys",
         "Full source code access",
       ],
-      cta: "View on GitHub",
-      href: env.githubUrl,
+      cta: "Get started",
+      href: env.appUrl,
       variant: "ghost",
       featured: false,
     },

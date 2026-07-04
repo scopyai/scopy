@@ -1,4 +1,5 @@
 import { resolve } from "node:path"
+import { FREE_INCLUDED_CREDIT_MICRO_USD } from "@workspace/billing/plans"
 import dotenv from "dotenv"
 import { z } from "zod"
 
@@ -25,7 +26,7 @@ export const env = z
       .number()
       .int()
       .positive()
-      .default(1_000_000),
+      .default(FREE_INCLUDED_CREDIT_MICRO_USD),
     GITHUB_APP_ID: z.string().min(1).optional(),
     GITHUB_APP_SLUG: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),

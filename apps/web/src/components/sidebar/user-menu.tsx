@@ -1,4 +1,11 @@
-import { LogOutIcon, ChevronsUpDown } from "lucide-react"
+import { useEffect, useState } from "react"
+import {
+  LogOutIcon,
+  ChevronsUpDown,
+  SunIcon,
+  MoonIcon,
+} from "lucide-react"
+import { useTheme } from "next-themes"
 import {
   Avatar,
   AvatarFallback,
@@ -9,7 +16,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu"
 import { Skeleton } from "@workspace/ui/components/skeleton"
@@ -19,6 +31,11 @@ import { useMeUser } from "@/hooks/use-me"
 export function UserMenu() {
   const { data: session, isPending: sessionPending } = authClient.useSession()
   const { data: user } = useMeUser()
+  const { theme, setTheme } = useTheme()
+
+  // Avoid hydration mismatch: the resolved theme is only known on the client.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   if (sessionPending) {
     return (
@@ -56,6 +73,32 @@ export function UserMenu() {
             <span className="text-xs text-muted-foreground">{user?.email}</span>
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="gap-2">
+            {mounted && theme === "light" ? (
+              <SunIcon className="size-4" />
+            ) : (
+              <MoonIcon className="size-4" />
+            )}
+            Theme
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={mounted ? theme : undefined}
+              onValueChange={setTheme}
+            >
+              <DropdownMenuRadioItem value="light" className="gap-2">
+                <SunIcon className="size-4" />
+                Light
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark" className="gap-2">
+                <MoonIcon className="size-4" />
+                Dark
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
