@@ -1,3 +1,5 @@
+export const FREE_INCLUDED_CREDIT_MICRO_USD = 1_000_000
+
 export const PREMIUM_BILLING_PLAN = {
   slug: "premium",
   name: "Premium",

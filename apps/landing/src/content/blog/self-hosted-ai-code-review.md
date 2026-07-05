@@ -55,9 +55,9 @@ If you're evaluating options, check for:
 - **Repository-aware reviews** — full pull-request context, not just the raw diff. (We cover why this matters in [what is AI code review](/blog/what-is-ai-code-review).)
 - **Configurable**, so the reviewer enforces _your_ standards, applied consistently.
 
-## Where Scopy fits
+## Where Scopy AI fits
 
-Scopy is an [open-source AI code reviewer](/) built to be run either way. The full source is on GitHub for you to read, fork and deploy. It's model-agnostic — connect OpenAI, Anthropic, a compatible API, or a local model, with no lock-in. And when you'd rather not run infrastructure at all, Scopy gives you a Cloud option with the same reviews as a managed service.
+Scopy AI an [open-source AI code reviewer](/) built to be run either way. The full source is on GitHub for you to read, fork and deploy. It's model-agnostic — connect OpenAI, Anthropic, a compatible API, or a local model, with no lock-in. And when you'd rather not run infrastructure at all, Scopy AI gives you a Cloud option with the same reviews as a managed service.
 
 That means you can start in the cloud today and self-host later, or self-host from day one and keep your code entirely on your own machines. Either way you get repository-aware reviews and your own custom review rules — without surrendering control of your source.
 

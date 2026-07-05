@@ -27,6 +27,7 @@ export type BlogPost = {
   tags: string[]
   readingMinutes: number
   html: string
+  markdown: string
 }
 
 type Frontmatter = {
@@ -104,6 +105,7 @@ function buildPost(path: string, raw: string): BlogPost {
     tags: data.tags ? data.tags.split(",").map((t) => t.trim()) : [],
     readingMinutes: readingMinutes(body),
     html: marked.parse(body) as string,
+    markdown: body.trim(),
   }
 }
 

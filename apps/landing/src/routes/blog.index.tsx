@@ -4,7 +4,7 @@ import { env } from "#/env"
 import { formatPostDate, getAllPosts } from "#/lib/blog"
 
 const pageTitle =
-  "Blog — AI code review, pull requests and code quality | Scopy"
+  "Blog — AI code review, pull requests and code quality | Scopy AI"
 const pageDescription =
   "Guides and practical advice on AI code review, pull request best practices and shipping higher-quality code, from the team building Scopy."
 const pageUrl = `${env.siteUrl}/blog`

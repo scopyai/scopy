@@ -21,7 +21,7 @@ At a high level, an AI code reviewer runs through four steps every time a pull r
 3. **Generate findings.** The model produces a set of observations — potential bugs, edge cases, naming issues, missing tests — usually with a location and a severity.
 4. **Post feedback.** The findings are filtered and posted back as inline comments on the pull request, where the author already works.
 
-The quality of an AI review is dominated by step one. A tool that only sees the raw diff will miss anything that depends on code it can't see — which is most real bugs. This is why repository-aware context matters so much, and it's the part Scopy invests in most heavily. You can see the shape of this flow in [how Scopy runs a review](/#how-it-works).
+The quality of an AI review is dominated by step one. A tool that only sees the raw diff will miss anything that depends on code it can't see — which is most real bugs. This is why repository-aware context matters so much, and it's the part Scopy AI invests in most heavily. You can see the shape of this flow in [how Scopy AI runs a review](/#how-it-works).
 
 ## What AI code review is good at
 

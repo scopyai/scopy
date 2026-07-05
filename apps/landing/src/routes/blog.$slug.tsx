@@ -28,8 +28,8 @@ export const Route = createFileRoute("/blog/$slug")({
       author: { "@type": "Organization", name: loaderData.author },
       publisher: {
         "@type": "Organization",
-        name: "Scopy",
-        logo: { "@type": "ImageObject", url: `${env.siteUrl}/logo.svg` },
+        name: "Scopy AI",
+        logo: { "@type": "ImageObject", url: `${env.siteUrl}/logo-og.png` },
       },
       mainEntityOfPage: { "@type": "WebPage", "@id": url },
       url,
@@ -37,7 +37,7 @@ export const Route = createFileRoute("/blog/$slug")({
 
     return {
       meta: [
-        { title: `${loaderData.title} | Scopy` },
+        { title: `${loaderData.title} | Scopy AI` },
         { name: "description", content: loaderData.description },
         { property: "og:type", content: "article" },
         { property: "og:title", content: loaderData.title },
@@ -93,7 +93,7 @@ function BlogPost() {
 
           <footer className="l-post-foot">
             <h2 className="l-post-foot-title">
-              Try Scopy on your next pull request
+              Try Scopy AI on your next pull request
             </h2>
             <p className="l-post-foot-sub">
               Open-source AI code review that reads your whole repository.

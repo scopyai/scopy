@@ -4,11 +4,6 @@ export const periodResetKey = (
   periodStart: Date,
 ) => `${subscriptionId}:${productId}:${periodStart.toISOString()}:reset`;
 
-export const calculateResetDelta = (
-  currentBalance: number,
-  monthlyAllowance: number,
-) => monthlyAllowance - currentBalance;
-
 export const shouldRevokeForSubscriptionStatus = (status: string) =>
   status === "paused" || status === "expired" || status === "canceled";
 

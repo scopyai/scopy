@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { createGateway, Output, ToolLoopAgent, tool } from "ai"
+import { createGateway, Output, ToolLoopAgent, stepCountIs, tool } from "ai"
 import {
   buildDiffContext,
   chunksForRepositoryIndex,
@@ -134,7 +134,6 @@ export type ReviewAgentResult = {
     totalCostMicroUsd: number
     totalCostMicrocents: number
     llm: Record<string, unknown>
-    transactionId?: string
   }
   startedAt: string
   completedAt: string
@@ -171,9 +170,63 @@ const recordLlmBilling = async (
   resolveGenerationCost: typeof resolveOpenRouterGenerationCost
 ) => {
   const cost = await resolveGenerationCost(generation)
-  if (cost.costMicrocents === null) {
-    throw new Error(`${provider} cost is missing for ${stage}`)
+  const resolvedStepCostMicrocents = cost.steps.reduce<number>(
+    (total, step) => {
+      if (
+        typeof step === "object" &&
+        step !== null &&
+        "costMicrocents" in step &&
+        typeof (step as { costMicrocents?: unknown }).costMicrocents ===
+          "number"
+      ) {
+        return total + (step as { costMicrocents: number }).costMicrocents
+      }
+      return total
+    },
+    0
+  )
+  const resolvedStepCostUsd = cost.steps.reduce<number>((total, step) => {
+    if (
+      typeof step === "object" &&
+      step !== null &&
+      "costUsd" in step &&
+      typeof (step as { costUsd?: unknown }).costUsd === "number"
+    ) {
+      return total + (step as { costUsd: number }).costUsd
+    }
+    return total
+  }, 0)
+  const costIsPartial = cost.costMicrocents === null
+  if (
+    costIsPartial &&
+    (provider !== "gateway" || resolvedStepCostMicrocents <= 0)
+  ) {
+    const statusCounts = cost.steps.reduce<Record<string, number>>(
+      (counts, step) => {
+        if (
+          typeof step === "object" &&
+          step !== null &&
+          "costStatus" in step &&
+          typeof (step as { costStatus?: unknown }).costStatus === "string"
+        ) {
+          const status = (step as { costStatus: string }).costStatus
+          counts[status] = (counts[status] ?? 0) + 1
+        }
+        return counts
+      },
+      {}
+    )
+    const detail = Object.entries(statusCounts)
+      .map(([status, count]) => `${status}: ${count}`)
+      .join(", ")
+    throw new Error(
+      `${provider} cost is missing for ${stage}${detail ? ` (${detail})` : ""}`
+    )
   }
+  const recordedCostUsd = costIsPartial ? resolvedStepCostUsd : cost.cost
+  const recordedCostMicrocents = costIsPartial
+    ? resolvedStepCostMicrocents
+    : cost.costMicrocents
   const usage =
     typeof generation === "object" &&
     generation !== null &&
@@ -185,9 +238,10 @@ const recordLlmBilling = async (
     provider,
     usage,
     billingUnit: "micro_usd",
-    costUsd: cost.cost,
-    costMicroUsd: cost.costMicrocents,
-    costMicrocents: cost.costMicrocents,
+    costUsd: recordedCostUsd,
+    costMicroUsd: recordedCostMicrocents,
+    costMicrocents: recordedCostMicrocents,
+    ...(costIsPartial ? { costStatus: "partial" } : {}),
     steps: cost.steps,
     stepCount: cost.steps.length,
     providerMetadata:
@@ -209,15 +263,19 @@ const recordLlmBilling = async (
       costUsd?: number
       costMicroUsd: number
       costMicrocents: number
+      costStatus?: string
       stepCount?: number
       steps?: unknown[]
       calls?: unknown[]
     }
     stages[stage] = {
       ...existingEntry,
-      costUsd: (existingEntry.costUsd ?? 0) + cost.cost,
-      costMicroUsd: existingEntry.costMicroUsd + cost.costMicrocents,
-      costMicrocents: existingEntry.costMicrocents + cost.costMicrocents,
+      costUsd: (existingEntry.costUsd ?? 0) + recordedCostUsd,
+      costMicroUsd: existingEntry.costMicroUsd + recordedCostMicrocents,
+      costMicrocents: existingEntry.costMicrocents + recordedCostMicrocents,
+      ...(costIsPartial || existingEntry.costStatus === "partial"
+        ? { costStatus: "partial" }
+        : {}),
       steps: [...(existingEntry.steps ?? []), ...cost.steps],
       stepCount: (existingEntry.stepCount ?? 0) + cost.steps.length,
       calls: [...(existingEntry.calls ?? []), entry],
@@ -408,7 +466,9 @@ export const runReviewAgent = async ({
     ? resolveOpenRouterGenerationCost
     : (generation: unknown) =>
         resolveGatewayGenerationCost(generation, gateway!.getGenerationInfo)
-  const mainProviderOptions = openrouter ? reviewModelProviderOptions : undefined
+  const mainProviderOptions = openrouter
+    ? reviewModelProviderOptions
+    : undefined
   const subagentProviderOptions = openrouter
     ? verifierModelProviderOptions
     : undefined
@@ -783,6 +843,7 @@ ${affectedSymbols}`
                 name: "review_suspicions",
                 description: "Unfiltered suspicious code locations",
               }),
+              stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
               maxRetries: 2,
               onStepFinish: async (step) => recorder.recordStep(step),
             })
@@ -932,6 +993,7 @@ ${affectedSymbols}`
           description:
             "Natural-language rule findings grouped by assigned file",
         }),
+        stopWhen: stepCountIs(reviewAgentConfig.naturalLanguageLinter.maxSteps),
         maxRetries: 2,
         onStepFinish: async (step) => recorder.recordStep(step),
       })
@@ -1110,6 +1172,7 @@ ${affectedSymbols}`
       description:
         "Verified pull request review and a complete decision ledger for every delegated suspicion",
     }),
+    stopWhen: stepCountIs(reviewAgentConfig.main.maxSteps),
     maxRetries: 2,
     onStepFinish: async (step) => recorder.recordStep(step),
   })

@@ -11,6 +11,7 @@ import { useReviewConfig } from "@/hooks/use-review-config"
 import { useUpdateReviewConfig } from "@/hooks/use-update-review-config"
 import { useUpdateRepository } from "@/hooks/use-update-repository"
 import { useWorkspaceReviewConfig } from "@/hooks/use-workspace-review-config"
+// import { RepositoryBillingMode } from "@/components/repositories/repository-billing-mode"
 
 interface RepositoryReviewSettingsProps {
   workspaceId: string
@@ -110,6 +111,12 @@ export function RepositoryReviewSettings({
           repositoryEnabled={repositoryEnabled}
           onRepositoryEnabledChange={updateEnabled}
         />
+
+        {/* <RepositoryBillingMode
+          workspaceId={workspaceId}
+          repositoryId={repositoryId}
+          disabled={settingsDisabled}
+        /> */}
       </div>
     </div>
   )

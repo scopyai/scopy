@@ -1,4 +1,5 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import type { ChartConfig } from "@workspace/ui/components/chart"
 import {
   Card,
   CardContent,
@@ -10,7 +11,6 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from "@workspace/ui/components/chart"
 import { GitPullRequestIcon } from "lucide-react"
 import {

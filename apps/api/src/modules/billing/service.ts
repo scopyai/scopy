@@ -6,9 +6,15 @@ import type {
   NormalizedSubscriptionEntity,
   NormalizedWebhookEvent,
 } from "@creem_io/webhook-types"
-import { eq, sql } from "drizzle-orm"
+import { and, count, desc, eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
-import { workspace, workspaceCreditTransaction } from "../../db/schema"
+import {
+  pullRequest,
+  repository,
+  reviewUsage,
+  workspace,
+  workspaceCharge,
+} from "../../db/schema"
 import { env } from "../../env"
 import { creem } from "./creem"
 import {
@@ -20,7 +26,6 @@ import {
   type PurchasableBillingTier,
 } from "./plans"
 import {
-  calculateResetDelta,
   getPlanChangeKind,
   getWorkspaceReferenceId,
   isStaleCreemEvent,
@@ -49,7 +54,7 @@ const toDate = (value: Date | string | number, field: string) => {
 export class BillingError extends Error {
   constructor(
     message: string,
-    public readonly statusCode: 400 | 404 | 409 = 400,
+    public readonly statusCode: 400 | 404 | 409 = 400
   ) {
     super(message)
     this.name = "BillingError"
@@ -80,29 +85,16 @@ const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
   creemSubscriptionId: value.creemSubscriptionId,
 })
 
-type CreditHistoryRow = {
-  id: string
-  type: "usage_week" | "reset" | "revoke"
-  amount: number
-  balanceAfter: number
-  reason: string
-  createdAt: Date
-  periodStart: Date | null
-  periodEnd: Date | null
-  transactionCount: number
-}
-
-const toHistoryDate = (value: Date | string) =>
-  value instanceof Date ? value : new Date(value)
-
 const resolveWorkspace = async (
   tx: Transaction,
   metadata: Record<string, string | number | null> | undefined,
-  subscriptionId: string | null,
+  subscriptionId: string | null
 ) => {
   const referenceId = getWorkspaceReferenceId(metadata)
   if (referenceId) {
-    return tx.query.workspace.findFirst({ where: eq(workspace.id, referenceId) })
+    return tx.query.workspace.findFirst({
+      where: eq(workspace.id, referenceId),
+    })
   }
 
   return subscriptionId
@@ -112,48 +104,52 @@ const resolveWorkspace = async (
     : null
 }
 
-const appendTransaction = async (
+const recordCharge = async (
   tx: Transaction,
   values: {
     workspaceId: string
-    type: "reset" | "revoke"
+    creemTransactionId: string
+    type: "payment" | "refund" | "dispute"
     amount: number
-    balanceAfter: number
-    idempotencyKey: string
-    reason: string
-    metadata?: Record<string, unknown>
-  },
+    currency: string
+    status: string
+    description?: string | null
+    productId?: string | null
+    tier?: string | null
+    createdAt: Date
+  }
 ) => {
-  await tx
-    .insert(workspaceCreditTransaction)
+  const inserted = await tx
+    .insert(workspaceCharge)
     .values({
       id: randomUUID(),
       ...values,
-      metadata: values.metadata ?? {},
+      description: values.description ?? null,
+      productId: values.productId ?? null,
+      tier: values.tier ?? null,
     })
-    .onConflictDoNothing({
-      target: workspaceCreditTransaction.idempotencyKey,
-    })
+    .onConflictDoNothing({ target: workspaceCharge.creemTransactionId })
+    .returning({ id: workspaceCharge.id })
+  return inserted.length > 0
 }
 
 const resetCredits = async (
   tx: Transaction,
   currentWorkspace: typeof workspace.$inferSelect,
-  subscription: CreditResetSubscription,
-  reason: string,
+  subscription: CreditResetSubscription
 ) => {
   const plan = getPlanByProductId(subscription.productId)
-  if (!plan) throw new BillingError(`Unknown Creem product: ${subscription.productId}`)
+  if (!plan)
+    throw new BillingError(`Unknown Creem product: ${subscription.productId}`)
 
-  const idempotencyKey = periodResetKey(
+  // Idempotency: a retried allowance grant for the same subscription period +
+  // product must not top up credits twice.
+  const resetKey = periodResetKey(
     subscription.id,
     subscription.productId,
-    subscription.periodStart,
+    subscription.periodStart
   )
-  const existing = await tx.query.workspaceCreditTransaction.findFirst({
-    where: eq(workspaceCreditTransaction.idempotencyKey, idempotencyKey),
-  })
-  if (existing) return
+  if (currentWorkspace.lastCreditResetKey === resetKey) return
 
   await tx
     .update(workspace)
@@ -166,37 +162,18 @@ const resetCredits = async (
       billingPeriodStart: subscription.periodStart,
       billingPeriodEnd: subscription.periodEnd,
       pendingBillingTier: null,
+      lastCreditResetKey: resetKey,
       updatedAt: new Date(),
     })
     .where(eq(workspace.id, currentWorkspace.id))
-
-  await appendTransaction(tx, {
-    workspaceId: currentWorkspace.id,
-    type: "reset",
-    amount: calculateResetDelta(currentWorkspace.creditBalance, plan.monthlyCredits),
-    balanceAfter: plan.monthlyCredits,
-    idempotencyKey,
-    reason,
-    metadata: {
-      subscriptionId: subscription.id,
-      productId: subscription.productId,
-      periodStart: subscription.periodStart.toISOString(),
-    },
-  })
 }
 
+// Setting the balance to 0 is naturally idempotent, so no ledger guard is needed.
 const revokeCredits = async (
   tx: Transaction,
   currentWorkspace: typeof workspace.$inferSelect,
-  idempotencyKey: string,
-  reason: string,
-  status?: string,
+  status?: string
 ) => {
-  const existing = await tx.query.workspaceCreditTransaction.findFirst({
-    where: eq(workspaceCreditTransaction.idempotencyKey, idempotencyKey),
-  })
-  if (existing) return
-
   await tx
     .update(workspace)
     .set({
@@ -211,26 +188,20 @@ const revokeCredits = async (
       updatedAt: new Date(),
     })
     .where(eq(workspace.id, currentWorkspace.id))
-
-  await appendTransaction(tx, {
-    workspaceId: currentWorkspace.id,
-    type: "revoke",
-    amount: -currentWorkspace.creditBalance,
-    balanceAfter: 0,
-    idempotencyKey,
-    reason,
-  })
 }
 
 const applySubscriptionEvent = async (
-  event: Extract<NormalizedWebhookEvent, { object: NormalizedSubscriptionEntity }>,
+  event: Extract<
+    NormalizedWebhookEvent,
+    { object: NormalizedSubscriptionEntity }
+  >
 ) => {
   await db.transaction(async (tx) => {
     const subscription = event.object
     const currentWorkspace = await resolveWorkspace(
       tx,
       subscription.metadata,
-      subscription.id,
+      subscription.id
     )
     if (!currentWorkspace) return
 
@@ -239,40 +210,51 @@ const applySubscriptionEvent = async (
       where: eq(workspace.id, currentWorkspace.id),
     })
     if (!lockedWorkspace) return
-    if (isStaleCreemEvent(lockedWorkspace.creemLastEventAt, new Date(event.created_at))) {
+    if (
+      isStaleCreemEvent(
+        lockedWorkspace.creemLastEventAt,
+        new Date(event.created_at)
+      )
+    ) {
       return
     }
 
     if (event.eventType === "subscription.paid") {
       const periodStart = toDate(
         subscription.current_period_start_date,
-        "subscription period start",
+        "subscription period start"
       )
       const periodEnd = toDate(
         subscription.current_period_end_date,
-        "subscription period end",
+        "subscription period end"
       )
-      await resetCredits(
-        tx,
-        lockedWorkspace,
-        {
-          id: subscription.id,
+      await resetCredits(tx, lockedWorkspace, {
+        id: subscription.id,
+        productId: subscription.product.id,
+        customerId: subscription.customer.id,
+        status: subscription.status,
+        periodStart,
+        periodEnd,
+      })
+
+      const paidTransaction = subscription.last_transaction
+      if (paidTransaction) {
+        const plan = getPlanByProductId(subscription.product.id)
+        await recordCharge(tx, {
+          workspaceId: lockedWorkspace.id,
+          creemTransactionId: paidTransaction.id,
+          type: "payment",
+          amount: paidTransaction.amount_paid ?? paidTransaction.amount,
+          currency: paidTransaction.currency,
+          status: paidTransaction.status,
+          description: plan ? `${plan.name} plan` : null,
           productId: subscription.product.id,
-          customerId: subscription.customer.id,
-          status: subscription.status,
-          periodStart,
-          periodEnd,
-        },
-        "subscription_paid",
-      )
+          tier: plan?.slug ?? null,
+          createdAt: new Date(event.created_at),
+        })
+      }
     } else if (shouldRevokeForSubscriptionStatus(subscription.status)) {
-      await revokeCredits(
-        tx,
-        lockedWorkspace,
-        `${event.id}:revoke`,
-        `subscription_${subscription.status}`,
-        subscription.status,
-      )
+      await revokeCredits(tx, lockedWorkspace, subscription.status)
     } else {
       const plan = getPlanByProductId(subscription.product.id)
       const preservePendingDowngrade =
@@ -281,11 +263,11 @@ const applySubscriptionEvent = async (
         plan?.slug === "premium"
       const periodStart = toDate(
         subscription.current_period_start_date,
-        "subscription period start",
+        "subscription period start"
       )
       const periodEnd = toDate(
         subscription.current_period_end_date,
-        "subscription period end",
+        "subscription period end"
       )
 
       await tx
@@ -293,7 +275,7 @@ const applySubscriptionEvent = async (
         .set({
           billingTier: preservePendingDowngrade
             ? lockedWorkspace.billingTier
-            : plan?.slug ?? lockedWorkspace.billingTier,
+            : (plan?.slug ?? lockedWorkspace.billingTier),
           billingStatus: subscription.status,
           creemCustomerId: subscription.customer.id,
           creemSubscriptionId: subscription.id,
@@ -315,14 +297,16 @@ const applySubscriptionEvent = async (
   })
 }
 
-const applyCheckoutCompleted = async (event: NormalizedCheckoutCompletedEvent) => {
+const applyCheckoutCompleted = async (
+  event: NormalizedCheckoutCompletedEvent
+) => {
   const referenceId = getWorkspaceReferenceId(event.object.metadata)
   if (!referenceId) return
 
   const subscriptionId =
     typeof event.object.subscription === "object"
       ? event.object.subscription.id
-      : event.object.subscription ?? null
+      : (event.object.subscription ?? null)
   await db
     .update(workspace)
     .set({
@@ -334,33 +318,72 @@ const applyCheckoutCompleted = async (event: NormalizedCheckoutCompletedEvent) =
 }
 
 const getFinancialSubscriptionId = (
-  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent
 ) =>
   typeof event.object.subscription === "string"
     ? event.object.subscription
-    : event.object.subscription?.id ?? event.object.transaction.subscription ?? null
+    : (event.object.subscription?.id ??
+      event.object.transaction.subscription ??
+      null)
 
 const applyFinancialRevoke = async (
-  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent
 ) => {
   const subscriptionId = getFinancialSubscriptionId(event)
   if (!subscriptionId) return
 
   await db.transaction(async (tx) => {
-    const currentWorkspace = await resolveWorkspace(tx, undefined, subscriptionId)
+    const currentWorkspace = await resolveWorkspace(
+      tx,
+      undefined,
+      subscriptionId
+    )
     if (!currentWorkspace) return
     await lockWorkspace(tx, currentWorkspace.id)
     const lockedWorkspace = await tx.query.workspace.findFirst({
       where: eq(workspace.id, currentWorkspace.id),
     })
     if (!lockedWorkspace) return
-    await revokeCredits(tx, lockedWorkspace, `${event.id}:revoke`, event.eventType)
+
+    const recorded =
+      event.eventType === "refund.created"
+        ? await recordCharge(tx, {
+            workspaceId: lockedWorkspace.id,
+            creemTransactionId: event.object.id,
+            type: "refund",
+            amount: event.object.refund_amount,
+            currency: event.object.refund_currency,
+            status: event.object.status,
+            description: "Refund",
+            createdAt: new Date(event.created_at),
+          })
+        : await recordCharge(tx, {
+            workspaceId: lockedWorkspace.id,
+            creemTransactionId: event.object.id,
+            type: "dispute",
+            amount: event.object.amount,
+            currency: event.object.currency,
+            status: "dispute",
+            description: "Dispute",
+            createdAt: new Date(event.created_at),
+          })
+
+    // Only revoke on the first delivery of this refund/dispute. A redelivered
+    // webhook no-ops on the charge insert; revoking again here would wipe
+    // credits granted by a renewal that happened in between.
+    if (recorded) {
+      await revokeCredits(tx, lockedWorkspace)
+    }
   })
 }
 
 export const applyCreemWebhook = async (event: NormalizedWebhookEvent) => {
-  if (event.eventType === "checkout.completed") return applyCheckoutCompleted(event)
-  if (event.eventType === "refund.created" || event.eventType === "dispute.created") {
+  if (event.eventType === "checkout.completed")
+    return applyCheckoutCompleted(event)
+  if (
+    event.eventType === "refund.created" ||
+    event.eventType === "dispute.created"
+  ) {
     return applyFinancialRevoke(event)
   }
   return applySubscriptionEvent(event)
@@ -375,67 +398,121 @@ export const getWorkspaceBilling = async (workspaceId: string) => {
   }
 }
 
-export const listWorkspaceCreditTransactions = async (
+export type ReviewUsageFilters = {
+  repositoryId?: string
+}
+
+export const listWorkspaceReviewUsage = async (
   workspaceId: string,
   page: number,
   pageSize: number,
+  filters: ReviewUsageFilters = {}
 ) => {
+  const conditions = [eq(reviewUsage.workspaceId, workspaceId)]
+  if (filters.repositoryId) {
+    conditions.push(eq(reviewUsage.repositoryId, filters.repositoryId))
+  }
+  const where = and(...conditions)
   const offset = (page - 1) * pageSize
-  const usageRows = await db
+
+  const items = await db
     .select({
-      id: sql<string>`'usage-week:' || to_char(date_trunc('week', ${workspaceCreditTransaction.createdAt}), 'YYYY-MM-DD')`,
-      type: sql<CreditHistoryRow["type"]>`'usage_week'`,
-      amount: sql<number>`sum(${workspaceCreditTransaction.amount})::bigint`,
-      balanceAfter: sql<number>`(array_agg(${workspaceCreditTransaction.balanceAfter} order by ${workspaceCreditTransaction.createdAt} desc))[1]::bigint`,
-      reason: sql<string>`'weekly_review_usage'`,
-      createdAt: sql<Date>`max(${workspaceCreditTransaction.createdAt})`,
-      periodStart: sql<Date>`date_trunc('week', ${workspaceCreditTransaction.createdAt})`,
-      periodEnd: sql<Date>`date_trunc('week', ${workspaceCreditTransaction.createdAt}) + interval '7 days'`,
-      transactionCount: sql<number>`count(*)::int`,
+      id: reviewUsage.id,
+      reviewRunId: reviewUsage.reviewRunId,
+      balanceAfter: reviewUsage.balanceAfter,
+      modelId: reviewUsage.modelId,
+      verifierModelId: reviewUsage.verifierModelId,
+      llmCostMicrocents: reviewUsage.llmCostMicrocents,
+      vectorWriteCostMicrocents: reviewUsage.vectorWriteCostMicrocents,
+      vectorQueryCostMicrocents: reviewUsage.vectorQueryCostMicrocents,
+      vectorNetworkCostMicrocents: reviewUsage.vectorNetworkCostMicrocents,
+      totalCostMicrocents: reviewUsage.totalCostMicrocents,
+      vectorWriteBytes: reviewUsage.vectorWriteBytes,
+      vectorQueryBytes: reviewUsage.vectorQueryBytes,
+      vectorNetworkBytes: reviewUsage.vectorNetworkBytes,
+      vectorQueryCount: reviewUsage.vectorQueryCount,
+      models: reviewUsage.models,
+      createdAt: reviewUsage.createdAt,
+      repositoryName: repository.fullName,
+      pullRequestNumber: pullRequest.number,
+      pullRequestTitle: pullRequest.title,
+      pullRequestUrl: pullRequest.htmlUrl,
     })
-    .from(workspaceCreditTransaction)
-    .where(sql`${workspaceCreditTransaction.workspaceId} = ${workspaceId} and ${workspaceCreditTransaction.type} = 'usage_debit'`)
-    .groupBy(sql`date_trunc('week', ${workspaceCreditTransaction.createdAt})`)
+    .from(reviewUsage)
+    .leftJoin(pullRequest, eq(reviewUsage.pullRequestId, pullRequest.id))
+    .leftJoin(repository, eq(reviewUsage.repositoryId, repository.id))
+    .where(where)
+    .orderBy(desc(reviewUsage.createdAt))
+    .limit(pageSize)
+    .offset(offset)
 
-  const adjustmentRows = await db
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(reviewUsage)
+    .where(where)
+
+  return { items, page, pageSize, total: totalRow?.value ?? 0 }
+}
+
+export const listWorkspaceCharges = async (
+  workspaceId: string,
+  page: number,
+  pageSize: number
+) => {
+  const where = eq(workspaceCharge.workspaceId, workspaceId)
+  const offset = (page - 1) * pageSize
+
+  const items = await db
     .select({
-      id: workspaceCreditTransaction.id,
-      type: sql<CreditHistoryRow["type"]>`${workspaceCreditTransaction.type}`,
-      amount: workspaceCreditTransaction.amount,
-      balanceAfter: workspaceCreditTransaction.balanceAfter,
-      reason: workspaceCreditTransaction.reason,
-      createdAt: workspaceCreditTransaction.createdAt,
-      periodStart: sql<Date | null>`null`,
-      periodEnd: sql<Date | null>`null`,
-      transactionCount: sql<number>`1`,
+      id: workspaceCharge.id,
+      type: workspaceCharge.type,
+      amount: workspaceCharge.amount,
+      currency: workspaceCharge.currency,
+      status: workspaceCharge.status,
+      description: workspaceCharge.description,
+      tier: workspaceCharge.tier,
+      createdAt: workspaceCharge.createdAt,
     })
-    .from(workspaceCreditTransaction)
-    .where(sql`${workspaceCreditTransaction.workspaceId} = ${workspaceId} and ${workspaceCreditTransaction.type} <> 'usage_debit'`)
+    .from(workspaceCharge)
+    .where(where)
+    .orderBy(desc(workspaceCharge.createdAt))
+    .limit(pageSize)
+    .offset(offset)
 
-  const rows: CreditHistoryRow[] = [...usageRows, ...adjustmentRows]
-    .map((row) => ({
-      ...row,
-      amount: Number(row.amount),
-      balanceAfter: Number(row.balanceAfter),
-      createdAt: toHistoryDate(row.createdAt),
-      periodStart: row.periodStart ? toHistoryDate(row.periodStart) : null,
-      periodEnd: row.periodEnd ? toHistoryDate(row.periodEnd) : null,
-    }))
-    .sort((a, b) => {
-      const aSortDate = a.periodEnd ?? a.createdAt
-      const bSortDate = b.periodEnd ?? b.createdAt
-      return bSortDate.getTime() - aSortDate.getTime()
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(workspaceCharge)
+    .where(where)
+
+  return { items, page, pageSize, total: totalRow?.value ?? 0 }
+}
+
+export const getWorkspaceUsageTrend = async (workspaceId: string) => {
+  const rows = await db
+    .select({
+      date: sql<string>`to_char(date_trunc('day', ${reviewUsage.createdAt}), 'YYYY-MM-DD')`,
+      totalCostMicrocents: sql<number>`sum(${reviewUsage.totalCostMicrocents})::bigint`,
+      reviewCount: sql<number>`count(*)::int`,
     })
-  const items = rows.slice(offset, offset + pageSize)
+    .from(reviewUsage)
+    .where(
+      sql`${reviewUsage.workspaceId} = ${workspaceId} and ${reviewUsage.createdAt} >= now() - interval '30 days'`
+    )
+    .groupBy(sql`date_trunc('day', ${reviewUsage.createdAt})`)
+    .orderBy(sql`date_trunc('day', ${reviewUsage.createdAt})`)
 
-  return { items, page, pageSize, total: rows.length }
+  return rows.map((row) => ({
+    date: row.date,
+    totalCostMicrocents: Number(row.totalCostMicrocents),
+    reviewCount: Number(row.reviewCount),
+  }))
 }
 
 export const createWorkspaceCheckout = async (
   workspaceId: string,
   email: string,
   tier: string,
-  requestId: string,
+  requestId: string
 ) => {
   const plan = getPurchasablePlan(tier)
   if (!plan) throw new BillingError("Unknown purchasable billing tier")
@@ -451,7 +528,7 @@ export const createWorkspaceCheckout = async (
     customer: { email },
     successUrl: new URL(
       `/${encodeURIComponent(currentWorkspace.providerAccountLogin)}/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
-      env.FRONTEND_URL,
+      env.FRONTEND_URL
     ).toString(),
     metadata: { referenceId: workspaceId },
   })
@@ -475,11 +552,14 @@ export const createWorkspacePortal = async (workspaceId: string) => {
 export const cancelWorkspaceSubscription = async (workspaceId: string) => {
   const currentWorkspace = await getWorkspace(workspaceId)
   if (!currentWorkspace?.creemSubscriptionId) {
-    throw new BillingError("Workspace does not have an active subscription", 404)
+    throw new BillingError(
+      "Workspace does not have an active subscription",
+      404
+    )
   }
   const subscription = await creem.subscriptions.cancel(
     currentWorkspace.creemSubscriptionId,
-    { mode: "scheduled", onExecute: "cancel" },
+    { mode: "scheduled", onExecute: "cancel" }
   )
   await db
     .update(workspace)
@@ -497,11 +577,14 @@ export const cancelWorkspaceSubscription = async (workspaceId: string) => {
 
 export const changeWorkspacePlan = async (
   workspaceId: string,
-  tier: PurchasableBillingTier,
+  tier: PurchasableBillingTier
 ) => {
   const currentWorkspace = await getWorkspace(workspaceId)
   if (!currentWorkspace?.creemSubscriptionId) {
-    throw new BillingError("Workspace does not have an active subscription", 404)
+    throw new BillingError(
+      "Workspace does not have an active subscription",
+      404
+    )
   }
   if (currentWorkspace.billingStatus === "scheduled_cancel") {
     throw new BillingError("Resume the subscription before changing plans", 409)
@@ -524,7 +607,7 @@ export const changeWorkspacePlan = async (
         planChangeKind === "upgrade"
           ? "proration-charge-immediately"
           : "proration-none",
-    },
+    }
   )
 
   if (planChangeKind === "downgrade") {
@@ -545,7 +628,10 @@ export const changeWorkspacePlan = async (
       typeof subscription.customer === "string"
         ? subscription.customer
         : subscription.customer.id
-    if (!subscription.currentPeriodStartDate || !subscription.currentPeriodEndDate) {
+    if (
+      !subscription.currentPeriodStartDate ||
+      !subscription.currentPeriodEndDate
+    ) {
       throw new Error("Upgraded subscription did not include a billing period")
     }
 
@@ -556,13 +642,13 @@ export const changeWorkspacePlan = async (
       status: subscription.status,
       periodStart: toDate(
         subscription.currentPeriodStartDate,
-        "subscription period start",
+        "subscription period start"
       ),
       periodEnd: toDate(
         subscription.currentPeriodEndDate,
-        "subscription period end",
+        "subscription period end"
       ),
-    }, "subscription_upgrade")
+    })
   })
   return getWorkspaceBilling(workspaceId)
 }

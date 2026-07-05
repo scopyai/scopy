@@ -1,4 +1,5 @@
 import { Bar, BarChart, XAxis, YAxis } from "recharts"
+import type { ChartConfig } from "@workspace/ui/components/chart"
 import {
   Card,
   CardContent,
@@ -10,7 +11,6 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from "@workspace/ui/components/chart"
 import { FileWarningIcon, CodeIcon } from "lucide-react"
 import { chartAxisTick, chartSeriesColor } from "./chart-utils"

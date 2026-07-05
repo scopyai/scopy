@@ -29,6 +29,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { cn } from "@workspace/ui/lib/utils"
 import { useWorkspaceMembers } from "@/hooks/use-workspace-members"
+import { tagToneClassName } from "@/lib/tag-tones"
 import {
   useInviteWorkspaceMember,
   useUpdateWorkspaceMember,
@@ -37,23 +38,6 @@ import {
 
 type MemberRole = "owner" | "admin" | "member"
 type MemberStatus = "active" | "pending"
-
-const roleBadgeVariant: Record<
-  MemberRole,
-  "default" | "secondary" | "outline"
-> = {
-  owner: "default",
-  admin: "secondary",
-  member: "outline",
-}
-
-const statusBadgeVariant: Record<
-  MemberStatus,
-  "default" | "secondary" | "outline"
-> = {
-  active: "secondary",
-  pending: "outline",
-}
 
 interface WorkspaceMembersProps {
   workspaceId: string
@@ -283,8 +267,8 @@ export function WorkspaceMembers({
                       </Select>
                     ) : (
                       <Badge
-                        variant={roleBadgeVariant[memberRole]}
-                        className="capitalize"
+                        variant="outline"
+                        className={tagToneClassName(memberRole, "capitalize")}
                       >
                         {memberRole}
                       </Badge>
@@ -292,8 +276,8 @@ export function WorkspaceMembers({
                   </div>
                   <div className="flex h-6 items-center">
                     <Badge
-                      variant={statusBadgeVariant[memberStatus]}
-                      className="capitalize"
+                      variant="outline"
+                      className={tagToneClassName(memberStatus, "capitalize")}
                     >
                       {memberStatus}
                     </Badge>

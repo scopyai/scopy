@@ -1,7 +1,5 @@
-import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
 import { formatPeriodEnd, formatUsageBalance } from "@/lib/billing-format"
-import { SubscriptionActions } from "./subscription-actions"
 
 type Tier = "free" | "premium" | "ultra" | "enterprise"
 
@@ -27,11 +25,9 @@ const tierLabel: Record<Tier, string> = {
 export function AccountSummary({
   account,
   isOwner,
-  workspaceId,
 }: {
   account: Account
   isOwner: boolean
-  workspaceId: string
 }) {
   const isPaid =
     account.tier !== "free" && account.tier !== "enterprise"
@@ -133,17 +129,6 @@ export function AccountSummary({
           <p className="text-xs text-muted-foreground">
             Billing changes can only be made by the workspace owner.
           </p>
-        )}
-
-        {isOwner && isPaid && (
-          <>
-            <Separator />
-            <SubscriptionActions
-              account={account}
-              workspaceId={workspaceId}
-              inline
-            />
-          </>
         )}
       </div>
     </div>

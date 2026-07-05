@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { PageHeader } from "@/components/page-header"
 import { WorkspaceReviewSettings } from "@/components/repositories/workspace-review-settings"
+// import { ByokSettings } from "@/components/billing/byok-settings"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
@@ -63,6 +64,11 @@ function SettingsRoute() {
               workspaceId={selectedWorkspaceId}
               canEdit={canEdit}
             />
+
+            {/* <ByokSettings
+              workspaceId={selectedWorkspaceId}
+              canEdit={canEdit}
+            /> */}
 
             <section className="flex flex-col gap-3 border-t border-border pt-5">
               <p className="text-sm text-muted-foreground">GitHub</p>

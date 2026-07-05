@@ -244,7 +244,7 @@ const feedbackLink = (finding: ReviewFinding, repoFullName: string) => {
       comment: finding.body,
     })
   ).toString("base64url")
-  return `[💬 Leave feedback on this](${env.FRONTEND_URL}/feedback/finding?data=${data})`
+  return `[💬 Leave feedback on this finding](${env.FRONTEND_URL}/feedback/finding?data=${data})`
 }
 
 export const renderInlineReviewComment = (
