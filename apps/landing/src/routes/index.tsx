@@ -34,7 +34,6 @@ export const Route = createFileRoute("/")({
 function Home() {
   return (
     <>
-      <RadarField />
       <LandingNav />
       <main>
         <Hero />
@@ -58,6 +57,7 @@ function Home() {
 function Hero() {
   return (
     <section className="l-hero">
+      <RadarField />
       <div className="l-wrap">
         <div className="l-hero-body">
           <h1 className="l-hero-title">{hero.title}</h1>
