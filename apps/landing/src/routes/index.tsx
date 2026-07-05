@@ -12,6 +12,8 @@ import {
 import { useState } from "react"
 import { GitHubIcon } from "#/components/github-icon"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
+import { RadarField } from "#/components/radar-field"
+import { CtaRadarField } from "#/components/cta-radar-field"
 import { env, externalLinkProps } from "#/env"
 import {
   faqs as FAQS,
@@ -32,6 +34,7 @@ export const Route = createFileRoute("/")({
 function Home() {
   return (
     <>
+      <RadarField />
       <LandingNav />
       <main>
         <Hero />
@@ -379,6 +382,7 @@ function FAQJsonLd() {
 function FinalCTA() {
   return (
     <section className="l-cta l-section">
+      <CtaRadarField />
       <div className="l-wrap">
         <div className="l-cta-inner">
           <h2 className="l-cta-title">Catch more bugs.</h2>

@@ -190,6 +190,10 @@ body {
   border-top: 1px solid var(--l-border);
 }
 
+.l-how.l-section {
+  border-top: none;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Hero                                                                        */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -236,20 +240,31 @@ body {
   margin-top: 4px;
 }
 
-/* Diamond background shards */
-.l-shards {
+/* Animated radar wave field — a layer anchored to the top of the page that can
+   sweep over the hero and the header alike. It is absolutely positioned (so it
+   scrolls with the page, not the viewport) and its width/height are set from JS
+   to cover the nav + hero region. Sits above the nav (z-index 100) but never
+   intercepts pointer events. */
+.l-radar {
+  /* Soft fade band at the bottom so waves dissolve into the next section
+     instead of being clipped at a hard edge. Keep in sync with FADE_BAND in
+     radar-field.tsx. */
+  --l-radar-fade: 300px;
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   pointer-events: none;
-  z-index: 1;
-}
-
-.l-shard {
-  position: absolute;
-  border: 1px solid var(--l-edge);
-  transform: rotate(45deg);
-  background: transparent;
-  display: block;
+  z-index: 150;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--l-radar-fade)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--l-radar-fade)),
+    transparent 100%
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -813,6 +828,61 @@ body {
 
 .l-cta {
   padding: 112px 0;
+  position: relative;
+  isolation: isolate;
+}
+
+/* Interactive radar layer — bleeds a little past the section, edges softly
+   masked so click-fired waves are cut off rather than clipped. Keep the bleed /
+   hfade values in sync with BLEED / HFADE in cta-radar-field.tsx. */
+.l-cta-radar {
+  --l-cta-bleed: 110px;
+  --l-cta-hfade: 90px;
+  position: absolute;
+  top: calc(-1 * var(--l-cta-bleed));
+  left: 0;
+  width: 100%;
+  height: calc(100% + 2 * var(--l-cta-bleed));
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--l-cta-hfade),
+      #000 calc(100% - var(--l-cta-hfade)),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--l-cta-bleed),
+      #000 calc(100% - var(--l-cta-bleed)),
+      transparent 100%
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--l-cta-hfade),
+      #000 calc(100% - var(--l-cta-hfade)),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--l-cta-bleed),
+      #000 calc(100% - var(--l-cta-bleed)),
+      transparent 100%
+    );
+  mask-composite: intersect;
+}
+
+/* Keep the text + buttons above the radar layer. */
+.l-cta .l-wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .l-cta-inner {

@@ -1,7 +1,7 @@
 export const hero = {
   title: "Open-source AI code reviewer",
   subtitle:
-    "Scopy AI is an AI code reviewer that understands your repository, catches bugs and improves code quality. Self-host it or run it in the cloud.",
+    "Scopy is a  AI-poweredcode reviewer that understands your repository, catches bugs and improves code quality.",
 } as const
 
 export type NamedItem = { name: string; desc: string }
