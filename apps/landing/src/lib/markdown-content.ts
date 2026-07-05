@@ -77,63 +77,6 @@ function blogIndexMarkdown(): string {
   return lines.join("\n").trimEnd() + "\n"
 }
 
-function privacyMarkdown(): string {
-  const url = `${env.siteUrl}/privacy`
-  const terms = [
-    "Acceptance of these Terms",
-    "The Service",
-    "Eligibility",
-    "Accounts and authentication",
-    "GitHub integration",
-    "Acceptable use",
-    "Your content and code",
-    "AI-generated output",
-    "Plans, billing, and payment",
-    "Service changes and availability",
-    "Suspension and termination",
-    "Open-source software",
-    "Disclaimers",
-    "Limitation of liability",
-    "Indemnification",
-    "Governing law and disputes",
-    "Changes to these Terms",
-    "Contact",
-  ]
-  const privacy = [
-    "Scope and roles",
-    "Information we collect",
-    "How we use information",
-    "GitHub data",
-    "AI processing",
-    "Cookies and similar technologies",
-    "International data transfers",
-    "Data retention",
-    "Security",
-    "Automated decision-making",
-    "Children's privacy",
-    "Changes to this Privacy Policy",
-    "Contact",
-  ]
-
-  return (
-    [
-      "# Terms of Service & Privacy Policy — Scopy AI",
-      "",
-      "_Last updated: June 14, 2026_",
-      "",
-      `This is an outline of Scopy's Terms of Service and Privacy Policy. Read the full, authoritative text at ${url}`,
-      "",
-      "## Terms of Service",
-      "",
-      ...terms.map((s, i) => `${i + 1}. ${s}`),
-      "",
-      "## Privacy Policy",
-      "",
-      ...privacy.map((s, i) => `${i + 1}. ${s}`),
-    ].join("\n") + "\n"
-  )
-}
-
 function blogPostMarkdown(slug: string): string | undefined {
   const post = getPost(slug)
   if (!post) return undefined
@@ -155,7 +98,7 @@ function normalizePath(pathname: string): string {
 
 export function hasMarkdownForPath(pathname: string): boolean {
   const path = normalizePath(pathname)
-  if (path === "/" || path === "/blog" || path === "/privacy") return true
+  if (path === "/" || path === "/blog") return true
 
   const blogPost = /^\/blog\/([^/]+)$/.exec(path)
   if (blogPost) return getPost(decodeURIComponent(blogPost[1])) !== undefined
@@ -172,7 +115,6 @@ export function getMarkdownForPath(pathname: string): string | undefined {
 
   if (path === "/") return homeMarkdown()
   if (path === "/blog") return blogIndexMarkdown()
-  if (path === "/privacy") return privacyMarkdown()
 
   const blogPost = /^\/blog\/([^/]+)$/.exec(path)
   if (blogPost) return blogPostMarkdown(decodeURIComponent(blogPost[1]))

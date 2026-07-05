@@ -287,7 +287,10 @@ export const resolveGatewayGenerationCost = async (
       generationUsage = resolved.generationUsage
       generationLookupError = resolved.generationLookupError
     }
-    const cost = generationUsage?.totalCost ?? null
+    const cost =
+      generationUsage?.totalCost ??
+      numberAt(step, ["providerMetadata", "gateway", "cost"]) ??
+      numberAt(step, ["providerMetadata", "gateway", "totalCost"])
     const costMicrocents = cost === null ? null : usdToMicroUsd(cost)
     return {
       cost,
