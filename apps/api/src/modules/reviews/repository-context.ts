@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm"
 import {
   Output,
   ToolLoopAgent,
+  stepCountIs,
   tool,
   type LanguageModel,
   type ToolLoopAgentSettings,
@@ -21,6 +22,7 @@ import {
   repositoryContext,
   type pullRequest,
 } from "../../db/schema"
+import { reviewAgentConfig } from "./config"
 import type { ReviewRunRecorder } from "./debug-run"
 
 type Repository = typeof repository.$inferSelect
@@ -398,6 +400,7 @@ const generateRepositoryContext = async ({
       name: "repository_context",
       description: "Persistent markdown repository context",
     }),
+    stopWhen: stepCountIs(reviewAgentConfig.repositoryContext.maxSteps),
     maxRetries: 2,
     onStepFinish: async (step) => {
       await recorder.recordStep(step)
@@ -519,7 +522,10 @@ export const prepareRepositoryContextForReview = async ({
         changedAreas: ["missing_repository_context"],
       }
   const shouldGenerate = !existing
-  await recorder.writeJson("context/repository-context-impact.json", architectureImpact)
+  await recorder.writeJson(
+    "context/repository-context-impact.json",
+    architectureImpact
+  )
   await recorder.appendEvent("repository_context.prepare.decision", {
     hasExistingContext: Boolean(existing),
     existingBaseSha: existing?.baseSha,

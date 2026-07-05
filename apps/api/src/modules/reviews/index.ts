@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { createGateway, Output, ToolLoopAgent, tool } from "ai"
+import { createGateway, Output, ToolLoopAgent, stepCountIs, tool } from "ai"
 import {
   buildDiffContext,
   chunksForRepositoryIndex,
@@ -272,8 +272,7 @@ const recordLlmBilling = async (
       ...existingEntry,
       costUsd: (existingEntry.costUsd ?? 0) + recordedCostUsd,
       costMicroUsd: existingEntry.costMicroUsd + recordedCostMicrocents,
-      costMicrocents:
-        existingEntry.costMicrocents + recordedCostMicrocents,
+      costMicrocents: existingEntry.costMicrocents + recordedCostMicrocents,
       ...(costIsPartial || existingEntry.costStatus === "partial"
         ? { costStatus: "partial" }
         : {}),
@@ -844,6 +843,7 @@ ${affectedSymbols}`
                 name: "review_suspicions",
                 description: "Unfiltered suspicious code locations",
               }),
+              stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
               maxRetries: 2,
               onStepFinish: async (step) => recorder.recordStep(step),
             })
@@ -993,6 +993,7 @@ ${affectedSymbols}`
           description:
             "Natural-language rule findings grouped by assigned file",
         }),
+        stopWhen: stepCountIs(reviewAgentConfig.naturalLanguageLinter.maxSteps),
         maxRetries: 2,
         onStepFinish: async (step) => recorder.recordStep(step),
       })
@@ -1171,6 +1172,7 @@ ${affectedSymbols}`
       description:
         "Verified pull request review and a complete decision ledger for every delegated suspicion",
     }),
+    stopWhen: stepCountIs(reviewAgentConfig.main.maxSteps),
     maxRetries: 2,
     onStepFinish: async (step) => recorder.recordStep(step),
   })
