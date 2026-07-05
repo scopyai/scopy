@@ -61,7 +61,6 @@ import { reviewAgentConfig } from "./config"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"
-import type { ReviewCredential } from "../provider-keys/service"
 
 export const REVIEW_MODEL = env.REVIEW_MODEL
 export const REVIEW_VERIFIER_MODEL =
@@ -98,7 +97,6 @@ type RunInput = {
   installationId: string
   triggerSource: string
   logger: Logger
-  credential?: ReviewCredential
 }
 
 export type ReviewAgentResult = {
@@ -297,7 +295,6 @@ export const runReviewAgent = async ({
   installationId,
   triggerSource,
   logger,
-  credential = { status: "platform" },
 }: RunInput): Promise<ReviewAgentResult> => {
   const startedAt = Date.now()
   const startedAtIso = new Date(startedAt).toISOString()
@@ -447,27 +444,16 @@ export const runReviewAgent = async ({
 
   logger.info("Review agent stage started", { ...context, stage: "runtime" })
   await recorder.appendEvent("stage.started", { stage: "runtime" })
-  const openrouter =
-    credential.status === "byok"
-      ? credential.provider === "openrouter"
-        ? createOpenRouter({ apiKey: credential.apiKey })
-        : null
-      : env.OPENROUTER_API_KEY
-        ? createOpenRouter({ apiKey: env.OPENROUTER_API_KEY })
-        : null
+  const openrouter = env.OPENROUTER_API_KEY
+    ? createOpenRouter({ apiKey: env.OPENROUTER_API_KEY })
+    : null
   const gateway =
-    credential.status === "byok"
-      ? credential.provider === "gateway"
-        ? createGateway({ apiKey: credential.apiKey })
-        : null
-      : !openrouter && env.AI_GATEWAY_API_KEY
-        ? createGateway({ apiKey: env.AI_GATEWAY_API_KEY })
-        : null
+    !openrouter && env.AI_GATEWAY_API_KEY
+      ? createGateway({ apiKey: env.AI_GATEWAY_API_KEY })
+      : null
   if (!openrouter && !gateway) {
     throw new Error(
-      credential.status === "byok"
-        ? "The bring-your-own-key credential could not be used to run the review agent"
-        : "OPENROUTER_API_KEY or AI_GATEWAY_API_KEY is required to run the review agent"
+      "OPENROUTER_API_KEY or AI_GATEWAY_API_KEY is required to run the review agent"
     )
   }
   const provider = openrouter ? "openrouter" : "gateway"

@@ -51,8 +51,8 @@ export function formatChargeType(type: string): string {
   return labels[type] ?? type
 }
 
-export function formatBillingMode(mode: string): string {
-  return mode === "byok" ? "Own key" : "Plan balance"
+export function formatBillingMode(): string {
+  return "Plan balance"
 }
 
 export function formatBytes(bytes: number): string {

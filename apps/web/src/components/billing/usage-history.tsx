@@ -135,15 +135,9 @@ function UsageBreakdown({ item }: { item: UsageItem }) {
         </div>
         <div className="flex items-center justify-between gap-4 text-muted-foreground">
           <span>Deducted from</span>
-          <span>
-            {item.billingMode === "byok"
-              ? `Own ${item.provider ?? ""} key${
-                  item.keyPreview ? ` · ${item.keyPreview}` : ""
-                }`
-              : "Plan balance"}
-          </span>
+          <span>Plan balance</span>
         </div>
-        {item.billingMode === "platform" && item.balanceAfter !== null ? (
+        {item.balanceAfter !== null ? (
           <div className="flex items-center justify-between gap-4 text-muted-foreground">
             <span>Balance after</span>
             <span className="tabular-nums">
@@ -276,11 +270,9 @@ export function UsageHistory({
                           <TableCell>
                             <Badge
                               variant="outline"
-                              className={tagToneClassName(item.billingMode)}
+                              className={tagToneClassName("platform")}
                             >
-                              {item.billingMode === "byok" && item.keyPreview
-                                ? item.keyPreview
-                                : formatBillingMode(item.billingMode)}
+                              {formatBillingMode()}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right tabular-nums">

@@ -370,7 +370,6 @@ export const getWorkspaceBilling = async (workspaceId: string) => {
 
 export type ReviewUsageFilters = {
   repositoryId?: string
-  billingMode?: "platform" | "byok"
 }
 
 export const listWorkspaceReviewUsage = async (
@@ -383,9 +382,6 @@ export const listWorkspaceReviewUsage = async (
   if (filters.repositoryId) {
     conditions.push(eq(reviewUsage.repositoryId, filters.repositoryId))
   }
-  if (filters.billingMode) {
-    conditions.push(eq(reviewUsage.billingMode, filters.billingMode))
-  }
   const where = and(...conditions)
   const offset = (page - 1) * pageSize
 
@@ -393,9 +389,6 @@ export const listWorkspaceReviewUsage = async (
     .select({
       id: reviewUsage.id,
       reviewRunId: reviewUsage.reviewRunId,
-      billingMode: reviewUsage.billingMode,
-      provider: reviewUsage.provider,
-      keyPreview: reviewUsage.keyPreview,
       balanceAfter: reviewUsage.balanceAfter,
       modelId: reviewUsage.modelId,
       verifierModelId: reviewUsage.verifierModelId,

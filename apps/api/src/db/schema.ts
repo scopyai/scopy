@@ -70,14 +70,6 @@ export const userOnboardingStatus = pgEnum("user_onboarding_status", [
   "select_repositories",
   "done",
 ])
-export const reviewBillingMode = pgEnum("review_billing_mode", [
-  "platform",
-  "byok",
-])
-export const providerKeyProvider = pgEnum("provider_key_provider", [
-  "openrouter",
-  "gateway",
-])
 export const workspaceChargeType = pgEnum("workspace_charge_type", [
   "payment",
   "refund",
@@ -200,10 +192,6 @@ export const workspace = pgTable(
       .default([])
       .notNull(),
     maxReviewChangedLines: integer("max_review_changed_lines").notNull(),
-    reviewBillingMode: reviewBillingMode("review_billing_mode")
-      .default("platform")
-      .notNull(),
-    byokProvider: providerKeyProvider("byok_provider"),
     installedByUserId: text("installed_by_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -296,8 +284,6 @@ export const repository = pgTable(
     pathExcludePatterns: jsonb("path_exclude_patterns").$type<string[]>(),
     naturalLanguageRules: jsonb("natural_language_rules").$type<string[]>(),
     maxReviewChangedLines: integer("max_review_changed_lines"),
-    reviewBillingMode: reviewBillingMode("review_billing_mode"),
-    byokProvider: providerKeyProvider("byok_provider"),
     archived: boolean("archived").default(false).notNull(),
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),
@@ -514,34 +500,6 @@ export const webhookEvent = pgTable(
   ]
 )
 
-export const workspaceProviderKey = pgTable(
-  "workspace_provider_key",
-  {
-    id: text("id").primaryKey(),
-    workspaceId: text("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
-    provider: providerKeyProvider("provider").notNull(),
-    envelope: text("envelope").notNull(),
-    keyPreview: text("key_preview").notNull(),
-    createdByUserId: text("created_by_user_id").references(() => user.id, {
-      onDelete: "set null",
-    }),
-    lastUsedAt: timestamp("last_used_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("workspace_provider_key_workspace_provider_idx").on(
-      table.workspaceId,
-      table.provider
-    ),
-  ]
-)
-
 export type ReviewUsageModel = {
   stage: string
   modelId: string
@@ -566,13 +524,6 @@ export const reviewUsage = pgTable(
     pullRequestId: text("pull_request_id").references(() => pullRequest.id, {
       onDelete: "set null",
     }),
-    billingMode: reviewBillingMode("billing_mode").notNull(),
-    provider: providerKeyProvider("provider"),
-    providerKeyId: text("provider_key_id").references(
-      () => workspaceProviderKey.id,
-      { onDelete: "set null" },
-    ),
-    keyPreview: text("key_preview"),
     balanceAfter: bigint("balance_after", { mode: "number" }),
     modelId: text("model_id").notNull(),
     verifierModelId: text("verifier_model_id").notNull(),
@@ -678,24 +629,9 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   members: many(workspaceMember),
   repositories: many(repository),
   webhookEvents: many(webhookEvent),
-  providerKeys: many(workspaceProviderKey),
   reviewUsage: many(reviewUsage),
   charges: many(workspaceCharge),
 }))
-
-export const workspaceProviderKeyRelations = relations(
-  workspaceProviderKey,
-  ({ one }) => ({
-    workspace: one(workspace, {
-      fields: [workspaceProviderKey.workspaceId],
-      references: [workspace.id],
-    }),
-    createdByUser: one(user, {
-      fields: [workspaceProviderKey.createdByUserId],
-      references: [user.id],
-    }),
-  })
-)
 
 export const workspaceMemberRelations = relations(
   workspaceMember,
@@ -800,10 +736,6 @@ export const reviewUsageRelations = relations(reviewUsage, ({ one }) => ({
   pullRequest: one(pullRequest, {
     fields: [reviewUsage.pullRequestId],
     references: [pullRequest.id],
-  }),
-  providerKey: one(workspaceProviderKey, {
-    fields: [reviewUsage.providerKeyId],
-    references: [workspaceProviderKey.id],
   }),
 }))
 

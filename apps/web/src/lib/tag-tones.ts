@@ -14,7 +14,6 @@ const namedTagToneClassNames: Partial<Record<string, string>> = {
   refund: tagToneClassNames[4],
   dispute: tagToneClassNames[2],
   platform: tagToneClassNames[0],
-  byok: tagToneClassNames[3],
   owner: tagToneClassNames[2],
   admin: tagToneClassNames[1],
   member: tagToneClassNames[5],

@@ -35,8 +35,6 @@ export const env = z
     GITHUB_APP_WEBHOOK_SECRET: z.string().min(1).optional(),
     OPENROUTER_API_KEY: z.string().min(1).optional(),
     AI_GATEWAY_API_KEY: z.string().min(1).optional(),
-    MASTER_ENCRYPTION_KEY: z.string().min(1).optional(),
-    SECRETS_PROVIDER: z.enum(["env"]).default("env"),
     REVIEW_MODEL: z.string().min(1).default("openai/gpt-5.5"),
     REVIEW_VERIFIER_MODEL: z.string().min(1).default("openai/gpt-5.4-mini"),
     REVIEW_WORKDIR: z.string().min(1).default(".data/reviews"),

@@ -5,14 +5,14 @@ export const billingKeys = {
     workspaceId: string,
     page: number,
     pageSize: number,
-    billingMode: string,
+    scope: string,
   ) =>
     [
       ...billingKeys.all(workspaceId),
       "usage",
       page,
       pageSize,
-      billingMode,
+      scope,
     ] as const,
   usageTrend: (workspaceId: string) =>
     [...billingKeys.all(workspaceId), "usage-trend"] as const,

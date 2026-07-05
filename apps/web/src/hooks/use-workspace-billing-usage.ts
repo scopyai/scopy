@@ -7,7 +7,6 @@ export function useWorkspaceBillingUsage(
   workspaceId: string | null | undefined,
   page = 1,
   pageSize = 25,
-  billingMode?: "platform" | "byok",
 ) {
   const { data: session } = authClient.useSession()
 
@@ -16,13 +15,13 @@ export function useWorkspaceBillingUsage(
       workspaceId ?? "",
       page,
       pageSize,
-      billingMode ?? "all",
+      "all",
     ),
     queryFn: async () => {
       const { data, error } = await api
         .workspaces({ workspaceId: workspaceId! })
         .billing.usage.get({
-          query: { page, pageSize, ...(billingMode ? { billingMode } : {}) },
+          query: { page, pageSize },
         })
       if (error) throw error
       return data

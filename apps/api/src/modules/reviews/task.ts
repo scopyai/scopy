@@ -17,7 +17,6 @@ import {
 import { publishReviewFailure, REVIEW_MODEL, runReviewAgent } from "."
 import { createReviewRunRecorder } from "./debug-run"
 import { resolveReviewConfig, shouldRunAutomaticReview } from "./review-config"
-import { resolveReviewCredential } from "../provider-keys/service"
 
 type JobContext = {
   logger: {
@@ -227,9 +226,6 @@ export const executeReviewPullRequest = async (
     run.pullRequest.repository.workspace,
     run.pullRequest.repository
   )
-  const billingMode =
-    run.pullRequest.repository.reviewBillingMode ??
-    run.pullRequest.repository.workspace.reviewBillingMode
   const reviewCommentRunId = triggerSource === "mention" ? run.id : undefined
 
   if (
@@ -336,31 +332,7 @@ export const executeReviewPullRequest = async (
     })
   }
 
-  const credential = await resolveReviewCredential({
-    workspaceId,
-    billingMode,
-    preferredProvider:
-      run.pullRequest.repository.byokProvider ??
-      run.pullRequest.repository.workspace.byokProvider,
-  })
-
-  if (credential.status === "missing_key") {
-    await skipBlockedReview({
-      skipReason: "byok_key_missing",
-      commentBody:
-        "This review is set to use your own provider API key (bring-your-own-key), but no key is configured. Add an OpenRouter or Vercel AI Gateway key in your workspace settings, or switch this repository back to platform billing.",
-      logMessage: "Skipped review because no BYOK key is configured",
-      checkTitle: "Review requires a provider key",
-      checkSummary:
-        "This repository is set to bring-your-own-key but no provider API key is configured. See the pull request comment for details.",
-    })
-    return
-  }
-
-  if (
-    billingMode === "platform" &&
-    !(await hasPositiveUsageBalance(workspaceId))
-  ) {
+  if (!(await hasPositiveUsageBalance(workspaceId))) {
     await skipBlockedReview({
       skipReason: "workspace_balance_empty",
       commentBody: reviewBalanceBlockedBody,
@@ -392,7 +364,6 @@ export const executeReviewPullRequest = async (
         run.pullRequest.repository.workspace.providerInstallationId,
       triggerSource,
       logger,
-      credential,
     })
     if (result.kind === "summary" && result.billing) {
       await recordReviewUsage({
@@ -400,12 +371,6 @@ export const executeReviewPullRequest = async (
         workspaceId,
         repositoryId: run.pullRequest.repository.id,
         pullRequestId: run.pullRequest.id,
-        billingMode,
-        provider: credential.status === "byok" ? credential.provider : null,
-        providerKeyId:
-          credential.status === "byok" ? credential.providerKeyId : null,
-        keyPreview:
-          credential.status === "byok" ? credential.keyPreview : null,
         modelId: result.modelId,
         verifierModelId:
           typeof result.verifierModelId === "string"

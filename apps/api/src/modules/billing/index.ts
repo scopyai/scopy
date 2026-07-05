@@ -31,7 +31,6 @@ const paginationSchema = z.object({
 
 const usageQuerySchema = paginationSchema.extend({
   repositoryId: z.string().optional(),
-  billingMode: z.enum(["platform", "byok"]).optional(),
 });
 
 const asBillingError = (error: unknown) =>
@@ -71,7 +70,6 @@ export const billingRoutes = protectedRoute("/workspaces")
         parsed.data.pageSize,
         {
           repositoryId: parsed.data.repositoryId,
-          billingMode: parsed.data.billingMode,
         },
       );
     },

@@ -343,10 +343,6 @@ export type RecordReviewUsageInput = {
   workspaceId: string
   repositoryId: string | null
   pullRequestId: string | null
-  billingMode: "platform" | "byok"
-  provider: "openrouter" | "gateway" | null
-  providerKeyId: string | null
-  keyPreview: string | null
   modelId: string
   verifierModelId: string
   billing: {
@@ -381,10 +377,7 @@ export const recordReviewUsage = async (input: RecordReviewUsageInput) =>
     if (existing) return
 
     let balanceAfter: number | null = null
-    if (
-      input.billingMode === "platform" &&
-      input.billing.totalCostMicrocents > 0
-    ) {
+    if (input.billing.totalCostMicrocents > 0) {
       const currentWorkspace = await tx.query.workspace.findFirst({
         where: eq(workspace.id, input.workspaceId),
         columns: { creditBalance: true },
@@ -407,10 +400,6 @@ export const recordReviewUsage = async (input: RecordReviewUsageInput) =>
         workspaceId: input.workspaceId,
         repositoryId: input.repositoryId,
         pullRequestId: input.pullRequestId,
-        billingMode: input.billingMode,
-        provider: input.provider,
-        providerKeyId: input.providerKeyId,
-        keyPreview: input.keyPreview,
         balanceAfter,
         modelId: input.modelId,
         verifierModelId: input.verifierModelId,

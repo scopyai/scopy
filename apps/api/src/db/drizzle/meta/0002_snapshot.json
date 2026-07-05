@@ -1,5 +1,5 @@
 {
-  "id": "5183b8d5-5660-42f1-b71a-22c479e4a566",
+  "id": "6b44684e-945b-49cb-8f76-a26c7ace6f55",
   "prevId": "0e06acae-6b67-416d-a5d8-da80303ce9b6",
   "version": "7",
   "dialect": "postgresql",
@@ -608,20 +608,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "review_billing_mode": {
-          "name": "review_billing_mode",
-          "type": "review_billing_mode",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "byok_provider": {
-          "name": "byok_provider",
-          "type": "provider_key_provider",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
         "archived": {
           "name": "archived",
           "type": "boolean",
@@ -1195,32 +1181,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "billing_mode": {
-          "name": "billing_mode",
-          "type": "review_billing_mode",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "provider_key_provider",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_key_id": {
-          "name": "provider_key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "key_preview": {
-          "name": "key_preview",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "balance_after": {
           "name": "balance_after",
           "type": "bigint",
@@ -1414,19 +1374,6 @@
           "tableTo": "pull_request",
           "columnsFrom": [
             "pull_request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "review_usage_provider_key_id_workspace_provider_key_id_fk": {
-          "name": "review_usage_provider_key_id_workspace_provider_key_id_fk",
-          "tableFrom": "review_usage",
-          "tableTo": "workspace_provider_key",
-          "columnsFrom": [
-            "provider_key_id"
           ],
           "columnsTo": [
             "id"
@@ -1930,21 +1877,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "review_billing_mode": {
-          "name": "review_billing_mode",
-          "type": "review_billing_mode",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'platform'"
-        },
-        "byok_provider": {
-          "name": "byok_provider",
-          "type": "provider_key_provider",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
         "installed_by_user_id": {
           "name": "installed_by_user_id",
           "type": "text",
@@ -2432,125 +2364,6 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
-    },
-    "public.workspace_provider_key": {
-      "name": "workspace_provider_key",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "provider_key_provider",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "envelope": {
-          "name": "envelope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_preview": {
-          "name": "key_preview",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "workspace_provider_key_workspace_provider_idx": {
-          "name": "workspace_provider_key_workspace_provider_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workspace_provider_key_workspace_id_workspace_id_fk": {
-          "name": "workspace_provider_key_workspace_id_workspace_id_fk",
-          "tableFrom": "workspace_provider_key",
-          "tableTo": "workspace",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_provider_key_created_by_user_id_user_id_fk": {
-          "name": "workspace_provider_key_created_by_user_id_user_id_fk",
-          "tableFrom": "workspace_provider_key",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -2560,14 +2373,6 @@
       "values": [
         "user",
         "organization"
-      ]
-    },
-    "public.provider_key_provider": {
-      "name": "provider_key_provider",
-      "schema": "public",
-      "values": [
-        "openrouter",
-        "gateway"
       ]
     },
     "public.pull_request_state": {
@@ -2595,14 +2400,6 @@
       "values": [
         "all",
         "selected"
-      ]
-    },
-    "public.review_billing_mode": {
-      "name": "review_billing_mode",
-      "schema": "public",
-      "values": [
-        "platform",
-        "byok"
       ]
     },
     "public.review_finding_severity": {
