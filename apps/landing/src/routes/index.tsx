@@ -9,7 +9,7 @@ import {
   MessageSquareIcon,
   PlugIcon,
 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { GitHubIcon } from "#/components/github-icon"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
 import { RadarField } from "#/components/radar-field"
@@ -167,9 +167,102 @@ function Features() {
 // Open source
 // ─────────────────────────────────────────────────────────────────────────────
 
+type OssScanSide = "self" | "cloud"
+
+const SELF_HOST_ITEMS = [
+  "MIT licensed, full source code",
+  "Connect any LLM provider",
+  "Your data stays in your environment",
+  "Community support on GitHub",
+] as const
+
+const CLOUD_ITEMS = [
+  "Sign in with GitHub in seconds",
+  "Review usage included in plan",
+  "Unlimited repositories",
+  "Team workspace management",
+] as const
+
+const OSS_SCAN_DURATION_MS = 1720
+const OSS_SCAN_SIDE_GAP_MS = 260
+const OSS_SCAN_REPEAT_DELAY_MS = 2300
+
 function OpenSource() {
+  const sectionRef = useRef<HTMLElement>(null)
+  const [isInView, setIsInView] = useState(false)
+  const [activeScan, setActiveScan] = useState<OssScanSide | null>(null)
+
+  useEffect(() => {
+    const section = sectionRef.current
+    if (!section) return
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (reduce) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInView(entry.isIntersecting)
+      },
+      { threshold: 0.42 }
+    )
+    observer.observe(section)
+
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (!isInView || reduce) {
+      setActiveScan(null)
+      return
+    }
+
+    let cancelled = false
+    const timers: number[] = []
+    const schedule = (fn: () => void, delay: number) => {
+      const timer = window.setTimeout(fn, delay)
+      timers.push(timer)
+      return timer
+    }
+
+    const runSide = (side: OssScanSide, onDone: () => void) => {
+      if (cancelled) return
+
+      setActiveScan(side)
+
+      schedule(() => {
+        if (!cancelled) {
+          setActiveScan(null)
+          onDone()
+        }
+      }, OSS_SCAN_DURATION_MS)
+    }
+
+    const runCycle = () => {
+      runSide("self", () => {
+        schedule(() => {
+          runSide("cloud", () => {
+            schedule(runCycle, OSS_SCAN_REPEAT_DELAY_MS)
+          })
+        }, OSS_SCAN_SIDE_GAP_MS)
+      })
+    }
+
+    runCycle()
+
+    return () => {
+      cancelled = true
+      for (const timer of timers) window.clearTimeout(timer)
+      setActiveScan(null)
+    }
+  }, [isInView])
+
   return (
-    <section className="l-oss l-section">
+    <section
+      ref={sectionRef}
+      className="l-oss l-section"
+      data-active-scan={activeScan ?? "none"}
+    >
       <div className="l-wrap">
         <div className="l-oss-top">
           <h2 className="l-oss-title">Built in the open</h2>
@@ -180,7 +273,8 @@ function OpenSource() {
         </div>
 
         <div className="l-oss-box">
-          <div className="l-oss-col">
+          <div className="l-oss-col l-oss-col-self">
+            <span className="l-oss-scan" aria-hidden="true" />
             <h3 className="l-oss-col-title">Self-host</h3>
             {/*<p className="l-oss-col-body">
               Full source code, MIT licensed. No data leaves your environment.
@@ -188,10 +282,9 @@ function OpenSource() {
               stack.
             </p>*/}
             <ul className="l-oss-list">
-              <li>MIT licensed, full source code</li>
-              <li>Connect any LLM provider</li>
-              <li>Your data stays in your environment</li>
-              <li>Community support on GitHub</li>
+              {SELF_HOST_ITEMS.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
             </ul>
             <a
               href={env.githubUrl}
@@ -203,17 +296,17 @@ function OpenSource() {
             </a>
           </div>
 
-          <div className="l-oss-col">
+          <div className="l-oss-col l-oss-col-cloud">
+            <span className="l-oss-scan" aria-hidden="true" />
             <h3 className="l-oss-col-title">Use Scopy AI in cloud</h3>
             {/*<p className="l-oss-col-body">
               Connect GitHub in seconds, pick a plan, and start getting reviews
               immediately. Compute included — no API keys required.
             </p>*/}
             <ul className="l-oss-list">
-              <li>Sign in with GitHub in seconds</li>
-              <li>Review usage included in plan</li>
-              <li>Unlimited repositories</li>
-              <li>Team workspace management</li>
+              {CLOUD_ITEMS.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
             </ul>
             <a
               href={env.appUrl}
