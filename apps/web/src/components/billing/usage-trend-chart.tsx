@@ -24,6 +24,7 @@ const formatAxisDate = (value: string) =>
   new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   }).format(new Date(value))
 
 export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
@@ -34,7 +35,7 @@ export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
         cost: point.totalCostMicrocents / 1_000_000,
         reviewCount: point.reviewCount,
       })),
-    [points],
+    [points]
   )
 
   return (
