@@ -70,7 +70,7 @@ export function getLandingPlans(): LandingPlan[] {
       priceLabel: formatPlanPriceAmount(ULTRA_BILLING_PLAN.price),
       period: "/mo",
       computeLabel: `${ultraCredits} / month included`,
-      desc: "More included usage for teams that ship fast.",
+      desc: "More monthly credits for teams that ship fast.",
       features: [
         "Everything in Premium",
         "Higher monthly review credits",
@@ -85,10 +85,10 @@ export function getLandingPlans(): LandingPlan[] {
       name: ENTERPRISE_BILLING_PLAN.name,
       priceLabel: "Custom",
       period: "",
-      computeLabel: "Tailored usage for your organization",
+      computeLabel: "Tailored credits for your organization",
       desc: "For teams with custom requirements, higher volume, or dedicated support needs.",
       features: [
-        "Custom usage & pricing",
+        "Custom credits & pricing",
         "Dedicated onboarding",
         "Priority support & SLAs",
       ],
