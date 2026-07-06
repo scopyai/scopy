@@ -1,5 +1,5 @@
 import { cn } from "@workspace/ui/lib/utils"
-import { formatPeriodEnd, formatUsageBalance } from "@/lib/billing-format"
+import { formatPeriodEnd, formatReviewCredits } from "@/lib/billing-format"
 
 type Tier = "free" | "premium" | "ultra" | "enterprise"
 
@@ -12,6 +12,8 @@ type Account = {
   pendingChangeAt: Date | string | null
   monthlyAllowance: number
   creditBalance: number
+  includedCreditBalance: number
+  purchasedCreditBalance: number
   creemCustomerId: string | null
 }
 
@@ -77,13 +79,13 @@ export function AccountSummary({
           <>
             <div className="grid gap-4 sm:grid-cols-3">
               <Stat
-                label="Usage remaining"
-                value={formatUsageBalance(account.creditBalance)}
+                label="Credits remaining"
+                value={formatReviewCredits(account.creditBalance)}
                 large
               />
               <Stat
                 label="Monthly allowance"
-                value={formatUsageBalance(account.monthlyAllowance)}
+                value={formatReviewCredits(account.monthlyAllowance)}
                 large
               />
               {!account.cancelAtPeriodEnd && account.periodEnd && (
@@ -96,7 +98,7 @@ export function AccountSummary({
 
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Billing period usage</span>
+                <span>Billing period credits</span>
                 <span>{Math.round(usagePercent)}% remaining</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -113,15 +115,28 @@ export function AccountSummary({
 
         {hasFreeCredit && (
           <Stat
-            label="Included usage remaining"
-            value={formatUsageBalance(account.creditBalance)}
+            label="Included credits remaining"
+            value={formatReviewCredits(account.creditBalance)}
             large
           />
         )}
 
         {account.tier === "free" && account.creditBalance <= 0 && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-            Choose a plan below to keep reviewing pull requests.
+            Choose a plan below to start managed pull request reviews.
+          </div>
+        )}
+
+        {isPaid && (
+          <div className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
+            <Stat
+              label="Monthly credits"
+              value={formatReviewCredits(account.includedCreditBalance)}
+            />
+            <Stat
+              label="Purchased credits"
+              value={formatReviewCredits(account.purchasedCreditBalance)}
+            />
           </div>
         )}
 

@@ -14,7 +14,10 @@ import {
 } from "@workspace/ui/components/alert-dialog"
 import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
-import { formatPlanPriceAmount, formatUsageBalance } from "@/lib/billing-format"
+import {
+  formatPlanPriceAmount,
+  formatReviewCredits,
+} from "@/lib/billing-format"
 import { contactFounderHref } from "@workspace/billing/contact"
 import {
   useCheckoutBilling,
@@ -28,6 +31,7 @@ type Plan = {
   price: number | null
   currency: string | null
   monthlyCredits: number | null
+  topUpCreditUnitPriceCents: number | null
   contactSales: boolean
 }
 
@@ -135,7 +139,10 @@ function PlanCard({
 
         {plan.monthlyCredits !== null && (
           <p className="text-sm text-muted-foreground">
-            {formatUsageBalance(plan.monthlyCredits)} usage included
+            {formatReviewCredits(plan.monthlyCredits)} / month included
+            {plan.topUpCreditUnitPriceCents !== null
+              ? ` · ${formatPlanPriceAmount(plan.topUpCreditUnitPriceCents, plan.currency)}/extra credit`
+              : ""}
           </p>
         )}
       </div>
@@ -263,7 +270,7 @@ export function PlanCards({
             <AlertDialogDescription>
               Your subscription will be upgraded to Ultra immediately. Creem
               will charge the prorated amount for the remainder of the billing
-              period and your usage balance will be refreshed.
+              period and your monthly credits will be refreshed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -289,9 +296,9 @@ export function PlanCards({
           <AlertDialogHeader>
             <AlertDialogTitle>Downgrade to Premium?</AlertDialogTitle>
             <AlertDialogDescription>
-              Your Ultra plan and remaining usage balance will stay active until
-              the end of the current billing period. Premium pricing and usage
-              will apply at the next renewal.
+              Your Ultra plan and remaining credits will stay active until the
+              end of the current billing period. Premium pricing and usage will
+              apply at the next renewal.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

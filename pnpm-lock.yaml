@@ -51,8 +51,8 @@ importers:
         specifier: ^1.6.5
         version: 1.6.5(@opentelemetry/api@1.9.0)(@tanstack/react-start@1.168.26(crossws@0.4.6(srvx@0.11.15))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(kysely@0.28.16)(pg@8.20.0))(pg@8.20.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(solid-js@1.9.13)(vitest@4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.3.0)(jsdom@28.1.0(@noble/hashes@2.2.0))(msw@2.13.4(@types/node@25.3.0)(typescript@5.9.3))(vite@8.0.14(@types/node@25.3.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)))
       creem:
-        specifier: ^1.4.5
-        version: 1.4.5
+        specifier: ^1.5.3
+        version: 1.5.3
       dotenv:
         specifier: ^17.3.1
         version: 17.4.2
@@ -4711,8 +4711,8 @@ packages:
       typescript:
         optional: true
 
-  creem@1.4.5:
-    resolution: {integrity: sha512-6M4JeHkjp4HxqcFAes8HDtt2IJfXMFUpqqaII3JhfnKpL+7mr9kRauTI7kQjgMJyqKooum4IrsFoKFDeGOKzBg==}
+  creem@1.5.3:
+    resolution: {integrity: sha512-GYd8QbG293fcjg6LkeRDpTam83xjjRjv/j/PeYOYwFhsc6zESZyq6SbV5yBnsBWJyjnzgSgA5bezedNnv+CMfw==}
     hasBin: true
 
   cross-spawn@7.0.6:
@@ -5919,6 +5919,10 @@ packages:
 
   jsonfile@6.2.0:
     resolution: {integrity: sha512-FGuPw30AdOIUTRMC2OMRtQV+jkVj2cfPqSeWXv1NEAJ1qZ5zb1X6z1mFhbfOB/iy3ssJCD+3KuZ8r8C3uVFlAg==}
+
+  jsonpath-rfc9535@1.1.0:
+    resolution: {integrity: sha512-Bj8ldGo67FNvj5nNsxGN7frkUcHZWqszNkfBOvfxOM1+WUa5J0PiGaflroTKOjGo2JQhOC1DZUaTv4tGzBaQLQ==}
+    engines: {node: '>=20'}
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -12457,9 +12461,10 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  creem@1.4.5:
+  creem@1.5.3:
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
+      jsonpath-rfc9535: 1.1.0
       zod: 4.4.3
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -13686,6 +13691,8 @@ snapshots:
       universalify: 2.0.1
     optionalDependencies:
       graceful-fs: 4.2.11
+
+  jsonpath-rfc9535@1.1.0: {}
 
   keyv@4.5.4:
     dependencies:

@@ -25,6 +25,7 @@ import {
   publicBillingPlans,
   type PurchasableBillingTier,
 } from "./plans"
+import { MINIMUM_TOP_UP_CREDITS } from "@workspace/billing/plans"
 import {
   getPlanChangeKind,
   getWorkspaceReferenceId,
@@ -50,6 +51,63 @@ const toDate = (value: Date | string | number, field: string) => {
   }
   return date
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const metadataString = (
+  metadata: Record<string, string | number | null> | undefined,
+  key: string
+) => {
+  const value = metadata?.[key]
+  return typeof value === "string" && value.length > 0 ? value : null
+}
+
+const numberFromMetadata = (
+  metadata: Record<string, string | number | null> | undefined,
+  key: string
+) => {
+  const value = metadata?.[key]
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+const objectId = (value: unknown) => {
+  if (typeof value === "string") return value
+  if (isRecord(value) && typeof value.id === "string") return value.id
+  return null
+}
+
+const checkoutOrder = (event: NormalizedCheckoutCompletedEvent) =>
+  isRecord(event.object.order) ? event.object.order : null
+
+const checkoutTransactionId = (event: NormalizedCheckoutCompletedEvent) => {
+  const order = checkoutOrder(event)
+  return objectId(order?.transaction) ?? event.object.id
+}
+
+const checkoutAmount = (event: NormalizedCheckoutCompletedEvent) => {
+  const order = checkoutOrder(event)
+  const amountPaid = order?.amount_paid
+  const amount = order?.amount
+  return typeof amountPaid === "number"
+    ? amountPaid
+    : typeof amount === "number"
+      ? amount
+      : 0
+}
+
+const checkoutCurrency = (event: NormalizedCheckoutCompletedEvent) => {
+  const order = checkoutOrder(event)
+  return typeof order?.currency === "string" ? order.currency : "USD"
+}
+
+const checkoutCustomerId = (event: NormalizedCheckoutCompletedEvent) =>
+  objectId(event.object.customer)
 
 export class BillingError extends Error {
   constructor(
@@ -80,7 +138,9 @@ const toBillingAccount = (value: typeof workspace.$inferSelect) => ({
   pendingChangeAt: value.pendingBillingTier ? value.billingPeriodEnd : null,
   cancelAtPeriodEnd: value.billingStatus === "scheduled_cancel",
   monthlyAllowance: getMonthlyAllowance(value.billingTier),
-  creditBalance: value.creditBalance,
+  creditBalance: value.includedCreditBalance + value.purchasedCreditBalance,
+  includedCreditBalance: value.includedCreditBalance,
+  purchasedCreditBalance: value.purchasedCreditBalance,
   creemCustomerId: value.creemCustomerId,
   creemSubscriptionId: value.creemSubscriptionId,
 })
@@ -113,6 +173,7 @@ const recordCharge = async (
     amount: number
     currency: string
     status: string
+    credits?: number | null
     description?: string | null
     productId?: string | null
     tier?: string | null
@@ -124,14 +185,45 @@ const recordCharge = async (
     .values({
       id: randomUUID(),
       ...values,
+      credits: values.credits ?? null,
       description: values.description ?? null,
       productId: values.productId ?? null,
       tier: values.tier ?? null,
     })
     .onConflictDoNothing({ target: workspaceCharge.creemTransactionId })
     .returning({ id: workspaceCharge.id })
-  return inserted.length > 0
+  return inserted[0]?.id ?? null
 }
+
+const recordFinancialCharge = (
+  tx: Transaction,
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent,
+  values: {
+    workspaceId: string
+    description: string
+  }
+) =>
+  event.eventType === "refund.created"
+    ? recordCharge(tx, {
+        workspaceId: values.workspaceId,
+        creemTransactionId: event.object.id,
+        type: "refund",
+        amount: event.object.refund_amount,
+        currency: event.object.refund_currency,
+        status: event.object.status,
+        description: values.description,
+        createdAt: new Date(event.created_at),
+      })
+    : recordCharge(tx, {
+        workspaceId: values.workspaceId,
+        creemTransactionId: event.object.id,
+        type: "dispute",
+        amount: event.object.amount,
+        currency: event.object.currency,
+        status: "dispute",
+        description: values.description,
+        createdAt: new Date(event.created_at),
+      })
 
 const resetCredits = async (
   tx: Transaction,
@@ -156,7 +248,8 @@ const resetCredits = async (
     .set({
       billingTier: plan.slug,
       billingStatus: subscription.status,
-      creditBalance: plan.monthlyCredits,
+      includedCreditBalance: plan.monthlyCredits,
+      purchasedCreditBalance: currentWorkspace.purchasedCreditBalance,
       creemCustomerId: subscription.customerId,
       creemSubscriptionId: subscription.id,
       billingPeriodStart: subscription.periodStart,
@@ -168,7 +261,6 @@ const resetCredits = async (
     .where(eq(workspace.id, currentWorkspace.id))
 }
 
-// Setting the balance to 0 is naturally idempotent, so no ledger guard is needed.
 const revokeCredits = async (
   tx: Transaction,
   currentWorkspace: typeof workspace.$inferSelect,
@@ -184,7 +276,8 @@ const revokeCredits = async (
             pendingBillingTier: null,
           }
         : {}),
-      creditBalance: 0,
+      includedCreditBalance: 0,
+      purchasedCreditBalance: 0,
       updatedAt: new Date(),
     })
     .where(eq(workspace.id, currentWorkspace.id))
@@ -300,7 +393,51 @@ const applySubscriptionEvent = async (
 const applyCheckoutCompleted = async (
   event: NormalizedCheckoutCompletedEvent
 ) => {
-  const referenceId = getWorkspaceReferenceId(event.object.metadata)
+  const metadata = event.object.metadata
+  if (metadataString(metadata, "kind") === "credit_topup") {
+    const workspaceId = metadataString(metadata, "workspaceId")
+    const credits = numberFromMetadata(metadata, "credits")
+    if (!workspaceId || !credits || credits < MINIMUM_TOP_UP_CREDITS) return
+
+    await db.transaction(async (tx) => {
+      await lockWorkspace(tx, workspaceId)
+      const currentWorkspace = await tx.query.workspace.findFirst({
+        where: eq(workspace.id, workspaceId),
+      })
+      if (!currentWorkspace) return
+
+      const chargeId = await recordCharge(tx, {
+        workspaceId,
+        creemTransactionId: checkoutTransactionId(event),
+        type: "payment",
+        amount: checkoutAmount(event),
+        currency: checkoutCurrency(event),
+        status: "paid",
+        credits,
+        description: `${credits} review credits`,
+        productId: env.CREEM_CREDIT_TOPUP_PRODUCT_ID ?? null,
+        tier: metadataString(metadata, "tierAtPurchase"),
+        createdAt: new Date(event.created_at),
+      })
+      if (!chargeId) return
+
+      const nextPurchasedCreditBalance =
+        currentWorkspace.purchasedCreditBalance + credits
+
+      await tx
+        .update(workspace)
+        .set({
+          creemCustomerId:
+            checkoutCustomerId(event) ?? currentWorkspace.creemCustomerId,
+          purchasedCreditBalance: nextPurchasedCreditBalance,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspace.id, workspaceId))
+    })
+    return
+  }
+
+  const referenceId = getWorkspaceReferenceId(metadata)
   if (!referenceId) return
 
   const subscriptionId =
@@ -310,7 +447,7 @@ const applyCheckoutCompleted = async (
   await db
     .update(workspace)
     .set({
-      creemCustomerId: event.object.customer?.id ?? null,
+      creemCustomerId: checkoutCustomerId(event),
       creemSubscriptionId: subscriptionId,
       updatedAt: new Date(),
     })
@@ -326,11 +463,54 @@ const getFinancialSubscriptionId = (
       event.object.transaction.subscription ??
       null)
 
+const getFinancialTransactionId = (
+  event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent
+) => objectId(event.object.transaction)
+
 const applyFinancialRevoke = async (
   event: NormalizedRefundCreatedEvent | NormalizedDisputeCreatedEvent
 ) => {
   const subscriptionId = getFinancialSubscriptionId(event)
-  if (!subscriptionId) return
+  if (!subscriptionId) {
+    const transactionId = getFinancialTransactionId(event)
+    if (!transactionId) return
+
+    await db.transaction(async (tx) => {
+      const originalCharge = await tx.query.workspaceCharge.findFirst({
+        where: eq(workspaceCharge.creemTransactionId, transactionId),
+      })
+      if (!originalCharge) return
+      await lockWorkspace(tx, originalCharge.workspaceId)
+      const currentWorkspace = await tx.query.workspace.findFirst({
+        where: eq(workspace.id, originalCharge.workspaceId),
+      })
+      if (!currentWorkspace) return
+
+      const credits = Math.max(0, originalCharge.credits ?? 0)
+      if (credits <= 0) return
+
+      const recorded = await recordFinancialCharge(tx, event, {
+        workspaceId: originalCharge.workspaceId,
+        description:
+          event.eventType === "refund.created"
+            ? "Credit purchase refund"
+            : "Credit purchase dispute",
+      })
+      if (!recorded) return
+
+      const nextPurchasedCreditBalance =
+        currentWorkspace.purchasedCreditBalance - credits
+
+      await tx
+        .update(workspace)
+        .set({
+          purchasedCreditBalance: nextPurchasedCreditBalance,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspace.id, originalCharge.workspaceId))
+    })
+    return
+  }
 
   await db.transaction(async (tx) => {
     const currentWorkspace = await resolveWorkspace(
@@ -345,28 +525,10 @@ const applyFinancialRevoke = async (
     })
     if (!lockedWorkspace) return
 
-    const recorded =
-      event.eventType === "refund.created"
-        ? await recordCharge(tx, {
-            workspaceId: lockedWorkspace.id,
-            creemTransactionId: event.object.id,
-            type: "refund",
-            amount: event.object.refund_amount,
-            currency: event.object.refund_currency,
-            status: event.object.status,
-            description: "Refund",
-            createdAt: new Date(event.created_at),
-          })
-        : await recordCharge(tx, {
-            workspaceId: lockedWorkspace.id,
-            creemTransactionId: event.object.id,
-            type: "dispute",
-            amount: event.object.amount,
-            currency: event.object.currency,
-            status: "dispute",
-            description: "Dispute",
-            createdAt: new Date(event.created_at),
-          })
+    const recorded = await recordFinancialCharge(tx, event, {
+      workspaceId: lockedWorkspace.id,
+      description: event.eventType === "refund.created" ? "Refund" : "Dispute",
+    })
 
     // Only revoke on the first delivery of this refund/dispute. A redelivered
     // webhook no-ops on the charge insert; revoking again here would wipe
@@ -419,19 +581,11 @@ export const listWorkspaceReviewUsage = async (
     .select({
       id: reviewUsage.id,
       reviewRunId: reviewUsage.reviewRunId,
-      balanceAfter: reviewUsage.balanceAfter,
-      modelId: reviewUsage.modelId,
-      verifierModelId: reviewUsage.verifierModelId,
-      llmCostMicrocents: reviewUsage.llmCostMicrocents,
-      vectorWriteCostMicrocents: reviewUsage.vectorWriteCostMicrocents,
-      vectorQueryCostMicrocents: reviewUsage.vectorQueryCostMicrocents,
-      vectorNetworkCostMicrocents: reviewUsage.vectorNetworkCostMicrocents,
-      totalCostMicrocents: reviewUsage.totalCostMicrocents,
-      vectorWriteBytes: reviewUsage.vectorWriteBytes,
-      vectorQueryBytes: reviewUsage.vectorQueryBytes,
-      vectorNetworkBytes: reviewUsage.vectorNetworkBytes,
-      vectorQueryCount: reviewUsage.vectorQueryCount,
-      models: reviewUsage.models,
+      creditBalanceAfter: reviewUsage.creditBalanceAfter,
+      creditsCharged: reviewUsage.creditsCharged,
+      reviewableAdditions: reviewUsage.reviewableAdditions,
+      reviewableDeletions: reviewUsage.reviewableDeletions,
+      reviewableChangedLines: reviewUsage.reviewableChangedLines,
       createdAt: reviewUsage.createdAt,
       repositoryName: repository.fullName,
       pullRequestNumber: pullRequest.number,
@@ -491,7 +645,7 @@ export const getWorkspaceUsageTrend = async (workspaceId: string) => {
   const rows = await db
     .select({
       date: sql<string>`to_char(date_trunc('day', ${reviewUsage.createdAt}), 'YYYY-MM-DD')`,
-      totalCostMicrocents: sql<number>`sum(${reviewUsage.totalCostMicrocents})::bigint`,
+      creditsCharged: sql<number>`sum(${reviewUsage.creditsCharged})::int`,
       reviewCount: sql<number>`count(*)::int`,
     })
     .from(reviewUsage)
@@ -503,7 +657,7 @@ export const getWorkspaceUsageTrend = async (workspaceId: string) => {
 
   return rows.map((row) => ({
     date: row.date,
-    totalCostMicrocents: Number(row.totalCostMicrocents),
+    creditsCharged: Number(row.creditsCharged),
     reviewCount: Number(row.reviewCount),
   }))
 }
@@ -531,6 +685,59 @@ export const createWorkspaceCheckout = async (
       env.FRONTEND_URL
     ).toString(),
     metadata: { referenceId: workspaceId },
+  })
+  if (!checkout.checkoutUrl) {
+    throw new Error("Creem checkout did not include a redirect URL")
+  }
+  return { url: checkout.checkoutUrl }
+}
+
+export const createWorkspaceCreditCheckout = async (
+  workspaceId: string,
+  email: string,
+  credits: number,
+  requestId: string
+) => {
+  if (!Number.isInteger(credits) || credits < MINIMUM_TOP_UP_CREDITS) {
+    throw new BillingError(
+      `Credit top-ups must be at least ${MINIMUM_TOP_UP_CREDITS} credits`
+    )
+  }
+  if (!env.CREEM_CREDIT_TOPUP_PRODUCT_ID) {
+    throw new BillingError("Credit top-ups are not configured", 409)
+  }
+
+  const currentWorkspace = await getWorkspace(workspaceId)
+  if (!currentWorkspace) throw new BillingError("Workspace not found", 404)
+  if (
+    !isPaidTier(currentWorkspace.billingTier) ||
+    shouldRevokeForSubscriptionStatus(currentWorkspace.billingStatus)
+  ) {
+    throw new BillingError("Credit top-ups require an active paid plan", 409)
+  }
+  const plan = getPurchasablePlan(currentWorkspace.billingTier)
+  if (!plan) throw new BillingError("Unknown purchasable billing tier")
+
+  const successUrl = new URL(
+    `/${encodeURIComponent(currentWorkspace.providerAccountLogin)}/billing/success?workspaceId=${encodeURIComponent(workspaceId)}`,
+    env.FRONTEND_URL
+  ).toString()
+  const checkoutPriceCents = credits * plan.topUpCreditUnitPriceCents
+  const checkout = await creem.checkouts.create({
+    productId: env.CREEM_CREDIT_TOPUP_PRODUCT_ID,
+    requestId,
+    customPrice: checkoutPriceCents,
+    customer: currentWorkspace.creemCustomerId
+      ? { id: currentWorkspace.creemCustomerId }
+      : { email },
+    successUrl,
+    metadata: {
+      kind: "credit_topup",
+      workspaceId,
+      credits,
+      unitPriceCents: plan.topUpCreditUnitPriceCents,
+      tierAtPurchase: plan.slug,
+    },
   })
   if (!checkout.checkoutUrl) {
     throw new Error("Creem checkout did not include a redirect URL")

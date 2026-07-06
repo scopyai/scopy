@@ -11,11 +11,6 @@ export function formatPlanPriceAmount(
   }).format(cents / 100)
 }
 
-export function formatComputeAllowance(microcents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(microcents / 1_000_000)
+export function formatReviewCredits(credits: number): string {
+  return `${credits.toLocaleString("en-US")} credit${credits === 1 ? "" : "s"}`
 }

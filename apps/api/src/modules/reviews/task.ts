@@ -3,18 +3,37 @@ import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "../../db/client"
 import { reviewFinding, reviewRun } from "../../db/schema"
-import { hasPositiveUsageBalance, recordReviewUsage } from "../billing/usage"
+import {
+  recordReviewUsage,
+  refundReviewCredits,
+  reserveReviewCredits,
+} from "../billing/usage"
+import { calculateReviewCredits } from "@workspace/billing/plans"
+import {
+  annotatePullRequestFilesForReview,
+  countPullRequestChangedLines,
+  filterPullRequestFiles,
+  getDiffSkipReason,
+  serializePullRequestFiles,
+  serializePullRequestFilesAsUnifiedDiff,
+} from "./diff"
 import {
   buildCompletedReviewCheckOutput,
   completeReviewCheck,
   findOrCreateReviewComment,
-  reviewBalanceBlockedBody,
+  listPullRequestFiles,
+  reviewCreditsBlockedBody,
   startReviewCheck,
   updateReviewComment,
   type ReviewCheckConclusion,
   type ReviewCheckOutput,
 } from "./github"
-import { publishReviewFailure, REVIEW_MODEL, runReviewAgent } from "."
+import {
+  publishReviewFailure,
+  REVIEW_MODEL,
+  runReviewAgent,
+  type ReviewPreflight,
+} from "."
 import { createReviewRunRecorder } from "./debug-run"
 import { resolveReviewConfig, shouldRunAutomaticReview } from "./review-config"
 
@@ -141,6 +160,53 @@ const languageByExtension: Record<string, string> = {
 const languageForFile = (file: string) =>
   languageByExtension[path.extname(file).toLowerCase()] ?? "unknown"
 
+const buildReviewPreflight = async ({
+  run,
+  effectiveReviewConfig,
+}: {
+  run: LoadedReviewRun
+  effectiveReviewConfig: ReturnType<typeof resolveReviewConfig>
+}): Promise<ReviewPreflight> => {
+  const files = await listPullRequestFiles({
+    repo: run.pullRequest.repository,
+    installationId: run.pullRequest.repository.workspace.providerInstallationId,
+    pullRequestNumber: run.pullRequest.number,
+  })
+  const filteredFiles = filterPullRequestFiles(
+    files,
+    effectiveReviewConfig.pathIncludePatterns,
+    effectiveReviewConfig.pathExcludePatterns
+  )
+  const visibleFiles = annotatePullRequestFilesForReview(
+    files,
+    effectiveReviewConfig.pathIncludePatterns,
+    effectiveReviewConfig.pathExcludePatterns
+  )
+  const omittedFiles = visibleFiles.filter((file) => file.omittedReason)
+  const diff = serializePullRequestFiles(visibleFiles)
+  const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)
+  const additions = filteredFiles.reduce(
+    (total, file) => total + file.additions,
+    0
+  )
+  const deletions = filteredFiles.reduce(
+    (total, file) => total + file.deletions,
+    0
+  )
+  const diffChangedLineCount = countPullRequestChangedLines(filteredFiles)
+
+  return {
+    fetchedFileCount: files.length,
+    filteredFiles,
+    omittedFiles,
+    diff,
+    unifiedDiff,
+    additions,
+    deletions,
+    diffChangedLineCount,
+  }
+}
+
 export const executeReviewPullRequest = async (
   { reviewRunId }: { reviewRunId: string },
   { logger, attempt, maxAttempts }: JobContext
@@ -165,7 +231,9 @@ export const executeReviewPullRequest = async (
     maxAttempts,
   })
 
+  const workspaceId = run.pullRequest.repository.workspace.id
   if (run.pullRequest.headSha !== run.headSha) {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     await db
       .update(reviewRun)
       .set({
@@ -184,6 +252,7 @@ export const executeReviewPullRequest = async (
   }
 
   if (!run.pullRequest.repository.enabled) {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     const completedAt = new Date()
     await db
       .update(reviewRun)
@@ -217,7 +286,6 @@ export const executeReviewPullRequest = async (
 
   await syncReviewCheck({ run, logger })
 
-  const workspaceId = run.pullRequest.repository.workspace.id
   const triggerSource =
     typeof run.result?.triggerSource === "string"
       ? run.result.triggerSource
@@ -236,6 +304,7 @@ export const executeReviewPullRequest = async (
       baseRef: run.pullRequest.baseRef,
     })
   ) {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     const completedAt = new Date()
     await db
       .update(reviewRun)
@@ -266,13 +335,17 @@ export const executeReviewPullRequest = async (
     return
   }
 
-  const skipBlockedReview = async (options: {
+  const skipReview = async (options: {
     skipReason: string
     commentBody: string
     logMessage: string
     checkTitle: string
     checkSummary: string
+    checkConclusion: ReviewCheckConclusion
+    resultKind: string
+    extraResult?: Record<string, unknown>
   }) => {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     let commentId: number | undefined
     try {
       commentId = await findOrCreateReviewComment({
@@ -306,11 +379,12 @@ export const executeReviewPullRequest = async (
       .set({
         status: "skipped",
         result: {
-          kind: "billing_blocked",
+          kind: options.resultKind,
           triggerSource,
           modelId: REVIEW_MODEL,
           commentId,
           skipReason: options.skipReason,
+          ...options.extraResult,
           completedAt: completedAt.toISOString(),
         },
         completedAt,
@@ -326,20 +400,84 @@ export const executeReviewPullRequest = async (
       run,
       logger,
       completion: {
-        conclusion: "action_required",
+        conclusion: options.checkConclusion,
         output: { title: options.checkTitle, summary: options.checkSummary },
       },
     })
   }
 
-  if (!(await hasPositiveUsageBalance(workspaceId))) {
-    await skipBlockedReview({
-      skipReason: "workspace_balance_empty",
-      commentBody: reviewBalanceBlockedBody,
-      logMessage: "Skipped review because workspace balance is empty",
-      checkTitle: "Review requires billing action",
-      checkSummary:
-        "The review could not start because this workspace has no remaining usage balance. See the pull request comment for details.",
+  const preflight = await buildReviewPreflight({ run, effectiveReviewConfig })
+  const diffSkipReason =
+    preflight.filteredFiles.length === 0
+      ? [
+          "No reviewable file contents matched this repository's path filters.",
+          ...(preflight.omittedFiles.length > 0
+            ? [
+                "",
+                "Omitted changed files:",
+                ...preflight.omittedFiles.map(
+                  (file) => `- ${file.filename}: ${file.omittedReason}`
+                ),
+              ]
+            : []),
+        ].join("\n")
+      : getDiffSkipReason(
+          preflight.diffChangedLineCount,
+          effectiveReviewConfig.maxReviewChangedLines
+        )
+
+  if (diffSkipReason) {
+    await skipReview({
+      resultKind: "skipped",
+      skipReason: diffSkipReason,
+      commentBody: `## Review summary\n\n${diffSkipReason}`,
+      logMessage: "Skipped review during preflight",
+      checkTitle: "Review skipped",
+      checkSummary: diffSkipReason,
+      checkConclusion: "neutral",
+      extraResult: {
+        fetchedFileCount: preflight.fetchedFileCount,
+        filteredFileCount: preflight.filteredFiles.length,
+        additions: preflight.additions,
+        deletions: preflight.deletions,
+        diffChangedLineCount: preflight.diffChangedLineCount,
+      },
+    })
+    return
+  }
+
+  const creditsRequired = calculateReviewCredits(preflight.diffChangedLineCount)
+  const creditReservation = await reserveReviewCredits({
+    workspaceId,
+    reviewRunId: run.id,
+    repositoryId: run.pullRequest.repository.id,
+    pullRequestId: run.pullRequest.id,
+    credits: creditsRequired,
+    reviewableAdditions: preflight.additions,
+    reviewableDeletions: preflight.deletions,
+    reviewableChangedLines: preflight.diffChangedLineCount,
+  })
+  if (!creditReservation.ok) {
+    await skipReview({
+      resultKind: "billing_blocked",
+      skipReason: "insufficient_review_credits",
+      commentBody: reviewCreditsBlockedBody({
+        requiredCredits: creditReservation.requiredCredits,
+        availableCredits: creditReservation.availableCredits,
+      }),
+      logMessage: "Skipped review because workspace has insufficient credits",
+      checkTitle: "Review requires credits",
+      checkSummary: `The review requires ${creditReservation.requiredCredits.toLocaleString("en-US")} credit${creditReservation.requiredCredits === 1 ? "" : "s"}, but this workspace has ${creditReservation.availableCredits.toLocaleString("en-US")} available. See the pull request comment for details.`,
+      checkConclusion: "action_required",
+      extraResult: {
+        requiredCredits: creditReservation.requiredCredits,
+        availableCredits: creditReservation.availableCredits,
+        fetchedFileCount: preflight.fetchedFileCount,
+        filteredFileCount: preflight.filteredFiles.length,
+        additions: preflight.additions,
+        deletions: preflight.deletions,
+        diffChangedLineCount: preflight.diffChangedLineCount,
+      },
     })
     return
   }
@@ -364,8 +502,9 @@ export const executeReviewPullRequest = async (
         run.pullRequest.repository.workspace.providerInstallationId,
       triggerSource,
       logger,
+      preflight,
     })
-    if (result.kind === "summary" && result.billing) {
+    if (result.billing) {
       await recordReviewUsage({
         reviewRunId: run.id,
         workspaceId,
@@ -377,6 +516,10 @@ export const executeReviewPullRequest = async (
             ? result.verifierModelId
             : REVIEW_MODEL,
         billing: result.billing,
+        creditsCharged: creditReservation.creditsCharged,
+        reviewableAdditions: preflight.additions,
+        reviewableDeletions: preflight.deletions,
+        reviewableChangedLines: preflight.diffChangedLineCount,
       })
     }
 
@@ -385,7 +528,7 @@ export const executeReviewPullRequest = async (
       await tx
         .update(reviewRun)
         .set({
-          status: result.kind === "skipped" ? "skipped" : "completed",
+          status: "completed",
           result,
           completedAt,
           updatedAt: completedAt,
@@ -396,7 +539,7 @@ export const executeReviewPullRequest = async (
         .delete(reviewFinding)
         .where(eq(reviewFinding.reviewRunId, run.id))
 
-      if (result.kind === "summary" && result.findings?.length) {
+      if (result.findings?.length) {
         await tx.insert(reviewFinding).values(
           result.findings.map((finding) => ({
             id: randomUUID(),
@@ -416,7 +559,7 @@ export const executeReviewPullRequest = async (
       reviewRunId: run.id,
       pullRequestId: run.pullRequestId,
       headSha: run.headSha,
-      status: result.kind === "skipped" ? "skipped" : "completed",
+      status: "completed",
       durationMs: result.durationMs,
     })
     const partialPublication = Boolean(result.inlineReviewPublishError)
@@ -424,22 +567,13 @@ export const executeReviewPullRequest = async (
       run,
       logger,
       completion: {
-        conclusion:
-          result.kind === "skipped" || partialPublication
-            ? "neutral"
-            : "success",
-        output:
-          result.kind === "skipped"
-            ? {
-                title: "Review skipped",
-                summary: `${result.skipReason ?? "No review was required."}\n\nSee the pull request summary for details.`,
-              }
-            : buildCompletedReviewCheckOutput({
-                durationMs: result.durationMs,
-                reviewedFileCount: result.filteredFileCount,
-                findings: result.findings,
-                partialPublication,
-              }),
+        conclusion: partialPublication ? "neutral" : "success",
+        output: buildCompletedReviewCheckOutput({
+          durationMs: result.durationMs,
+          reviewedFileCount: result.filteredFileCount,
+          findings: result.findings,
+          partialPublication,
+        }),
       },
     })
   } catch (error) {
@@ -477,6 +611,10 @@ export const executeReviewPullRequest = async (
     }
 
     if (isFinalAttempt) {
+      await refundReviewCredits({
+        workspaceId,
+        reviewRunId: run.id,
+      })
       try {
         commentId = await publishReviewFailure({
           pullRequest: run.pullRequest,

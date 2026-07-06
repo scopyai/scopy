@@ -1,11 +1,11 @@
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router"
 import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
-import { ArrowRightIcon, CheckCircle2Icon } from "lucide-react"
+import { ArrowRightIcon } from "lucide-react"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { PlanCards } from "@/components/billing/plan-cards"
-import { formatUsageBalance } from "@/lib/billing-format"
+import { formatReviewCredits } from "@/lib/billing-format"
 import { getActiveWorkspaces, getWorkspaceSlug } from "@/lib/workspace-slug"
 
 export const Route = createFileRoute("/_app/onboarding/usage")({
@@ -35,7 +35,7 @@ function OnboardingUsagePage() {
       replace: true,
     })
 
-  const includedUsage = billing?.account.creditBalance ?? 1_000_000
+  const includedCredits = billing?.account.creditBalance ?? 0
 
   return (
     <div className="flex h-full justify-center px-6 py-10">
@@ -48,36 +48,12 @@ function OnboardingUsagePage() {
             You're ready to review
           </h1>
           <p className="mx-auto max-w-xl text-sm text-muted-foreground">
-            We added{" "}
+            This workspace has{" "}
             <span className="font-medium text-foreground">
-              {formatUsageBalance(includedUsage)}
+              {formatReviewCredits(includedCredits)}
             </span>{" "}
-            of one-time included usage to this workspace. Use it now without a
-            card, or choose a paid plan for ongoing reviews.
+            available. Choose a paid plan to run managed reviews.
           </p>
-        </div>
-
-        <div className="rounded-xl border bg-card p-6 shadow-sm ring-1 ring-border/50">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <CheckCircle2Icon className="size-5" />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
-                <h2 className="text-base font-semibold">
-                  Included usage is active
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  This is a one-time signup credit. Reviews debit this balance
-                  based on actual model and compute usage.
-                </p>
-              </div>
-            </div>
-            <Button className="shrink-0" onClick={goToDashboard}>
-              Use included usage
-              <ArrowRightIcon data-icon="inline-end" />
-            </Button>
-          </div>
         </div>
 
         {billingPending ? (
@@ -96,8 +72,7 @@ function OnboardingUsagePage() {
             <div className="flex flex-col gap-1">
               <h2 className="text-base font-semibold">Keep reviews running</h2>
               <p className="text-sm text-muted-foreground">
-                Pick a monthly plan now if you want review usage beyond the
-                one-time included balance.
+                Pick a monthly plan to get a monthly review credit allowance.
               </p>
             </div>
             <PlanCards
@@ -108,6 +83,17 @@ function OnboardingUsagePage() {
               isOwner={isOwner ?? false}
               workspaceId={activeWorkspace.id}
             />
+
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={goToDashboard}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Continue to dashboard
+                <ArrowRightIcon className="size-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

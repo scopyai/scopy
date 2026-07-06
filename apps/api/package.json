@@ -36,7 +36,7 @@
     "@workspace/billing": "workspace:*",
     "ai": "^6.0.193",
     "better-auth": "^1.6.5",
-    "creem": "^1.4.5",
+    "creem": "^1.5.3",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "elysia": "^1.4.28",

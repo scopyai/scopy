@@ -9,13 +9,13 @@ import {
 
 type TrendPoint = {
   date: string
-  totalCostMicrocents: number
+  creditsCharged: number
   reviewCount: number
 }
 
 const chartConfig = {
-  cost: {
-    label: "Spend",
+  credits: {
+    label: "Credits",
     color: "var(--primary)",
   },
 } satisfies ChartConfig
@@ -32,7 +32,7 @@ export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
     () =>
       points.map((point) => ({
         date: point.date,
-        cost: point.totalCostMicrocents / 1_000_000,
+        credits: point.creditsCharged,
         reviewCount: point.reviewCount,
       })),
     [points]
@@ -41,9 +41,9 @@ export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-card px-4 py-4">
       <div className="flex flex-col gap-0.5">
-        <h3 className="text-sm font-medium">Spend over time</h3>
+        <h3 className="text-sm font-medium">Credits over time</h3>
         <p className="text-xs text-muted-foreground">
-          Daily review cost over the last 30 days
+          Daily review credits over the last 30 days
         </p>
       </div>
       {data.length === 0 ? (
@@ -54,15 +54,15 @@ export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
         <ChartContainer config={chartConfig} className="h-40 w-full">
           <AreaChart data={data} margin={{ left: 4, right: 4, top: 4 }}>
             <defs>
-              <linearGradient id="fillCost" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="fillCredits" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
-                  stopColor="var(--color-cost)"
+                  stopColor="var(--color-credits)"
                   stopOpacity={0.35}
                 />
                 <stop
                   offset="95%"
-                  stopColor="var(--color-cost)"
+                  stopColor="var(--color-credits)"
                   stopOpacity={0.02}
                 />
               </linearGradient>
@@ -81,8 +81,8 @@ export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
               axisLine={false}
               width={48}
               tickFormatter={(value: number) =>
-                `$${value.toLocaleString("en-US", {
-                  maximumFractionDigits: 2,
+                `${value.toLocaleString("en-US", {
+                  maximumFractionDigits: 0,
                 })}`
               }
             />
@@ -91,20 +91,17 @@ export function UsageTrendChart({ points }: { points: TrendPoint[] }) {
                 <ChartTooltipContent
                   labelFormatter={(value) => formatAxisDate(String(value))}
                   formatter={(value) => [
-                    `$${Number(value).toLocaleString("en-US", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}`,
-                    " Spend",
+                    Number(value).toLocaleString("en-US"),
+                    " Credits",
                   ]}
                 />
               }
             />
             <Area
-              dataKey="cost"
+              dataKey="credits"
               type="monotone"
-              fill="url(#fillCost)"
-              stroke="var(--color-cost)"
+              fill="url(#fillCredits)"
+              stroke="var(--color-credits)"
               strokeWidth={2}
             />
           </AreaChart>

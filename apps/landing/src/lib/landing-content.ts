@@ -57,7 +57,7 @@ export const faqs: Faq[] = [
   },
   {
     q: "How does billing work?",
-    a: "Billing is managed per workspace. New workspaces start with $1 of included review usage by default. Premium and Ultra are monthly plans with included review usage; reviews debit workspace credits based on actual usage during review runs. Billing changes apply to the selected workspace, not every workspace on your account.",
+    a: "Billing is managed per workspace. Premium and Ultra are monthly plans with included review credits. Reviews consume credits based on reviewable changed lines after repository path filters: most normal pull requests use 1 credit, while larger pull requests use more.",
   },
   {
     q: "Can I use my own model API keys?",
