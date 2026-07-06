@@ -37,10 +37,10 @@ export function getLandingPlans(): LandingPlan[] {
       name: "Free",
       priceLabel: "Free",
       period: "",
-      computeLabel: `${freeCredits} included`,
+      computeLabel: `Self-hosted version with any LLM povider`,
       desc: "Start free, then add a paid plan for managed cloud reviews — or self-host without limits.",
       features: [
-        "Bring-your-own-key support planned",
+        "Bring-your-own-key support",
         "Self-host with your own model keys",
         "Full source code access",
       ],
@@ -54,7 +54,7 @@ export function getLandingPlans(): LandingPlan[] {
       priceLabel: formatPlanPriceAmount(PREMIUM_BILLING_PLAN.price),
       period: "/mo",
       computeLabel: `${premiumCredits} / month included`,
-      desc: "Hosted Scopy for teams getting started.",
+      desc: "Hosted Scopy for teams that ship fast.",
       features: [
         "Unlimited repositories",
         "Team workspace management",
@@ -70,7 +70,7 @@ export function getLandingPlans(): LandingPlan[] {
       priceLabel: formatPlanPriceAmount(ULTRA_BILLING_PLAN.price),
       period: "/mo",
       computeLabel: `${ultraCredits} / month included`,
-      desc: "More monthly credits for teams that ship fast.",
+      desc: "More monthly credits for teams that value quality",
       features: [
         "Everything in Premium",
         "Higher monthly review credits",
