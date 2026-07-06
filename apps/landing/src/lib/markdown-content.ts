@@ -27,7 +27,7 @@ function homeMarkdown(): string {
     "",
     "## Pricing",
     "",
-    "New cloud workspaces start with $1 of included review usage. Pick a monthly plan when you need ongoing reviews — no per-seat pricing.",
+    "Reviews use credits based on reviewable changed lines. Pick a monthly plan when you need managed cloud reviews — no per-seat pricing.",
     "",
   ]
 

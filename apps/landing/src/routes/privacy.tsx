@@ -269,14 +269,15 @@ function LegalPage() {
                   Downgrades and cancellations generally take effect at the end
                   of the current paid period.
                 </p>
-                <h3>Compute credits and usage</h3>
+                <h3>Review credits and usage</h3>
                 <p>
-                  Paid plans include a monthly compute allowance measured in
-                  credits that are consumed by review and related processing. If
-                  you exhaust your allowance before the billing period resets,
-                  review activity may be paused or limited until the next reset
-                  or until you upgrade. Unused monthly credits do not roll over
-                  unless we expressly state otherwise.
+                  Paid plans include a monthly review credit allowance. Pull
+                  request reviews consume credits based on reviewable changed
+                  lines after repository path filters. If you exhaust your
+                  allowance before the billing period resets, managed reviews
+                  may be paused until the next reset, upgrade, or credit
+                  purchase. Unused monthly credits do not roll over unless we
+                  expressly state otherwise.
                 </p>
               </section>
 
@@ -517,7 +518,7 @@ function LegalPage() {
                     usage trends.
                   </li>
                   <li>
-                    Compute credit balances, usage debits, and billing-period
+                    Review credit balances, usage debits, and billing-period
                     activity.
                   </li>
                 </ul>

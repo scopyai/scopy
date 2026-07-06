@@ -124,8 +124,8 @@ const connectGitHubInstallation = async (
 ) => {
   const installation = await getGitHubInstallation(installationId)
   const savedWorkspace = await upsertGitHubWorkspace(installation, userId, {
-    initialCreditMicroUsd:
-      source === "onboarding" ? env.SIGNUP_CREDIT_MICRO_USD : 0,
+    initialReviewCredits:
+      source === "onboarding" ? env.SIGNUP_REVIEW_CREDITS : 0,
   })
   const repositories = await listGitHubInstallationRepositories(installationId)
 

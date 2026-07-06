@@ -23,6 +23,29 @@ export function useCheckoutBilling(workspaceId: string) {
   })
 }
 
+export function useCheckoutCredits(workspaceId: string) {
+  return useMutation({
+    mutationFn: async (credits: number) => {
+      const { data, error } = await api
+        .workspaces({ workspaceId })
+        .billing.credits.checkout.post({
+          credits,
+          requestId: crypto.randomUUID(),
+        })
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data) => {
+      if (data?.url) {
+        window.location.href = data.url
+      }
+    },
+    onError: () => {
+      toast.error("Failed to start credit checkout")
+    },
+  })
+}
+
 export function usePortalBilling(workspaceId: string) {
   return useMutation({
     mutationFn: async () => {

@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
-import { reviewUsage, workspace, type ReviewUsageModel } from "../../db/schema"
+import {
+  reviewUsage,
+  workspace,
+  type ReviewUsageModel,
+} from "../../db/schema"
 import { env } from "../../env"
 
 export const MICRO_USD_PER_USD = 1_000_000
@@ -308,21 +312,177 @@ export const resolveGatewayGenerationCost = async (
     }
   })
 
-export const hasPositiveUsageBalance = async (workspaceId: string) => {
-  const currentWorkspace = await db.query.workspace.findFirst({
-    where: eq(workspace.id, workspaceId),
-    columns: { creditBalance: true },
+export type ReserveReviewCreditsResult =
+  | {
+      ok: true
+      creditsCharged: number
+      balanceAfter: number
+    }
+  | {
+      ok: false
+      requiredCredits: number
+      availableCredits: number
+    }
+
+export const reserveReviewCredits = async ({
+  workspaceId,
+  reviewRunId,
+  repositoryId,
+  pullRequestId,
+  credits,
+  reviewableAdditions,
+  reviewableDeletions,
+  reviewableChangedLines,
+}: {
+  workspaceId: string
+  reviewRunId: string
+  repositoryId: string | null
+  pullRequestId: string | null
+  credits: number
+  reviewableAdditions: number
+  reviewableDeletions: number
+  reviewableChangedLines: number
+}): Promise<ReserveReviewCreditsResult> =>
+  db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`
+    )
+
+    const existing = await tx.query.reviewUsage.findFirst({
+      where: eq(reviewUsage.reviewRunId, reviewRunId),
+      columns: {
+        creditsCharged: true,
+        creditBalanceAfter: true,
+      },
+    })
+    if (existing) {
+      return {
+        ok: true,
+        creditsCharged: existing.creditsCharged,
+        balanceAfter: existing.creditBalanceAfter,
+      }
+    }
+
+    const currentWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, workspaceId),
+      columns: {
+        includedCreditBalance: true,
+        purchasedCreditBalance: true,
+      },
+    })
+    const includedCreditBalance =
+      currentWorkspace?.includedCreditBalance ?? 0
+    const purchasedCreditBalance =
+      currentWorkspace?.purchasedCreditBalance ?? 0
+    const availableCredits =
+      includedCreditBalance + purchasedCreditBalance
+
+    if (!currentWorkspace || availableCredits < credits) {
+      return {
+        ok: false,
+        requiredCredits: credits,
+        availableCredits,
+      }
+    }
+
+    const includedDebit = Math.min(includedCreditBalance, credits)
+    const purchasedDebit = credits - includedDebit
+    const nextIncludedCreditBalance = includedCreditBalance - includedDebit
+    const nextPurchasedCreditBalance = purchasedCreditBalance - purchasedDebit
+    const balanceAfter =
+      nextIncludedCreditBalance + nextPurchasedCreditBalance
+
+    await tx
+      .update(workspace)
+      .set({
+        includedCreditBalance: nextIncludedCreditBalance,
+        purchasedCreditBalance: nextPurchasedCreditBalance,
+        updatedAt: new Date(),
+      })
+      .where(eq(workspace.id, workspaceId))
+
+    await tx.insert(reviewUsage).values({
+      id: randomUUID(),
+      workspaceId,
+      reviewRunId,
+      repositoryId,
+      pullRequestId,
+      creditsCharged: credits,
+      includedCreditsCharged: includedDebit,
+      purchasedCreditsCharged: purchasedDebit,
+      creditBalanceAfter: balanceAfter,
+      reviewableAdditions,
+      reviewableDeletions,
+      reviewableChangedLines,
+      modelId: "",
+      verifierModelId: "",
+      llmCostMicrocents: 0,
+      totalCostMicrocents: 0,
+    })
+
+    return {
+      ok: true,
+      creditsCharged: credits,
+      balanceAfter,
+    }
   })
-  return (currentWorkspace?.creditBalance ?? 0) > 0
-}
+
+export const refundReviewCredits = async ({
+  workspaceId,
+  reviewRunId,
+}: {
+  workspaceId: string
+  reviewRunId: string
+}) =>
+  db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`
+    )
+
+    const usage = await tx.query.reviewUsage.findFirst({
+      where: eq(reviewUsage.reviewRunId, reviewRunId),
+      columns: {
+        creditsCharged: true,
+        includedCreditsCharged: true,
+        purchasedCreditsCharged: true,
+      },
+    })
+    if (!usage || usage.creditsCharged <= 0) return
+
+    const currentWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, workspaceId),
+      columns: {
+        includedCreditBalance: true,
+        purchasedCreditBalance: true,
+      },
+    })
+    if (!currentWorkspace) return
+
+    const includedRefund = usage.includedCreditsCharged
+    const purchasedRefund = usage.purchasedCreditsCharged
+    const nextIncludedCreditBalance =
+      currentWorkspace.includedCreditBalance + includedRefund
+    const nextPurchasedCreditBalance =
+      currentWorkspace.purchasedCreditBalance + purchasedRefund
+
+    await tx
+      .update(workspace)
+      .set({
+        includedCreditBalance: nextIncludedCreditBalance,
+        purchasedCreditBalance: nextPurchasedCreditBalance,
+        updatedAt: new Date(),
+      })
+      .where(eq(workspace.id, workspaceId))
+
+    await tx.delete(reviewUsage).where(eq(reviewUsage.reviewRunId, reviewRunId))
+  })
 
 const numberOrZero = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : 0
 
 /**
  * Flattens the per-stage `billing.llm` map produced by the review agent into a
- * normalized list of one entry per stage so it can be stored and rendered as a
- * per-model cost breakdown.
+ * normalized list of one entry per stage for internal cost analytics.
  */
 export const flattenBillingModels = (
   llm: Record<string, unknown>,
@@ -360,39 +520,50 @@ export type RecordReviewUsageInput = {
     vectorQueryCount: number
     llm: Record<string, unknown>
   }
+  creditsCharged?: number
+  reviewableAdditions?: number
+  reviewableDeletions?: number
+  reviewableChangedLines?: number
 }
 
 /**
- * Records the per-review usage breakdown and, for platform-billed reviews,
- * debits the workspace credit balance in the same transaction. The unique
- * `reviewRunId` makes this idempotent, so re-running is safe.
+ * Records the per-review compute usage breakdown. User-facing integer review
+ * credits are reserved before the review starts; actual provider cost remains
+ * here for internal analytics and transparency only.
  */
 export const recordReviewUsage = async (input: RecordReviewUsageInput) =>
   db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${input.workspaceId}))`,
-    )
-
     const existing = await tx.query.reviewUsage.findFirst({
       where: eq(reviewUsage.reviewRunId, input.reviewRunId),
       columns: { id: true },
     })
-    if (existing) return
+    const values = {
+      workspaceId: input.workspaceId,
+      repositoryId: input.repositoryId,
+      pullRequestId: input.pullRequestId,
+      reviewableAdditions: input.reviewableAdditions ?? 0,
+      reviewableDeletions: input.reviewableDeletions ?? 0,
+      reviewableChangedLines: input.reviewableChangedLines ?? 0,
+      modelId: input.modelId,
+      verifierModelId: input.verifierModelId,
+      llmCostMicrocents: input.billing.llmCostMicrocents,
+      vectorWriteCostMicrocents: input.billing.vectorWriteCostMicrocents,
+      vectorQueryCostMicrocents: input.billing.vectorQueryCostMicrocents,
+      vectorNetworkCostMicrocents: input.billing.vectorNetworkCostMicrocents,
+      totalCostMicrocents: input.billing.totalCostMicrocents,
+      vectorWriteBytes: input.billing.vectorWriteBytes,
+      vectorQueryBytes: input.billing.vectorQueryBytes,
+      vectorNetworkBytes: input.billing.vectorNetworkBytes,
+      vectorQueryCount: input.billing.vectorQueryCount,
+      models: flattenBillingModels(input.billing.llm),
+    }
 
-    let balanceAfter: number | null = null
-    if (input.billing.totalCostMicrocents > 0) {
-      const currentWorkspace = await tx.query.workspace.findFirst({
-        where: eq(workspace.id, input.workspaceId),
-        columns: { creditBalance: true },
-      })
-      if (currentWorkspace) {
-        balanceAfter =
-          currentWorkspace.creditBalance - input.billing.totalCostMicrocents
-        await tx
-          .update(workspace)
-          .set({ creditBalance: balanceAfter, updatedAt: new Date() })
-          .where(eq(workspace.id, input.workspaceId))
-      }
+    if (existing) {
+      await tx
+        .update(reviewUsage)
+        .set(values)
+        .where(eq(reviewUsage.reviewRunId, input.reviewRunId))
+      return
     }
 
     await tx
@@ -400,22 +571,8 @@ export const recordReviewUsage = async (input: RecordReviewUsageInput) =>
       .values({
         id: randomUUID(),
         reviewRunId: input.reviewRunId,
-        workspaceId: input.workspaceId,
-        repositoryId: input.repositoryId,
-        pullRequestId: input.pullRequestId,
-        balanceAfter,
-        modelId: input.modelId,
-        verifierModelId: input.verifierModelId,
-        llmCostMicrocents: input.billing.llmCostMicrocents,
-        vectorWriteCostMicrocents: input.billing.vectorWriteCostMicrocents,
-        vectorQueryCostMicrocents: input.billing.vectorQueryCostMicrocents,
-        vectorNetworkCostMicrocents: input.billing.vectorNetworkCostMicrocents,
-        totalCostMicrocents: input.billing.totalCostMicrocents,
-        vectorWriteBytes: input.billing.vectorWriteBytes,
-        vectorQueryBytes: input.billing.vectorQueryBytes,
-        vectorNetworkBytes: input.billing.vectorNetworkBytes,
-        vectorQueryCount: input.billing.vectorQueryCount,
-        models: flattenBillingModels(input.billing.llm),
+        ...values,
+        creditsCharged: input.creditsCharged ?? 0,
       })
       .onConflictDoNothing({ target: reviewUsage.reviewRunId })
   })

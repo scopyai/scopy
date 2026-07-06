@@ -199,7 +199,10 @@ export const workspace = pgTable(
     lastSyncedAt: timestamp("last_synced_at"),
     billingTier: workspaceBillingTier("billing_tier").default("free").notNull(),
     billingStatus: text("billing_status").default("free").notNull(),
-    creditBalance: bigint("credit_balance", { mode: "number" })
+    includedCreditBalance: integer("included_credit_balance")
+      .default(0)
+      .notNull(),
+    purchasedCreditBalance: integer("purchased_credit_balance")
       .default(0)
       .notNull(),
     creemCustomerId: text("creem_customer_id"),
@@ -524,7 +527,19 @@ export const reviewUsage = pgTable(
     pullRequestId: text("pull_request_id").references(() => pullRequest.id, {
       onDelete: "set null",
     }),
-    balanceAfter: bigint("balance_after", { mode: "number" }),
+    creditsCharged: integer("credits_charged").default(0).notNull(),
+    includedCreditsCharged: integer("included_credits_charged")
+      .default(0)
+      .notNull(),
+    purchasedCreditsCharged: integer("purchased_credits_charged")
+      .default(0)
+      .notNull(),
+    creditBalanceAfter: integer("credit_balance_after").default(0).notNull(),
+    reviewableAdditions: integer("reviewable_additions").default(0).notNull(),
+    reviewableDeletions: integer("reviewable_deletions").default(0).notNull(),
+    reviewableChangedLines: integer("reviewable_changed_lines")
+      .default(0)
+      .notNull(),
     modelId: text("model_id").notNull(),
     verifierModelId: text("verifier_model_id").notNull(),
     llmCostMicrocents: bigint("llm_cost_microcents", {
@@ -583,6 +598,7 @@ export const workspaceCharge = pgTable(
     amount: bigint("amount", { mode: "number" }).notNull(),
     currency: text("currency").notNull(),
     status: text("status").notNull(),
+    credits: integer("credits"),
     description: text("description"),
     productId: text("product_id"),
     tier: text("tier"),

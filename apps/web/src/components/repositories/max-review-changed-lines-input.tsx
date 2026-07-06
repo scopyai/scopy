@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Input } from "@workspace/ui/components/input"
 import { Slider } from "@workspace/ui/components/slider"
 import { cn } from "@workspace/ui/lib/utils"
@@ -29,15 +29,30 @@ export function MaxReviewChangedLinesInput({
   disabled,
   scopeBadge,
 }: MaxReviewChangedLinesInputProps) {
+  return (
+    <MaxReviewChangedLinesInputControls
+      key={value}
+      id={id}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      scopeBadge={scopeBadge}
+    />
+  )
+}
+
+function MaxReviewChangedLinesInputControls({
+  id,
+  value,
+  onChange,
+  disabled,
+  scopeBadge,
+}: MaxReviewChangedLinesInputProps) {
   const sliderPosition = toSliderPosition(value)
   const [previewValue, setPreviewValue] = useState(sliderPosition)
   const showInput =
     previewValue >= MAX_REVIEW_CHANGED_LINES_SLIDER_MAX &&
     value >= MAX_REVIEW_CHANGED_LINES_SLIDER_MAX
-
-  useEffect(() => {
-    setPreviewValue(toSliderPosition(value))
-  }, [value])
 
   const commitSliderValue = (next: number) => {
     const snapped = snapSliderValue(next)
@@ -98,6 +113,7 @@ export function MaxReviewChangedLinesInput({
         </div>
 
         <MaxLinesValueSlot
+          key={value}
           id={`${id}-custom`}
           displayValue={formatLines(showInput ? value : previewValue)}
           editable={showInput}
@@ -132,10 +148,6 @@ function MaxLinesValueSlot({
   onCommit: (raw: string) => void
 }) {
   const [draft, setDraft] = useState(String(value))
-
-  useEffect(() => {
-    setDraft(String(value))
-  }, [value])
 
   return (
     <div className="relative h-8 w-full shrink-0">

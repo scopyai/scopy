@@ -4,6 +4,7 @@ import {
   BillingError,
   cancelWorkspaceSubscription,
   createWorkspaceCheckout,
+  createWorkspaceCreditCheckout,
   createWorkspacePortal,
   getWorkspaceBilling,
   getWorkspaceUsageTrend,
@@ -20,6 +21,10 @@ const checkoutSchema = z.object({
   tier: z.enum(["premium", "ultra"]),
   requestId: z.uuid(),
 });
+const creditCheckoutSchema = z.object({
+  credits: z.number().int().min(10),
+  requestId: z.uuid(),
+});
 const changePlanSchema = z.object({
   tier: z.enum(["premium", "ultra"]),
 });
@@ -33,10 +38,14 @@ const usageQuerySchema = paginationSchema.extend({
   repositoryId: z.string().optional(),
 });
 
-const asBillingError = (error: unknown) =>
-  error instanceof BillingError
-    ? { statusCode: error.statusCode, error: error.message }
-    : { statusCode: 500 as const, error: "Billing request failed" };
+const asBillingError = (error: unknown) => {
+  if (error instanceof BillingError) {
+    return { statusCode: error.statusCode, error: error.message };
+  }
+
+  console.error("Unexpected billing request failure", error);
+  return { statusCode: 500 as const, error: "Billing request failed" };
+};
 
 const requireMember = (workspaceId: string, userId: string) =>
   requireWorkspaceForUser(workspaceId, userId).catch(() => null);
@@ -120,6 +129,31 @@ export const billingRoutes = protectedRoute("/workspaces")
           params.workspaceId,
           user.email,
           parsed.data.tier,
+          parsed.data.requestId,
+        );
+      } catch (error) {
+        const billingError = asBillingError(error);
+        return status(billingError.statusCode, { error: billingError.error });
+      }
+    },
+  )
+  .post(
+    "/:workspaceId/billing/credits/checkout",
+    async ({ body, params, user, status }) => {
+      if (!(await requireOwner(params.workspaceId, user.id))) {
+        return status(404, { error: "Workspace not found" });
+      }
+
+      const parsed = creditCheckoutSchema.safeParse(body);
+      if (!parsed.success) {
+        return status(400, { error: "Invalid credit checkout request" });
+      }
+
+      try {
+        return await createWorkspaceCreditCheckout(
+          params.workspaceId,
+          user.email,
+          parsed.data.credits,
           parsed.data.requestId,
         );
       } catch (error) {

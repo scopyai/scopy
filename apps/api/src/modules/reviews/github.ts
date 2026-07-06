@@ -201,8 +201,21 @@ export const reviewStartedBody =
 export const reviewFailedBody =
   "I could not complete this review after several retries. Please mention me again later to retry."
 
-export const reviewBalanceBlockedBody =
-  "I cannot start this review because this workspace has no remaining usage balance. Open billing in the Scopy dashboard to choose a plan and keep reviews running."
+export const reviewCreditsBlockedBody = ({
+  requiredCredits,
+  availableCredits,
+}: {
+  requiredCredits: number
+  availableCredits: number
+}) =>
+  [
+    "I cannot start this review because this workspace does not have enough review credits.",
+    "",
+    `Required credits: ${requiredCredits.toLocaleString("en-US")}`,
+    `Available credits: ${availableCredits.toLocaleString("en-US")}`,
+    "",
+    "Open billing in the dashboard to buy more credits or choose a plan with a larger monthly limits.",
+  ].join("\n")
 
 const renderFixPrompt = (finding: ReviewFinding) => {
   const prompt = [

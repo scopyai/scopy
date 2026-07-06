@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react"
 import {
   LogOutIcon,
   ChevronsUpDown,
@@ -32,10 +31,6 @@ export function UserMenu() {
   const { data: session, isPending: sessionPending } = authClient.useSession()
   const { data: user } = useMeUser()
   const { theme, setTheme } = useTheme()
-
-  // Avoid hydration mismatch: the resolved theme is only known on the client.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
 
   if (sessionPending) {
     return (
@@ -76,7 +71,7 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="gap-2">
-            {mounted && theme === "light" ? (
+            {theme === "light" ? (
               <SunIcon className="size-4" />
             ) : (
               <MoonIcon className="size-4" />
@@ -85,7 +80,7 @@ export function UserMenu() {
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             <DropdownMenuRadioGroup
-              value={mounted ? theme : undefined}
+              value={theme}
               onValueChange={setTheme}
             >
               <DropdownMenuRadioItem value="light" className="gap-2">

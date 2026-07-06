@@ -26,6 +26,10 @@ export function formatPlanPriceAmount(
   return formatCurrencyAmount(cents, currency)
 }
 
+export function formatReviewCredits(credits: number): string {
+  return `${credits.toLocaleString("en-US")} credit${credits === 1 ? "" : "s"}`
+}
+
 export function formatUsageBalance(microcents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -52,7 +56,7 @@ export function formatChargeType(type: string): string {
 }
 
 export function formatBillingMode(): string {
-  return "Plan balance"
+  return "Review credits"
 }
 
 export function formatBytes(bytes: number): string {

@@ -12,7 +12,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Switch } from "@workspace/ui/components/switch"
 import { Input } from "@workspace/ui/components/input"
 import { ArrowRightIcon, SearchIcon } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { useRepositories } from "@/hooks/use-repositories"
@@ -34,6 +34,7 @@ function OnboardingRepositoriesPage() {
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<string[]>(
     []
   )
+  const [hasCustomSelection, setHasCustomSelection] = useState(false)
   const [search, setSearch] = useState("")
 
   const availableRepositories = useMemo(
@@ -52,18 +53,9 @@ function OnboardingRepositoriesPage() {
     )
   }, [availableRepositories, search])
 
-  useEffect(() => {
-    if (!hasSeenOnboardingOverview()) {
-      navigate({ to: "/onboarding/overview", replace: true })
-    }
-  }, [navigate])
-
-  useEffect(() => {
-    if (!availableRepositories.length) return
-    setSelectedRepositoryIds((current) =>
-      current.length ? current : availableRepositories.map((repo) => repo.id)
-    )
-  }, [availableRepositories])
+  const effectiveSelectedRepositoryIds = hasCustomSelection
+    ? selectedRepositoryIds
+    : availableRepositories.map((repo) => repo.id)
 
   const completeOnboarding = useMutation({
     mutationFn: async () => {
@@ -72,7 +64,7 @@ function OnboardingRepositoriesPage() {
       const { data, error } = await api
         .workspaces({ workspaceId: activeWorkspace.id })
         .onboarding.repositories.post({
-          repositoryIds: selectedRepositoryIds,
+          repositoryIds: effectiveSelectedRepositoryIds,
         })
 
       if (error) throw error
@@ -93,6 +85,10 @@ function OnboardingRepositoriesPage() {
     },
   })
 
+  if (!hasSeenOnboardingOverview()) {
+    return <Navigate to="/onboarding/overview" replace />
+  }
+
   if (workspacesPending) return <RepositorySelectionSkeleton />
   if (!activeWorkspace) return <Navigate to="/onboarding/connect" replace />
 
@@ -100,21 +96,24 @@ function OnboardingRepositoriesPage() {
   const canContinue =
     !completeOnboarding.isPending &&
     !isLoading &&
-    (availableRepositories.length === 0 || selectedRepositoryIds.length > 0)
+    (availableRepositories.length === 0 ||
+      effectiveSelectedRepositoryIds.length > 0)
 
   const toggleRepository = (repositoryId: string, enabled: boolean) => {
-    setSelectedRepositoryIds((current) =>
+    setHasCustomSelection(true)
+    setSelectedRepositoryIds(() =>
       enabled
-        ? [...new Set([...current, repositoryId])]
-        : current.filter((id) => id !== repositoryId)
+        ? [...new Set([...effectiveSelectedRepositoryIds, repositoryId])]
+        : effectiveSelectedRepositoryIds.filter((id) => id !== repositoryId)
     )
   }
 
   const allSelected =
     availableRepositories.length > 0 &&
-    selectedRepositoryIds.length === availableRepositories.length
+    effectiveSelectedRepositoryIds.length === availableRepositories.length
 
   const toggleSelectAll = () => {
+    setHasCustomSelection(true)
     setSelectedRepositoryIds(
       allSelected ? [] : availableRepositories.map((repo) => repo.id)
     )
@@ -142,7 +141,7 @@ function OnboardingRepositoriesPage() {
               <div className="flex min-w-0 flex-col gap-1">
                 <CardTitle className="truncate">{activeWorkspace.name}</CardTitle>
                 <CardDescription>
-                  {selectedRepositoryIds.length} of{" "}
+                  {effectiveSelectedRepositoryIds.length} of{" "}
                   {availableRepositories.length} selected
                 </CardDescription>
               </div>
@@ -178,7 +177,9 @@ function OnboardingRepositoriesPage() {
               filteredRepositories.length ? (
                 <div className="flex min-w-0 flex-col divide-y divide-border">
                   {filteredRepositories.map((repo) => {
-                    const checked = selectedRepositoryIds.includes(repo.id)
+                    const checked = effectiveSelectedRepositoryIds.includes(
+                      repo.id
+                    )
 
                     return (
                       <label

@@ -5,12 +5,12 @@ import { env } from "../../env"
 
 export const creem = new Creem({
   apiKey: env.CREEM_API_KEY,
-  serverIdx: env.CREEM_TEST_MODE ? 1 : 0,
+  server: env.CREEM_TEST_MODE ? "test" : "prod",
 })
 
 export const verifyCreemWebhookSignature = (
   payload: string,
-  signature: string | null,
+  signature: string | null
 ) => {
   if (!signature) return false
 
@@ -25,7 +25,9 @@ export const verifyCreemWebhookSignature = (
     return false
   }
 
-  return received.length === expected.length && timingSafeEqual(received, expected)
+  return (
+    received.length === expected.length && timingSafeEqual(received, expected)
+  )
 }
 
 export const parseCreemWebhook = (payload: string) => parseWebhookEvent(payload)

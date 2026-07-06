@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import { FREE_INCLUDED_CREDIT_MICRO_USD } from "@workspace/billing/plans"
+import { FREE_INCLUDED_REVIEW_CREDITS } from "@workspace/billing/plans"
 import dotenv from "dotenv"
 import { z } from "zod"
 
@@ -22,11 +22,12 @@ export const env = z
       .transform((value) => value === "true"),
     CREEM_PREMIUM_PRODUCT_ID: z.string().min(1),
     CREEM_ULTRA_PRODUCT_ID: z.string().min(1),
-    SIGNUP_CREDIT_MICRO_USD: z.coerce
+    CREEM_CREDIT_TOPUP_PRODUCT_ID: z.string().min(1).optional(),
+    SIGNUP_REVIEW_CREDITS: z.coerce
       .number()
       .int()
-      .positive()
-      .default(FREE_INCLUDED_CREDIT_MICRO_USD),
+      .nonnegative()
+      .default(FREE_INCLUDED_REVIEW_CREDITS),
     GITHUB_APP_ID: z.string().min(1).optional(),
     GITHUB_APP_SLUG: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),

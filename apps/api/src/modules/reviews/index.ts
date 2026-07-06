@@ -23,17 +23,11 @@ import {
 } from "../billing/usage"
 import type { PullRequestFile } from "./diff"
 import {
-  annotatePullRequestFilesForReview,
   batchNaturalLanguageLinterFiles,
-  countPullRequestChangedLines,
-  filterPullRequestFiles,
-  getDiffSkipReason,
-  serializePullRequestFilesAsUnifiedDiff,
   serializePullRequestFiles,
 } from "./diff"
 import {
   findOrCreateReviewComment,
-  listPullRequestFiles,
   publishPullRequestReview,
   type PullRequestReviewEvent,
   reviewFailedBody,
@@ -89,6 +83,17 @@ type Logger = {
   error: (message: string, details?: Record<string, unknown>) => void
 }
 
+export type ReviewPreflight = {
+  fetchedFileCount: number
+  filteredFiles: PullRequestFile[]
+  omittedFiles: PullRequestFile[]
+  diff: string
+  unifiedDiff: string
+  additions: number
+  deletions: number
+  diffChangedLineCount: number
+}
+
 type RunInput = {
   reviewRunId: string
   pullRequest: typeof pullRequest.$inferSelect
@@ -97,10 +102,11 @@ type RunInput = {
   installationId: string
   triggerSource: string
   logger: Logger
+  preflight: ReviewPreflight
 }
 
 export type ReviewAgentResult = {
-  kind: "summary" | "skipped"
+  kind: "summary"
   summary?: string
   triggerSource: string
   modelId: string
@@ -113,7 +119,6 @@ export type ReviewAgentResult = {
   reviewEvent?: PullRequestReviewEvent
   inlineCommentCount?: number
   inlineReviewPublishError?: string
-  skipReason?: string
   mergeSafetyScore?: number
   findings?: ReviewReport["findings"]
   usage?: Record<string, unknown>
@@ -294,6 +299,7 @@ export const runReviewAgent = async ({
   installationId,
   triggerSource,
   logger,
+  preflight,
 }: RunInput): Promise<ReviewAgentResult> => {
   const startedAt = Date.now()
   const startedAtIso = new Date(startedAt).toISOString()
@@ -334,112 +340,40 @@ export const runReviewAgent = async ({
 
   logger.info("Review agent stage started", { ...context, stage: "diff" })
   await recorder.appendEvent("stage.started", { stage: "diff" })
-  const files = await listPullRequestFiles({
-    repo: repository,
-    installationId,
-    pullRequestNumber: pullRequest.number,
-  })
-  const filteredFiles = filterPullRequestFiles(
-    files,
-    reviewConfig.pathIncludePatterns,
-    reviewConfig.pathExcludePatterns
-  )
-  const visibleFiles = annotatePullRequestFilesForReview(
-    files,
-    reviewConfig.pathIncludePatterns,
-    reviewConfig.pathExcludePatterns
-  )
-  const omittedFiles = visibleFiles.filter((file) => file.omittedReason)
-  const diff = serializePullRequestFiles(visibleFiles)
-  const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)
-  const diffChangedLineCount = countPullRequestChangedLines(filteredFiles)
+  const {
+    fetchedFileCount,
+    filteredFiles,
+    omittedFiles,
+    diff,
+    unifiedDiff,
+    additions,
+    deletions,
+    diffChangedLineCount,
+  } = preflight
   await recorder.writeJson("review-config.json", reviewConfig)
-  await recorder.writeJson("github-files.json", files)
   await recorder.writeJson("filtered-files.json", filteredFiles)
-  await recorder.writeJson("visible-files.json", visibleFiles)
   await recorder.writeJson("omitted-files.json", omittedFiles)
   await recorder.writeText("context/diff.md", diff)
   await recorder.writeText("context/unified.diff", unifiedDiff)
   logger.info("Review agent stage completed", {
     ...context,
     stage: "diff",
-    fetchedFileCount: files.length,
+    fetchedFileCount,
     filteredFileCount: filteredFiles.length,
     omittedFileCount: omittedFiles.length,
+    additions,
+    deletions,
     diffChangedLineCount,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "diff",
-    fetchedFileCount: files.length,
+    fetchedFileCount,
     filteredFileCount: filteredFiles.length,
     omittedFileCount: omittedFiles.length,
+    additions,
+    deletions,
     diffChangedLineCount,
   })
-
-  const skipReason =
-    filteredFiles.length === 0
-      ? [
-          "No reviewable file contents matched this repository's path filters.",
-          ...(omittedFiles.length > 0
-            ? [
-                "",
-                "Omitted changed files:",
-                ...omittedFiles.map(
-                  (file) => `- ${file.filename}: ${file.omittedReason}`
-                ),
-              ]
-            : []),
-        ].join("\n")
-      : getDiffSkipReason(
-          diffChangedLineCount,
-          reviewConfig.maxReviewChangedLines
-        )
-
-  if (skipReason) {
-    await updateReviewComment({
-      repo: repository,
-      installationId,
-      commentId,
-      pullRequestId: pullRequest.id,
-      reviewRunId: reviewCommentRunId,
-      body: `## Review summary\n\n${skipReason}`,
-    })
-    const result = {
-      kind: "skipped" as const,
-      triggerSource,
-      modelId: REVIEW_MODEL,
-      fetchedFileCount: files.length,
-      filteredFileCount: filteredFiles.length,
-      diffChangedLineCount,
-      commentId,
-      skipReason,
-      startedAt: startedAtIso,
-      completedAt: new Date().toISOString(),
-      durationMs: Date.now() - startedAt,
-    }
-    await recorder.writeJson("skip.json", result)
-    await recorder.writeJson("summary.json", {
-      status: "skipped",
-      reviewRunId,
-      repository: repository.fullName,
-      pullRequestNumber: pullRequest.number,
-      modelId: REVIEW_MODEL,
-      verifierModelId: REVIEW_VERIFIER_MODEL,
-      fetchedFileCount: files.length,
-      filteredFileCount: filteredFiles.length,
-      diffChangedLineCount,
-      skipReason,
-      counts: recorder.counts(),
-      durationMs: result.durationMs,
-    })
-    await recorder.writeText(
-      "published-comment.md",
-      `## Review summary\n\n${skipReason}`
-    )
-    await recorder.appendEvent("review.skipped", result)
-    logger.info("Review agent skipped", { ...context, ...result })
-    return result
-  }
 
   logger.info("Review agent stage started", { ...context, stage: "runtime" })
   await recorder.appendEvent("stage.started", { stage: "runtime" })
@@ -1494,7 +1428,7 @@ ${affectedSymbols}`
     triggerSource,
     modelId: REVIEW_MODEL,
     verifierModelId: REVIEW_VERIFIER_MODEL,
-    fetchedFileCount: files.length,
+    fetchedFileCount,
     filteredFileCount: filteredFiles.length,
     diffChangedLineCount,
     commentId,
@@ -1519,7 +1453,7 @@ ${affectedSymbols}`
     pullRequestNumber: pullRequest.number,
     modelId: REVIEW_MODEL,
     verifierModelId: REVIEW_VERIFIER_MODEL,
-    fetchedFileCount: files.length,
+    fetchedFileCount,
     filteredFileCount: filteredFiles.length,
     diffChangedLineCount,
     semanticEnabled,

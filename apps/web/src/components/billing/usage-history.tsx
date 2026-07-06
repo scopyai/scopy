@@ -1,6 +1,4 @@
-import { Fragment, useState } from "react"
-import { ChevronDownIcon } from "lucide-react"
-import { Badge } from "@workspace/ui/components/badge"
+import { useState } from "react"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
@@ -10,18 +8,14 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table"
-import { cn } from "@workspace/ui/lib/utils"
 import {
   useWorkspaceBillingUsage,
   useWorkspaceUsageTrend,
 } from "@/hooks/use-workspace-billing-usage"
 import {
-  formatBillingMode,
-  formatBytes,
   formatDate,
-  formatUsageBalance,
+  formatReviewCredits,
 } from "@/lib/billing-format"
-import { tagToneClassName } from "@/lib/tag-tones"
 import { HistoryPagination } from "./history-pagination"
 import { UsageTrendChart } from "./usage-trend-chart"
 
@@ -31,124 +25,12 @@ type UsageItem = NonNullable<
   ReturnType<typeof useWorkspaceBillingUsage>["data"]
 >["items"][number]
 
-function modelBadges(item: UsageItem) {
-  const ids = new Set<string>()
-  for (const model of item.models) {
-    if (model.modelId && model.modelId !== "unknown") ids.add(model.modelId)
-  }
-  if (ids.size === 0 && item.modelId) ids.add(item.modelId)
-  return Array.from(ids)
-}
+const formatNumber = (value: number) => value.toLocaleString("en-US")
 
-function shortModel(modelId: string) {
-  const parts = modelId.split("/")
-  return parts.at(-1) || modelId
-}
-
-function UsageBreakdown({ item }: { item: UsageItem }) {
-  const vectorTotal =
-    item.vectorWriteCostMicrocents +
-    item.vectorQueryCostMicrocents +
-    item.vectorNetworkCostMicrocents
-
-  return (
-    <div className="grid gap-5 bg-muted/30 px-4 py-4 text-sm md:grid-cols-[1.2fr_1fr]">
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Model costs
-        </span>
-        <div className="flex flex-col gap-1">
-          {item.models.length === 0 ? (
-            <span className="text-muted-foreground">No model usage recorded</span>
-          ) : (
-            item.models.map((model, index) => (
-              <div
-                key={`${model.stage}-${index}`}
-                className="flex items-center justify-between gap-4"
-              >
-                <span className="text-muted-foreground">
-                  <span className="text-foreground">
-                    {shortModel(model.modelId)}
-                  </span>{" "}
-                  · {model.stage}
-                  {model.provider ? ` · ${model.provider}` : ""}
-                </span>
-                <span className="tabular-nums">
-                  {formatUsageBalance(model.costMicrocents)}
-                </span>
-              </div>
-            ))
-          )}
-          <div className="mt-1 flex items-center justify-between gap-4 border-t pt-1">
-            <span className="text-muted-foreground">LLM subtotal</span>
-            <span className="tabular-nums">
-              {formatUsageBalance(item.llmCostMicrocents)}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Embeddings &amp; vector search
-        </span>
-        {vectorTotal === 0 ? (
-          <span className="text-muted-foreground">
-            No vector indexing for this review
-          </span>
-        ) : (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">
-                Index writes · {formatBytes(item.vectorWriteBytes)}
-              </span>
-              <span className="tabular-nums">
-                {formatUsageBalance(item.vectorWriteCostMicrocents)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">
-                Queries · {item.vectorQueryCount.toLocaleString("en-US")}
-              </span>
-              <span className="tabular-nums">
-                {formatUsageBalance(item.vectorQueryCostMicrocents)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">
-                Network · {formatBytes(item.vectorNetworkBytes)}
-              </span>
-              <span className="tabular-nums">
-                {formatUsageBalance(item.vectorNetworkCostMicrocents)}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1 border-t pt-4 md:col-span-2">
-        <div className="flex items-center justify-between gap-4 font-medium">
-          <span>Total charged</span>
-          <span className="tabular-nums">
-            {formatUsageBalance(item.totalCostMicrocents)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-4 text-muted-foreground">
-          <span>Deducted from</span>
-          <span>Plan balance</span>
-        </div>
-        {item.balanceAfter !== null ? (
-          <div className="flex items-center justify-between gap-4 text-muted-foreground">
-            <span>Balance after</span>
-            <span className="tabular-nums">
-              {formatUsageBalance(item.balanceAfter)}
-            </span>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  )
-}
+const reviewLabel = (item: UsageItem) =>
+  item.repositoryName
+    ? `${item.repositoryName}${item.pullRequestNumber ? ` #${item.pullRequestNumber}` : ""}`
+    : "Review"
 
 export function UsageHistory({
   workspaceId,
@@ -156,7 +38,6 @@ export function UsageHistory({
   workspaceId: string | null | undefined
 }) {
   const [page, setPage] = useState(1)
-  const [expanded, setExpanded] = useState<string | null>(null)
   const { data, isFetching, isPending } = useWorkspaceBillingUsage(
     workspaceId,
     page,
@@ -174,7 +55,7 @@ export function UsageHistory({
         <div className="flex flex-col gap-0.5">
           <h3 className="text-sm font-medium">Review usage</h3>
           <p className="text-xs text-muted-foreground">
-            Cost breakdown for each review Scopy ran
+            Pull request reviews and credit charges for this workspace
           </p>
         </div>
         <div className="flex flex-col gap-4">
@@ -190,107 +71,70 @@ export function UsageHistory({
             </p>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8" />
-                    <TableHead>Date</TableHead>
-                    <TableHead>Review</TableHead>
-                    <TableHead>Models</TableHead>
-                    <TableHead>Deducted from</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.items.map((item) => {
-                    const isOpen = expanded === item.id
-                    const badges = modelBadges(item)
-                    return (
-                      <Fragment key={item.id}>
-                        <TableRow
-                          className="cursor-pointer"
-                          aria-expanded={isOpen}
-                          onClick={() =>
-                            setExpanded(isOpen ? null : item.id)
-                          }
-                        >
-                          <TableCell>
-                            <ChevronDownIcon
-                              className={cn(
-                                "size-4 text-muted-foreground transition-transform",
-                                isOpen ? "" : "-rotate-90",
-                              )}
-                            />
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-muted-foreground">
-                            {formatDate(item.createdAt)}
-                          </TableCell>
-                          <TableCell className="max-w-64">
-                            {item.repositoryName ? (
-                              <div className="flex flex-col">
-                                <span className="truncate font-medium">
-                                  {item.repositoryName}
-                                  {item.pullRequestNumber
-                                    ? ` #${item.pullRequestNumber}`
-                                    : ""}
-                                </span>
-                                {item.pullRequestTitle ? (
-                                  <span className="truncate text-xs text-muted-foreground">
-                                    {item.pullRequestTitle}
-                                  </span>
-                                ) : null}
-                              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Repository / PR</TableHead>
+                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead className="text-right">Additions</TableHead>
+                      <TableHead className="text-right">Deletions</TableHead>
+                      <TableHead className="text-right">Credits</TableHead>
+                      <TableHead className="text-right">
+                        Balance after
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {formatDate(item.createdAt)}
+                        </TableCell>
+                        <TableCell className="max-w-80">
+                          <div className="flex flex-col">
+                            {item.pullRequestUrl ? (
+                              <a
+                                href={item.pullRequestUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="truncate font-medium hover:underline"
+                              >
+                                {reviewLabel(item)}
+                              </a>
                             ) : (
-                              <span className="text-muted-foreground">
-                                Review
+                              <span className="truncate font-medium">
+                                {reviewLabel(item)}
                               </span>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {badges.slice(0, 2).map((modelId) => (
-                                <Badge
-                                  key={modelId}
-                                  variant="outline"
-                                  className={tagToneClassName(modelId)}
-                                >
-                                  {shortModel(modelId)}
-                                </Badge>
-                              ))}
-                              {badges.length > 2 ? (
-                                <Badge
-                                  variant="outline"
-                                  className={tagToneClassName("default")}
-                                >
-                                  +{badges.length - 2}
-                                </Badge>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={tagToneClassName("platform")}
-                            >
-                              {formatBillingMode()}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatUsageBalance(item.totalCostMicrocents)}
-                          </TableCell>
-                        </TableRow>
-                        {isOpen ? (
-                          <TableRow className="hover:bg-transparent">
-                            <TableCell colSpan={6} className="p-0">
-                              <UsageBreakdown item={item} />
-                            </TableCell>
-                          </TableRow>
-                        ) : null}
-                      </Fragment>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+                            {item.pullRequestTitle ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {item.pullRequestTitle}
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatNumber(item.reviewableChangedLines)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                          +{formatNumber(item.reviewableAdditions)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-rose-600 dark:text-rose-400">
+                          -{formatNumber(item.reviewableDeletions)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatReviewCredits(item.creditsCharged)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {formatReviewCredits(item.creditBalanceAfter)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
               <HistoryPagination
                 page={page}
