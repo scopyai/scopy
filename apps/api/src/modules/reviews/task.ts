@@ -8,9 +8,7 @@ import {
   refundReviewCredits,
   reserveReviewCredits,
 } from "../billing/usage"
-import {
-  calculateReviewCredits,
-} from "@workspace/billing/plans"
+import { calculateReviewCredits } from "@workspace/billing/plans"
 import {
   annotatePullRequestFilesForReview,
   countPullRequestChangedLines,
@@ -233,7 +231,9 @@ export const executeReviewPullRequest = async (
     maxAttempts,
   })
 
+  const workspaceId = run.pullRequest.repository.workspace.id
   if (run.pullRequest.headSha !== run.headSha) {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     await db
       .update(reviewRun)
       .set({
@@ -252,6 +252,7 @@ export const executeReviewPullRequest = async (
   }
 
   if (!run.pullRequest.repository.enabled) {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     const completedAt = new Date()
     await db
       .update(reviewRun)
@@ -285,7 +286,6 @@ export const executeReviewPullRequest = async (
 
   await syncReviewCheck({ run, logger })
 
-  const workspaceId = run.pullRequest.repository.workspace.id
   const triggerSource =
     typeof run.result?.triggerSource === "string"
       ? run.result.triggerSource
@@ -304,6 +304,7 @@ export const executeReviewPullRequest = async (
       baseRef: run.pullRequest.baseRef,
     })
   ) {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     const completedAt = new Date()
     await db
       .update(reviewRun)
@@ -344,6 +345,7 @@ export const executeReviewPullRequest = async (
     resultKind: string
     extraResult?: Record<string, unknown>
   }) => {
+    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
     let commentId: number | undefined
     try {
       commentId = await findOrCreateReviewComment({
@@ -444,9 +446,7 @@ export const executeReviewPullRequest = async (
     return
   }
 
-  const creditsRequired = calculateReviewCredits(
-    preflight.diffChangedLineCount
-  )
+  const creditsRequired = calculateReviewCredits(preflight.diffChangedLineCount)
   const creditReservation = await reserveReviewCredits({
     workspaceId,
     reviewRunId: run.id,
