@@ -19,8 +19,8 @@ export type ReadRepositoryFileOutput = {
   bytes: number
 }
 
-const DEFAULT_MAX_LINES = 80
-const HARD_MAX_LINES = 200
+const DEFAULT_MAX_LINES = 300
+const HARD_MAX_LINES = 800
 const MAX_FILE_BYTES = 1024 * 1024
 const MAX_OUTPUT_BYTES = 40 * 1024
 

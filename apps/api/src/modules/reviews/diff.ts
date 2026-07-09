@@ -31,11 +31,67 @@ export const filterPullRequestFiles = (
       !getPullRequestFileOmittedReason(file, includePatterns, excludePatterns)
   )
 
+export const builtinExcludePatterns = [
+  // lockfiles
+  "**/pnpm-lock.yaml",
+  "**/package-lock.json",
+  "**/yarn.lock",
+  "**/bun.lockb",
+  "**/bun.lock",
+  "**/Cargo.lock",
+  "**/poetry.lock",
+  "**/uv.lock",
+  "**/Gemfile.lock",
+  "**/composer.lock",
+  "**/go.sum",
+  // images, fonts, media, archives
+  "**/*.png",
+  "**/*.jpg",
+  "**/*.jpeg",
+  "**/*.gif",
+  "**/*.webp",
+  "**/*.avif",
+  "**/*.ico",
+  "**/*.icns",
+  "**/*.bmp",
+  "**/*.woff",
+  "**/*.woff2",
+  "**/*.ttf",
+  "**/*.otf",
+  "**/*.eot",
+  "**/*.mp3",
+  "**/*.mp4",
+  "**/*.webm",
+  "**/*.wav",
+  "**/*.pdf",
+  "**/*.zip",
+  "**/*.gz",
+  "**/*.tar",
+  "**/*.jar",
+  "**/*.wasm",
+  // generated code artifacts
+  "**/*.min.js",
+  "**/*.min.css",
+  "**/*.map",
+  "**/__snapshots__/**",
+  "**/*.snap",
+  "**/drizzle/meta/**",
+  "**/node_modules/**",
+  "**/vendor/**",
+]
+
 export const getPullRequestFileOmittedReason = (
   file: PullRequestFile,
   includePatterns: string[],
   excludePatterns: string[]
 ) => {
+  const builtinPattern = builtinExcludePatterns.find((pattern) =>
+    matchesPattern(file.filename, pattern)
+  )
+  if (builtinPattern) {
+    return `content omitted by built-in exclude pattern for binary or generated files: ${builtinPattern}`
+  }
+
   if (
     includePatterns.length > 0 &&
     !includePatterns.some((pattern) => matchesPattern(file.filename, pattern))

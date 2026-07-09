@@ -38,15 +38,22 @@ import {
   buildReviewFindingDeduplicationPrompt,
   buildMainReviewPrompt,
   buildNaturalLanguageLinterPrompt,
+  buildReportComposerPrompt,
+  buildReportSummaryPrompt,
   buildReviewVerifierPrompt,
   mainReviewAgentInstructions,
   mainReviewAgentWithVerificationInstructions,
+  mainReviewReportSchema,
   naturalLanguageLinterInstructions,
   naturalLanguageLinterOutputSchema,
   renderAffectedSymbols,
+  renderChangedFilesOverview,
   renderReviewSummaryComment,
   renderSemanticCoverage,
-  reviewReportSchema,
+  reportComposerInstructions,
+  reportComposerOutputSchema,
+  reportSummaryInstructions,
+  reportSummaryOutputSchema,
   reviewSubagentInstructions,
   reviewSubagentOutputSchema,
   reviewSuspicionDecisionSchema,
@@ -91,6 +98,15 @@ const verificationModelProviderOptions = REVIEW_VERIFIER_MODEL.startsWith(
       openrouter: {
         reasoning: {
           effort: reviewAgentConfig.verification.reasoningEffort,
+        },
+      },
+    }
+  : undefined
+const composerModelProviderOptions = REVIEW_VERIFIER_MODEL.startsWith("openai/")
+  ? {
+      openrouter: {
+        reasoning: {
+          effort: reviewAgentConfig.reportComposer.reasoningEffort,
         },
       },
     }
@@ -173,7 +189,49 @@ const openRouterChat = (
       })
     : openrouter.chat(modelId)
 
-const toolText = (text: string, maxBytes = 90_000) => {
+const extractFirstJsonValue = (text: string) => {
+  const start = text.search(/[{[]/)
+  if (start === -1) return text
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (character === "\\") escaped = true
+      else if (character === '"') inString = false
+      continue
+    }
+    if (character === '"') {
+      inString = true
+      continue
+    }
+    if (character === "{" || character === "[") depth += 1
+    else if (character === "}" || character === "]") {
+      depth -= 1
+      if (depth === 0) return text.slice(start, index + 1)
+    }
+  }
+  return text
+}
+
+const repairedJsonOutput = <
+  T extends {
+    parseCompleteOutput: (args: { text: string }, context: never) => unknown
+  },
+>(
+  output: T
+): T => ({
+  ...output,
+  parseCompleteOutput: ((args: { text: string }, context: never) =>
+    output.parseCompleteOutput(
+      { ...args, text: extractFirstJsonValue(args.text) },
+      context
+    )) as T["parseCompleteOutput"],
+})
+
+const toolText = (text: string, maxBytes = 20_000) => {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
   let output = text
   while (Buffer.byteLength(output, "utf8") > maxBytes) {
@@ -256,8 +314,7 @@ const recordLlmBilling = async (
         ...existingEntry,
         costUsd: (existingEntry.costUsd ?? 0) + entry.costUsd,
         costMicroUsd: existingEntry.costMicroUsd + entry.costMicroUsd,
-        costMicrocents:
-          existingEntry.costMicrocents + entry.costMicrocents,
+        costMicrocents: existingEntry.costMicrocents + entry.costMicrocents,
         ...(entry.costStatus || existingEntry.costStatus
           ? {
               costStatus:
@@ -496,6 +553,9 @@ export const runReviewAgent = async ({
   const verificationProviderOptions = openrouter
     ? verificationModelProviderOptions
     : undefined
+  const composerProviderOptions = openrouter
+    ? composerModelProviderOptions
+    : undefined
   const llmBilling: Record<string, unknown> = {}
   const recordBilling = (stage: string, modelId: string, generation: unknown) =>
     recordLlmBilling(
@@ -676,11 +736,12 @@ export const runReviewAgent = async ({
   const createRepositoryTools = (scope: string) => {
     const base = {
       read_file: tool({
-        description: "Read numbered lines from any repository file.",
+        description:
+          "Read numbered lines from any repository file. Reads 300 lines by default and up to 800; prefer one large read over paging through a file in small chunks.",
         inputSchema: z.object({
           file: z.string().min(1),
           startLine: z.number().int().positive().optional(),
-          maxLines: z.number().int().positive().max(200).optional(),
+          maxLines: z.number().int().positive().max(800).optional(),
         }),
         execute: async ({ file, startLine, maxLines }) => {
           const input = { file, startLine, maxLines }
@@ -809,15 +870,12 @@ export const runReviewAgent = async ({
   const verifierUsages: unknown[] = []
   const deduplicationUsages: unknown[] = []
   const linterUsages: unknown[] = []
+  const composerUsages: unknown[] = []
   const allSuspicionIds = new Set<string>()
   const mainReviewSuspicionIds = new Set<string>()
   const verifierDecisions: Array<{
     suspicionId: string
-    decision:
-      | "accepted"
-      | "not_bug"
-      | "dropped_low_value"
-      | "needs_main_review"
+    decision: "accepted" | "not_bug" | "dropped_low_value" | "needs_main_review"
     reviewPriority?: "critical" | "high" | "medium" | "low"
     confidence: number
     reason: string
@@ -859,6 +917,27 @@ export const runReviewAgent = async ({
     )
   }
   let spawnBatch = 0
+  type TerminalRejection = {
+    taskId: string
+    suspicion: {
+      suspicionId: string
+      file: string
+      startLine: number
+      endLine: number
+      suspicion: string
+      evidence: string
+    }
+  }
+  const terminalRejectionsByBatch = new Map<number, TerminalRejection[]>()
+  const recordTerminalRejection = (
+    batch: number,
+    rejection: TerminalRejection
+  ) => {
+    terminalRejectionsByBatch.set(batch, [
+      ...(terminalRejectionsByBatch.get(batch) ?? []),
+      rejection,
+    ])
+  }
   const verifySubagentSuspicions = async ({
     batch,
     safeId,
@@ -874,6 +953,7 @@ export const runReviewAgent = async ({
       startLine: number
       endLine: number
       suspicion: string
+      evidence: string
     }>
   }) => {
     if (!verificationLayerEnabled) {
@@ -954,12 +1034,14 @@ export const runReviewAgent = async ({
             `verifier.${batch}.${safeId}.${attempt}`
           ),
           providerOptions: verificationProviderOptions,
-          output: Output.object({
-            schema: verifierOutputSchema,
-            name: "verified_review_suspicions",
-            description:
-              "One strict verifier verdict for every supplied suspicion",
-          }),
+          output: repairedJsonOutput(
+            Output.object({
+              schema: verifierOutputSchema,
+              name: "verified_review_suspicions",
+              description:
+                "One strict verifier verdict for every supplied suspicion",
+            })
+          ),
           stopWhen: stepCountIs(reviewAgentConfig.verification.maxSteps),
           maxRetries: 2,
           onStepFinish: async (step) => recorder.recordStep(step),
@@ -1033,6 +1115,9 @@ export const runReviewAgent = async ({
                 findingIndex: null,
               })
               droppedLowValueCount += 1
+              if (suspicion) {
+                recordTerminalRejection(batch, { taskId: task.id, suspicion })
+              }
             }
             continue
           }
@@ -1054,6 +1139,13 @@ export const runReviewAgent = async ({
               finding: compactFinding(finding),
             })
             continue
+          }
+          const terminalSuspicion = suspicionsById.get(verdict.suspicionId)
+          if (terminalSuspicion) {
+            recordTerminalRejection(batch, {
+              taskId: task.id,
+              suspicion: terminalSuspicion,
+            })
           }
           if (verdict.verdict === "dropped_low_value") {
             verifierDecisions.push({
@@ -1153,6 +1245,7 @@ export const runReviewAgent = async ({
           reason: `${reason}; not sent to main because failed-open escalation is capped at ${reviewAgentConfig.verification.maxFailedOpenEscalationsPerTask} items per task.`,
           findingIndex: null,
         })
+        recordTerminalRejection(batch, { taskId: task.id, suspicion })
       }
     }
     await recorder.appendEvent("subagent.verification.failed_open", {
@@ -1199,12 +1292,9 @@ export const runReviewAgent = async ({
         batch,
         tasks: tasks.map((task) => task.id),
       })
-      const runTask = async (task: { id: string; objective: string }) => {
-        const safeId = `${String(tasks.indexOf(task) + 1).padStart(2, "0")}-${safePathSegment(task.id)}`
-        const prompt = `Assigned exploration:
-${task.objective}
-
-Pull request title: ${pullRequest.title}
+      // The shared block must stay byte-identical across tasks and lead the
+      // prompt so concurrent subagents share a provider prompt-cache prefix.
+      const sharedContext = `Pull request title: ${pullRequest.title}
 Pull request description: ${pullRequest.body ?? "(none)"}
 Base branch: ${pullRequest.baseRef}
 Head branch: ${pullRequest.headRef}
@@ -1217,6 +1307,12 @@ ${diff}
 
 Changed symbol index:
 ${affectedSymbols}`
+      const runTask = async (task: { id: string; objective: string }) => {
+        const safeId = `${String(tasks.indexOf(task) + 1).padStart(2, "0")}-${safePathSegment(task.id)}`
+        const prompt = `${sharedContext}
+
+Assigned exploration:
+${task.objective}`
         await recorder.writeText(
           `subagents/batch-${batch}/${safeId}/prompt.txt`,
           prompt
@@ -1231,11 +1327,13 @@ ${affectedSymbols}`
                 `subagent.${batch}.${safeId}.${attempt}`
               ),
               providerOptions: subagentProviderOptions,
-              output: Output.object({
-                schema: reviewSubagentOutputSchema,
-                name: "review_suspicions",
-                description: "Unfiltered suspicious code locations",
-              }),
+              output: repairedJsonOutput(
+                Output.object({
+                  schema: reviewSubagentOutputSchema,
+                  name: "review_suspicions",
+                  description: "Unfiltered suspicious code locations",
+                })
+              ),
               stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
               maxRetries: 2,
               onStepFinish: async (step) => recorder.recordStep(step),
@@ -1313,9 +1411,111 @@ ${affectedSymbols}`
       }
       const completed = results.filter((item) => !("error" in item))
       const failures = results.filter((item) => "error" in item)
+      // Agreement between independent explorers is a strong truth signal the
+      // per-task verifier never sees: each verifier call only judges its own
+      // task's suspicions, so it can reject the same real bug copy by copy.
+      // When two or more tasks flagged an overlapping location and every copy
+      // was terminally rejected, override the verifier and escalate one
+      // representative to the main reviewer.
+      const consensusEscalations: Array<
+        TerminalRejection["suspicion"] & {
+          taskId: string
+          supportingTaskIds: string[]
+        }
+      > = []
+      if (verificationLayerEnabled) {
+        const rejections = terminalRejectionsByBatch.get(batch) ?? []
+        const groups: Array<{
+          file: string
+          minStart: number
+          maxEnd: number
+          items: TerminalRejection[]
+        }> = []
+        for (const rejection of rejections) {
+          const group = groups.find(
+            (candidate) =>
+              candidate.file === rejection.suspicion.file &&
+              rejection.suspicion.startLine <= candidate.maxEnd &&
+              candidate.minStart <= rejection.suspicion.endLine
+          )
+          if (group) {
+            group.items.push(rejection)
+            group.minStart = Math.min(
+              group.minStart,
+              rejection.suspicion.startLine
+            )
+            group.maxEnd = Math.max(group.maxEnd, rejection.suspicion.endLine)
+          } else {
+            groups.push({
+              file: rejection.suspicion.file,
+              minStart: rejection.suspicion.startLine,
+              maxEnd: rejection.suspicion.endLine,
+              items: [rejection],
+            })
+          }
+        }
+        const approvedCoversGroup = (group: {
+          file: string
+          minStart: number
+          maxEnd: number
+        }) =>
+          verifierApprovedFindings.some(
+            (finding) =>
+              finding.file === group.file &&
+              finding.startLine <= group.maxEnd &&
+              group.minStart <= finding.endLine
+          )
+        const consensusGroups = groups
+          .filter(
+            (group) =>
+              new Set(group.items.map((item) => item.taskId)).size >= 2 &&
+              !approvedCoversGroup(group)
+          )
+          .sort((first, second) => second.items.length - first.items.length)
+          .slice(
+            0,
+            reviewAgentConfig.verification.maxConsensusEscalationsPerBatch
+          )
+        for (const group of consensusGroups) {
+          const representative = [...group.items].sort(
+            (first, second) =>
+              second.suspicion.evidence.length - first.suspicion.evidence.length
+          )[0]!
+          const supportingTaskIds = [
+            ...new Set(group.items.map((item) => item.taskId)),
+          ]
+          mainReviewSuspicionIds.add(representative.suspicion.suspicionId)
+          const decision = verifierDecisions.find(
+            (entry) =>
+              entry.suspicionId === representative.suspicion.suspicionId
+          )
+          if (decision) {
+            decision.decision = "needs_main_review"
+            decision.reason = `Consensus escalation: ${supportingTaskIds.length} subagent tasks (${supportingTaskIds.join(", ")}) independently flagged this location and the verifier rejected each copy separately. Original verifier reason: ${decision.reason}`
+          }
+          consensusEscalations.push({
+            ...representative.suspicion,
+            taskId: representative.taskId,
+            supportingTaskIds,
+          })
+        }
+        if (consensusEscalations.length > 0) {
+          await recorder.appendEvent("subagents.consensus.escalated", {
+            batch,
+            escalations: consensusEscalations.map((escalation) => ({
+              suspicionId: escalation.suspicionId,
+              file: escalation.file,
+              startLine: escalation.startLine,
+              endLine: escalation.endLine,
+              supportingTaskIds: escalation.supportingTaskIds,
+            })),
+          })
+        }
+      }
       const output = {
         results: completed,
         failures,
+        ...(verificationLayerEnabled ? { consensusEscalations } : {}),
       }
       await recorder.writeJson(`subagents/batch-${batch}/result.json`, output)
       await recorder.recordToolCall({
@@ -1399,12 +1599,14 @@ ${affectedSymbols}`
         instructions: naturalLanguageLinterInstructions,
         tools: {},
         providerOptions: subagentProviderOptions,
-        output: Output.object({
-          schema: naturalLanguageLinterOutputSchema,
-          name: "natural_language_linter_findings",
-          description:
-            "Natural-language rule findings grouped by assigned file",
-        }),
+        output: repairedJsonOutput(
+          Output.object({
+            schema: naturalLanguageLinterOutputSchema,
+            name: "natural_language_linter_findings",
+            description:
+              "Natural-language rule findings grouped by assigned file",
+          })
+        ),
         stopWhen: stepCountIs(reviewAgentConfig.naturalLanguageLinter.maxSteps),
         maxRetries: 2,
         onStepFinish: async (step) => recorder.recordStep(step),
@@ -1496,13 +1698,213 @@ ${affectedSymbols}`
     })
     return findings
   }
+  const runReportComposer = async (): Promise<{
+    summary: string
+    changedFiles: ReviewReport["changedFiles"]
+  }> => {
+    const fallbackFileSummary = (file: PullRequestFile) => ({
+      file: file.filename,
+      summary: `${file.status} file with ${file.additions} added and ${file.deletions} deleted lines.`,
+    })
+    const omittedFileSummaries = omittedFiles.map((file) => ({
+      file: file.filename,
+      summary: file.omittedReason ?? "Patch omitted.",
+    }))
+    const fallbackSummary = `${pullRequest.title}${pullRequest.body ? `\n\n${pullRequest.body}` : ""}`
 
+    if (filteredFiles.length === 0) {
+      return { summary: fallbackSummary, changedFiles: omittedFileSummaries }
+    }
+
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "report-composer",
+      files: filteredFiles.length,
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "report-composer",
+      files: filteredFiles.length,
+    })
+
+    const runBatch = async (
+      batch: PullRequestFile[],
+      index: number
+    ): Promise<ReviewReport["changedFiles"]> => {
+      const batchId = String(index + 1).padStart(2, "0")
+      const assignedFiles = batch.map((file) => file.filename)
+      const prompt = buildReportComposerPrompt({
+        diff: serializePullRequestFiles(batch),
+      })
+      await recorder.writeText(
+        `report-composer/batch-${batchId}/prompt.txt`,
+        prompt
+      )
+      try {
+        const agent = new ToolLoopAgent({
+          model: subagentModel,
+          instructions: reportComposerInstructions,
+          tools: {},
+          providerOptions: composerProviderOptions,
+          output: repairedJsonOutput(
+            Output.object({
+              schema: reportComposerOutputSchema,
+              name: "changed_file_summaries",
+              description: "One concise change summary per assigned file",
+            })
+          ),
+          stopWhen: stepCountIs(reviewAgentConfig.reportComposer.maxSteps),
+          maxRetries: 2,
+          onStepFinish: async (step) => recorder.recordStep(step),
+        })
+        const generation = await agent.generate({ prompt })
+        composerUsages.push(generation.totalUsage)
+        await recordBilling(
+          "report_composer",
+          REVIEW_VERIFIER_MODEL,
+          generation
+        )
+        const output = reportComposerOutputSchema.parse(generation.output)
+        await recorder.writeJson(
+          `report-composer/batch-${batchId}/output.json`,
+          {
+            assignedFiles,
+            finishReason: generation.finishReason,
+            usage: generation.totalUsage,
+            output,
+          }
+        )
+        const outputByFile = new Map(
+          output.files.map((file) => [file.file, file])
+        )
+        return batch.map(
+          (file) => outputByFile.get(file.filename) ?? fallbackFileSummary(file)
+        )
+      } catch (error) {
+        await recorder.writeJson(
+          `report-composer/batch-${batchId}/error.json`,
+          { error }
+        )
+        await recorder.appendEvent("report_composer.batch.failed_open", {
+          batch: batchId,
+          files: assignedFiles.length,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return batch.map(fallbackFileSummary)
+      }
+    }
+
+    const batches = batchNaturalLanguageLinterFiles(filteredFiles, 8)
+    const changedFiles: ReviewReport["changedFiles"] = []
+    for (let offset = 0; offset < batches.length; offset += 4) {
+      changedFiles.push(
+        ...(
+          await Promise.all(
+            batches
+              .slice(offset, offset + 4)
+              .map((batch, index) => runBatch(batch, offset + index))
+          )
+        ).flat()
+      )
+    }
+    changedFiles.push(...omittedFileSummaries)
+
+    let summary = fallbackSummary
+    try {
+      const prompt = buildReportSummaryPrompt({
+        title: pullRequest.title,
+        body: pullRequest.body,
+        baseRef: pullRequest.baseRef,
+        headRef: pullRequest.headRef,
+        fileSummaries: changedFiles,
+      })
+      await recorder.writeText("report-composer/summary-prompt.txt", prompt)
+      const agent = new ToolLoopAgent({
+        model: subagentModel,
+        instructions: reportSummaryInstructions,
+        tools: {},
+        providerOptions: composerProviderOptions,
+        output: repairedJsonOutput(
+          Output.object({
+            schema: reportSummaryOutputSchema,
+            name: "review_summary",
+            description: "The summary section of the pull request review",
+          })
+        ),
+        stopWhen: stepCountIs(reviewAgentConfig.reportComposer.maxSteps),
+        maxRetries: 2,
+        onStepFinish: async (step) => recorder.recordStep(step),
+      })
+      const generation = await agent.generate({ prompt })
+      composerUsages.push(generation.totalUsage)
+      await recordBilling("report_composer", REVIEW_VERIFIER_MODEL, generation)
+      summary = reportSummaryOutputSchema.parse(generation.output).summary
+    } catch (error) {
+      await recorder.writeJson("report-composer/summary-error.json", { error })
+      await recorder.appendEvent("report_composer.summary.failed_open", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+
+    await recorder.writeJson("report-composer/result.json", {
+      summary,
+      changedFiles,
+    })
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "report-composer",
+      batches: batches.length,
+      changedFiles: changedFiles.length,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "report-composer",
+      batches: batches.length,
+      changedFiles: changedFiles.length,
+    })
+    return { summary, changedFiles }
+  }
+
+  const changedFilesOverview = renderChangedFilesOverview({
+    files: filteredFiles,
+    omittedFiles,
+    changedLinesByFile,
+  })
+  const patchesByFile = new Map(
+    filteredFiles.map((file) => [file.filename, file])
+  )
+  const omittedByFile = new Map(
+    omittedFiles.map((file) => [file.filename, file])
+  )
+  const readPatch = tool({
+    description:
+      "Read the full diff patch for one changed file in this pull request.",
+    inputSchema: z.object({ file: z.string().min(1) }),
+    execute: async ({ file }) => {
+      const input = { file }
+      const entry = patchesByFile.get(file)
+      const omitted = omittedByFile.get(file)
+      const output = entry
+        ? { file, patch: toolText(serializePullRequestFiles([entry])) }
+        : omitted
+          ? { file, patch: omitted.omittedReason ?? "Patch omitted." }
+          : {
+              file,
+              error:
+                "Not a changed file in this pull request. Use the exact repository-relative path from the changed files overview.",
+            }
+      await recorder.recordToolCall({
+        name: "main.read_patch",
+        input,
+        output,
+      })
+      return output
+    },
+  })
   const mainPrompt = buildMainReviewPrompt({
     title: pullRequest.title,
     body: pullRequest.body,
     baseRef: pullRequest.baseRef,
     headRef: pullRequest.headRef,
-    diff,
+    changedFilesOverview,
     affectedSymbols,
     repositoryContext: preparedRepositoryContext.markdown,
   })
@@ -1517,13 +1919,14 @@ ${affectedSymbols}`
   await recorder.writeJson("context/main-review-prompt-stats.json", {
     promptBytes: textBytes(mainPrompt),
     diffBytes: textBytes(diff),
+    changedFilesOverviewBytes: textBytes(changedFilesOverview),
     affectedSymbolsBytes: textBytes(affectedSymbols),
     repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
     repositoryContextSource: preparedRepositoryContext.source,
     semanticEnabled,
     verificationLayerEnabled,
   })
-  const mainOutputSchema = reviewReportSchema
+  const mainOutputSchema = mainReviewReportSchema
     .extend({
       decisions: z.array(reviewSuspicionDecisionSchema),
     })
@@ -1581,26 +1984,36 @@ ${affectedSymbols}`
     instructions: mainInstructions,
     tools: {
       ...createRepositoryTools("main"),
+      read_patch: readPatch,
       spawn_review_agents: spawnReviewAgents,
     },
     providerOptions: mainProviderOptions,
-    output: Output.object({
-      schema: mainOutputSchema,
-      name: "review_report",
-      description:
-        "Verified pull request review and a complete decision ledger for delegated suspicions requiring main review",
-    }),
+    output: repairedJsonOutput(
+      Output.object({
+        schema: mainOutputSchema,
+        name: "review_report",
+        description:
+          "Verified pull request review and a complete decision ledger for delegated suspicions requiring main review",
+      })
+    ),
     stopWhen: stepCountIs(reviewAgentConfig.main.maxSteps),
     maxRetries: 2,
     onStepFinish: async (step) => recorder.recordStep(step),
   })
+  // The composer only needs the diff, so it runs while main reviews.
+  const composedReportPromise = runReportComposer()
   const mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
   const mainUsage = await recordBilling("main", REVIEW_MODEL, mainGeneration)
   const mainOutput = mainOutputSchema.parse(mainGeneration.output)
-  const generatedReport = reviewReportSchema.parse(mainOutput)
+  const generatedReport = mainReviewReportSchema.parse(mainOutput)
   const linterFindings = await runNaturalLanguageLinter()
+  const composedReport = await composedReportPromise
   const candidateReport: ReviewReport = {
-    ...generatedReport,
+    summary: composedReport.summary,
+    changedFiles: composedReport.changedFiles,
+    reviewerAttention: generatedReport.reviewerAttention,
+    mergeSafetyScore: generatedReport.mergeSafetyScore,
+    mergeSafetyReason: generatedReport.mergeSafetyReason,
     findings: [
       ...verifierApprovedFindings,
       ...generatedReport.findings,
@@ -1649,7 +2062,10 @@ ${affectedSymbols}`
     output: mainOutput,
     text: mainGeneration.text,
   })
-  await recorder.writeJson("main-suspicion-decisions.json", mainOutput.decisions)
+  await recorder.writeJson(
+    "main-suspicion-decisions.json",
+    mainOutput.decisions
+  )
   await recorder.writeJson("verifier-suspicion-decisions.json", {
     enabled: verificationLayerEnabled,
     decisions: verifierDecisions,
@@ -1828,12 +2244,14 @@ ${affectedSymbols}`
         instructions: reviewFindingDeduplicationInstructions,
         tools: {},
         providerOptions: verificationProviderOptions,
-        output: Output.object({
-          schema: deduplicationOutputSchema,
-          name: "review_finding_duplicates",
-          description:
-            "Exact duplicate finding groups where only duplicate indexes should be removed",
-        }),
+        output: repairedJsonOutput(
+          Output.object({
+            schema: deduplicationOutputSchema,
+            name: "review_finding_duplicates",
+            description:
+              "Exact duplicate finding groups where only duplicate indexes should be removed",
+          })
+        ),
         stopWhen: stepCountIs(reviewAgentConfig.deduplication.maxSteps),
         maxRetries: 2,
         onStepFinish: async (step) => recorder.recordStep(step),
@@ -1880,8 +2298,7 @@ ${affectedSymbols}`
       .sort(
         (first, second) =>
           severityRank[first.finding.severity] -
-            severityRank[second.finding.severity] ||
-          first.order - second.order
+            severityRank[second.finding.severity] || first.order - second.order
       )
       .map((entry) => entry.finding),
     ...validLinterFindings.filter(
@@ -1940,6 +2357,7 @@ ${affectedSymbols}`
     verification: verifierUsages,
     deduplication: deduplicationUsages,
     naturalLanguageLinter: linterUsages,
+    reportComposer: composerUsages,
   }
   logger.info("Review agent stage completed", {
     ...context,
