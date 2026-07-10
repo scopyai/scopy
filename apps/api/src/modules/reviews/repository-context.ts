@@ -40,20 +40,13 @@ const repositoryContextOutputSchema = z.object({
   markdown: z.string().min(1),
 })
 
-const repositoryContextDecisionSchema = z.object({
-  changesArchitecture: z.boolean(),
-  confidence: z.number().min(0).max(1),
-  reason: z.string().min(1),
-  changedAreas: z.array(z.string()),
-})
-
 export type PreparedRepositoryContext = {
   markdown: string
   summary: string
   source: "generated" | "reused"
+  reason: string
   contextId: string
   baseSha: string
-  architectureImpact: z.infer<typeof repositoryContextDecisionSchema>
   billingGeneration?: unknown
 }
 
@@ -507,31 +500,25 @@ export const prepareRepositoryContextForReview = async ({
   })
   await recorder.writeJson("context/repository-context-existing.json", existing)
 
-  const architectureImpact = existing
-    ? {
-        changesArchitecture: false,
-        confidence: 1,
-        reason:
-          "Persistent repository context updates are disabled during pull request review; reusing existing context.",
-        changedAreas: [],
-      }
-    : {
-        changesArchitecture: true,
-        confidence: 1,
-        reason: "No persistent repository context exists yet.",
-        changedAreas: ["missing_repository_context"],
-      }
-  const shouldGenerate = !existing
-  await recorder.writeJson(
-    "context/repository-context-impact.json",
-    architectureImpact
-  )
+  const maxAgeMs =
+    reviewAgentConfig.repositoryContext.maxAgeDays * 24 * 60 * 60 * 1000
+  const stale =
+    existing &&
+    existing.baseSha !== baseSha &&
+    Date.now() - existing.generatedAt.getTime() > maxAgeMs
+  const reason = !existing
+    ? "missing_repository_context"
+    : stale
+      ? "stale_repository_context"
+      : "reused_repository_context"
+  const shouldGenerate = !existing || Boolean(stale)
   await recorder.appendEvent("repository_context.prepare.decision", {
     hasExistingContext: Boolean(existing),
     existingBaseSha: existing?.baseSha,
+    existingGeneratedAt: existing?.generatedAt,
     currentBaseSha: baseSha,
     shouldGenerate,
-    architectureImpact,
+    reason,
   })
   logger.info("Repository context preparation decision", {
     repositoryId: repo.id,
@@ -540,8 +527,7 @@ export const prepareRepositoryContextForReview = async ({
     existingBaseSha: existing?.baseSha,
     currentBaseSha: baseSha,
     shouldGenerate,
-    changesArchitecture: architectureImpact.changesArchitecture,
-    reason: architectureImpact.reason,
+    reason,
   })
 
   if (shouldGenerate) {
@@ -556,10 +542,11 @@ export const prepareRepositoryContextForReview = async ({
       providerOptions: contextProviderOptions,
       recorder,
       logger,
-      reason: "missing_repository_context",
+      reason,
     })
     await recorder.appendEvent("repository_context.prepare.completed", {
       source: "generated",
+      reason,
       contextId: generated.saved.id,
       baseSha: generated.saved.baseSha,
     })
@@ -567,9 +554,9 @@ export const prepareRepositoryContextForReview = async ({
       markdown: generated.saved.markdown,
       summary: generated.saved.summary,
       source: "generated",
+      reason,
       contextId: generated.saved.id,
       baseSha: generated.saved.baseSha,
-      architectureImpact,
       billingGeneration: generated.billingGeneration,
     }
   }
@@ -591,8 +578,8 @@ export const prepareRepositoryContextForReview = async ({
     markdown: existing.markdown,
     summary: existing.summary,
     source: "reused",
+    reason,
     contextId: existing.id,
     baseSha: existing.baseSha,
-    architectureImpact,
   }
 }

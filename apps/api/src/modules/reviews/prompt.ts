@@ -130,7 +130,7 @@ Rules:
 - Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
 - Include speculative findings and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another finding.
 - Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
-- For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario.
+- For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario. Keep the line range small and actionable: preferably 1-8 lines, never more than 30. Approved findings are published with your exact range, and ranges that cannot be anchored to the diff are discarded.
 - severity is the worst-case impact if the finding is real: critical (data loss, security breach, or outage), high (serious user-facing or data defect), medium (real defect with limited blast radius), low (minor or edge-case defect). Critical and high findings are routed directly to an expensive reviewer, so do not inflate severity; base it on impact, not on your certainty.
 - confidence from 0 to 1 is how likely the finding is real given what you inspected. Uncertain findings belong in the output with low confidence, not omitted.
 - evidence: the decisive code excerpts you already inspected, quoted verbatim with repository-relative file paths and line numbers, plus the control- or data-flow connection between them. If you could not settle the finding yourself, name the specific fact that would prove or refute it. Downstream reviewers judge from this packet without re-reading the repository, so make it self-contained.
@@ -175,6 +175,7 @@ Phase 3 - report:
 - Determine final severity, confidence, wording, and location yourself for the findings you publish. You may also publish findings you discovered independently.
 - Every finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version: preferably 1-8 lines, never more than 30, overlapping an added or modified line.
 - Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
+- Base mergeSafetyScore and mergeSafetyReason on everything that will be published: your accepted findings, your independent findings, and the approvedFindings from spawn_review_agents.
 - Add reviewerAttention items only when a specific area genuinely needs human judgment beyond the findings; return an empty array otherwise.`
 
 export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.

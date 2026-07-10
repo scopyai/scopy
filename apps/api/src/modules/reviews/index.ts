@@ -474,24 +474,19 @@ export const runReviewAgent = async ({
       preparedRepositoryContext.billingGeneration
     )
   }
+  const repositoryContextStats = {
+    stage: "repository-context",
+    source: preparedRepositoryContext.source,
+    reason: preparedRepositoryContext.reason,
+    contextId: preparedRepositoryContext.contextId,
+    baseSha: preparedRepositoryContext.baseSha,
+    markdownBytes: textBytes(preparedRepositoryContext.markdown),
+  }
   logger.info("Review agent stage completed", {
     ...context,
-    stage: "repository-context",
-    source: preparedRepositoryContext.source,
-    contextId: preparedRepositoryContext.contextId,
-    baseSha: preparedRepositoryContext.baseSha,
-    changesArchitecture:
-      preparedRepositoryContext.architectureImpact.changesArchitecture,
-    markdownBytes: textBytes(preparedRepositoryContext.markdown),
+    ...repositoryContextStats,
   })
-  await recorder.appendEvent("stage.completed", {
-    stage: "repository-context",
-    source: preparedRepositoryContext.source,
-    contextId: preparedRepositoryContext.contextId,
-    baseSha: preparedRepositoryContext.baseSha,
-    architectureImpact: preparedRepositoryContext.architectureImpact,
-    markdownBytes: textBytes(preparedRepositoryContext.markdown),
-  })
+  await recorder.appendEvent("stage.completed", repositoryContextStats)
 
   logger.info("Review agent stage started", { ...context, stage: "generation" })
   await recorder.appendEvent("stage.started", { stage: "generation" })
@@ -627,9 +622,8 @@ export const runReviewAgent = async ({
     }
   }
 
-  // Shared pipeline state across spawn_review_agents batches.
   const allCandidateIds = new Set<string>()
-  const routedCandidates: CandidateFinding[] = []
+  let routedCandidates: CandidateFinding[] = []
   const approvedCandidates: CandidateFinding[] = []
   const mainQueue: QueueItem[] = []
   const mainQueueIds = new Set<string>()
@@ -662,9 +656,6 @@ export const runReviewAgent = async ({
     const expectedIdSet = new Set(expectedIds)
     const outputSchema = reviewVerifierOutputSchema.superRefine(
       (output, validation) => {
-        // Duplicate ids are tolerated (first verdict wins downstream);
-        // failing the whole call over one repeated id costs far more
-        // recall than it protects.
         const seen = new Set<string>()
         const problems: string[] = []
         for (const verdict of output.verdicts) {
@@ -803,8 +794,6 @@ export const runReviewAgent = async ({
         batch,
         tasks: tasks.map((task) => task.id),
       })
-      // The shared block must stay byte-identical across tasks and lead the
-      // prompt so concurrent subagents share a provider prompt-cache prefix.
       const sharedContext = `Pull request title: ${pullRequest.title}
 Pull request description: ${pullRequest.body ?? "(none)"}
 Base branch: ${pullRequest.baseRef}
@@ -872,6 +861,8 @@ ${task.objective}`
               allCandidateIds.add(id)
               return {
                 ...finding,
+                startLine: Math.min(finding.startLine, finding.endLine),
+                endLine: Math.max(finding.startLine, finding.endLine),
                 id,
                 taskId: task.id,
                 supportingTaskIds: [task.id],
@@ -1001,6 +992,9 @@ ${task.objective}`
           queueCandidate(candidate, "verifier")
         } else {
           rejectedCount += 1
+          routedCandidates = routedCandidates.filter(
+            (routed) => routed.id !== verdict.id
+          )
         }
       }
 
@@ -1453,6 +1447,15 @@ ${task.objective}`
     mainGeneration
   )
   const mainOutput = mainOutputSchema.parse(mainGeneration.output)
+  if (spawnBatch === 0) {
+    logger.error("Main agent returned a report without spawning subagents", {
+      ...context,
+      stage: "generation",
+    })
+    await recorder.appendEvent("main.delegation_skipped", {
+      findings: mainOutput.findings.length,
+    })
+  }
   const recordedDecisionIds = new Set<string>()
   for (const decision of mainOutput.decisions) {
     if (recordedDecisionIds.has(decision.id)) continue
