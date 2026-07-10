@@ -15,6 +15,47 @@ export type ReviewFinding = z.infer<typeof reviewFindingSchema> & {
   source?: "review" | "natural_language_linter"
 }
 
+export type ReviewSeverity = ReviewFinding["severity"]
+
+export const severityRank: Record<ReviewSeverity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+}
+
+export const candidateFindingSchema = reviewFindingSchema.extend({
+  evidence: z.string().min(1),
+})
+
+export type CandidateFinding = z.infer<typeof candidateFindingSchema> & {
+  id: string
+  taskId: string
+  supportingTaskIds: string[]
+}
+
+export const reviewSubagentOutputSchema = z.object({
+  findings: z.array(candidateFindingSchema),
+})
+
+export const reviewVerifierVerdictSchema = z.object({
+  id: z.string().min(1),
+  verdict: z.enum(["approve", "reject", "escalate"]),
+  confidence: z.number().min(0).max(1),
+  reason: z.string().min(1),
+})
+
+export const reviewVerifierOutputSchema = z.object({
+  verdicts: z.array(reviewVerifierVerdictSchema),
+})
+
+export const reviewDecisionSchema = z.object({
+  id: z.string().min(1),
+  decision: z.enum(["accept", "reject", "duplicate"]),
+  reason: z.string().min(1),
+  findingIndex: z.number().int().nonnegative().nullable(),
+})
+
 export const naturalLanguageLinterFindingSchema = z.object({
   ruleIndex: z.number().int().nonnegative(),
   startLine: z.number().int().positive(),
@@ -31,74 +72,6 @@ export const naturalLanguageLinterOutputSchema = z.object({
       findings: z.array(naturalLanguageLinterFindingSchema),
     })
   ),
-})
-
-export type NaturalLanguageLinterOutput = z.infer<
-  typeof naturalLanguageLinterOutputSchema
->
-
-export const reviewSuspicionSchema = z.object({
-  file: z.string().min(1),
-  startLine: z.number().int().positive(),
-  endLine: z.number().int().positive(),
-  suspicion: z.string().min(1),
-  evidence: z.string().min(1),
-})
-
-export const reviewSubagentOutputSchema = z.object({
-  suspicions: z.array(reviewSuspicionSchema),
-})
-
-export const reviewSuspicionDecisionSchema = z.object({
-  suspicionId: z.string().min(1),
-  decision: z.enum(["accepted", "duplicate", "not_bug"]),
-  reason: z.string().min(1),
-  findingIndex: z.number().int().nonnegative().nullable(),
-})
-
-export const reviewVerifierVerdictSchema = z
-  .object({
-    suspicionId: z.string().min(1),
-    verdict: z.enum([
-      "approved",
-      "rejected",
-      "dropped_low_value",
-      "needs_main_review",
-    ]),
-    reviewPriority: z.enum(["critical", "high", "medium", "low"]),
-    confidence: z.number().min(0).max(1),
-    reason: z.string().min(1),
-    finding: reviewFindingSchema.nullable(),
-  })
-  .superRefine((verdict, validation) => {
-    if (verdict.verdict === "approved" && verdict.finding === null) {
-      validation.addIssue({
-        code: "custom",
-        path: ["finding"],
-        message: "Approved verifier verdicts must include a finding.",
-      })
-    }
-    if (verdict.verdict !== "approved" && verdict.finding !== null) {
-      validation.addIssue({
-        code: "custom",
-        path: ["finding"],
-        message: "Non-approved verifier verdicts must set finding to null.",
-      })
-    }
-  })
-
-export const reviewVerifierOutputSchema = z.object({
-  verdicts: z.array(reviewVerifierVerdictSchema),
-})
-
-export const reviewDuplicateFindingGroupSchema = z.object({
-  keepIndex: z.number().int().nonnegative(),
-  duplicateIndexes: z.array(z.number().int().nonnegative()).min(1),
-  reason: z.string().min(1),
-})
-
-export const reviewFindingDeduplicationOutputSchema = z.object({
-  duplicateGroups: z.array(reviewDuplicateFindingGroupSchema),
 })
 
 export const reviewReportSchema = z.object({
@@ -148,6 +121,194 @@ export type ReviewReport = Omit<
 
 export const safePathSegment = (value: string) =>
   value.replace(/[^A-Za-z0-9_.-]/g, "_")
+
+export const reviewSubagentInstructions = `Explore the assigned area of a pull request and report every plausible bug as a finding.
+
+Optimize aggressively for recall, not precision. Follow data and control flow across the repository instead of limiting yourself to one changed file.
+
+Rules:
+- Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
+- Include speculative findings and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another finding.
+- Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
+- For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario.
+- severity is the worst-case impact if the finding is real: critical (data loss, security breach, or outage), high (serious user-facing or data defect), medium (real defect with limited blast radius), low (minor or edge-case defect). Critical and high findings are routed directly to an expensive reviewer, so do not inflate severity; base it on impact, not on your certainty.
+- confidence from 0 to 1 is how likely the finding is real given what you inspected. Uncertain findings belong in the output with low confidence, not omitted.
+- evidence: the decisive code excerpts you already inspected, quoted verbatim with repository-relative file paths and line numbers, plus the control- or data-flow connection between them. If you could not settle the finding yourself, name the specific fact that would prove or refute it. Downstream reviewers judge from this packet without re-reading the repository, so make it self-contained.
+- Return an empty findings array only after thoroughly exploring the assigned area and finding no plausible failure.`
+
+export const reviewVerifierInstructions = `Verify candidate bug findings for an AI pull request review.
+
+Each candidate was produced by a recall-heavy explorer agent and carries an evidence packet. Use repository tools to inspect the files, definitions, callers, and related flows needed to prove or disprove each candidate, then return exactly one verdict per candidate id.
+
+Verdicts:
+- approve: direct repository evidence confirms the factual claim and the described harm is concrete, actionable, and introduced or exposed by this pull request. Approved findings are published as-is, so approve only findings whose title, body, and line range are accurate.
+- reject: direct repository evidence disproves the candidate - the claimed missing guard exists, the behavior is unreachable, it is not introduced or exposed by this pull request, or it cannot cause an adverse outcome. Rejection requires disproving evidence; never reject a candidate merely because you did not finish proving it.
+- escalate: the candidate remains materially uncertain after inspection, or it depends on product intent, ambiguous external contracts, or runtime behavior you cannot inspect. Escalated candidates go to an expensive reviewer, so escalate sparingly - but prefer escalate over reject whenever the factual claim stands unrefuted.
+
+Rules:
+- Return exactly one verdict for every supplied candidate id. Do not add, omit, or duplicate ids.
+- confidence from 0 to 1 is your confidence in the verdict itself.
+- Route-level authentication is not authorization. Do not reject a missing-ownership or missing-scoping candidate because the endpoint requires an authenticated session; either quote the resource-level check that scopes access or treat the factual claim as confirmed.
+- If inspection confirms the factual claim - for example a guard, check, or handling the candidate says is missing is indeed absent - choose approve or escalate, never reject.`
+
+export const mainReviewAgentInstructions = `Review a pull request for actionable bugs by delegating exploration to cheaper agents and judging what they escalate.
+
+You are the central reviewer. Your prompt contains a changed-files overview instead of full patches; exploration belongs to subagents, and your own tool calls are reserved for settling decisive facts. Work in phases.
+
+Phase 1 - delegate immediately:
+- From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents as your first action. Do not read patches or files before delegating.
+- Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
+- You may call spawn_review_agents again for follow-up batches when earlier results reveal an uncovered direction.
+
+Phase 2 - decide the review queue:
+- spawn_review_agents deduplicates subagent findings, auto-verifies the low-severity ones with a cheaper verifier, and returns two lists: approvedFindings and reviewQueue.
+- approvedFindings are already verified and will be published automatically. They are context only: do not re-verify them, do not include them in your findings, and do not accept a queue item whose root cause they already cover.
+- reviewQueue contains the high-severity findings and the verifier's escalations. Decide every queue item yourself: accept, reject, or duplicate. Each item carries an evidence packet - quoted code with locations and flow reasoning. Judge from the packet by default.
+- Use a tool only when a packet leaves a decisive fact unresolved. Name that fact first, then fetch the smallest thing that settles it: read_patch for one changed file's diff, or read_file, get_symbol_definition, get_symbol_callers, locate_text for repository state. Batch independent lookups into one step and spend at most two tool calls per item.
+- Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
+- Accept an item only when it is concrete, harmful, actionable, and introduced or exposed by this pull request. Mark it duplicate only when an accepted item or an approvedFinding covers the same root cause and fix. Mark it reject only when its factual claim is false or the described behavior cannot cause an adverse outcome.
+- A supportingTaskIds list with more than one entry means independent subagents flagged the same location; treat that agreement as evidence worth extra scrutiny before rejecting.
+
+Phase 3 - report:
+- The decisions array must contain exactly one decision for every reviewQueue id across all spawn_review_agents calls, each with a concrete reason grounded in the evidence packet or inspected behavior.
+- Every accept decision must set findingIndex to the zero-based index of the finding in your findings array that represents it; reject and duplicate decisions must set findingIndex to null.
+- Determine final severity, confidence, wording, and location yourself for the findings you publish. You may also publish findings you discovered independently.
+- Every finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version: preferably 1-8 lines, never more than 30, overlapping an added or modified line.
+- Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
+- Add reviewerAttention items only when a specific area genuinely needs human judgment beyond the findings; return an empty array otherwise.`
+
+export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.
+
+Rules:
+- Only report violations of the configured natural-language rules. Do not look for general bugs.
+- Evaluate every assigned file against every rule.
+- For each assigned file, return exactly one files entry with the exact repository-relative path.
+- Use findings: [] when a file has no rule violations.
+- Report only concrete violations visible in the provided patch.
+- Every finding must point to a small head-side changed line range in the assigned file.
+- Do not report findings for deleted files or unchanged context lines.
+- ruleIndex must be the zero-based index of the violated rule.`
+
+export const reportComposerInstructions = `Summarize pull request file changes for a review report.
+
+Rules:
+- For each assigned changed file, return exactly one files entry with the exact repository-relative path.
+- summary is one concise sentence describing the meaningful behavior added, changed, or removed in that file, not Git status or line counts.
+- Describe what the change does. Do not evaluate whether it is good, buggy, or risky.
+- Do not return entries for files that were not assigned.`
+
+export const reportSummaryInstructions = `Write the summary section of a pull request review.
+
+Rules:
+- Write a concise description of the pull request's purpose and the behavior added, changed, or removed.
+- Base it only on the pull request metadata and per-file change summaries provided.
+- Do not mention findings, bugs, risk, or the review process.`
+
+const renderCandidate = (candidate: CandidateFinding, index: number) =>
+  `${index + 1}. id: ${candidate.id}
+severity: ${candidate.severity} (confidence ${candidate.confidence})
+file: ${candidate.file}
+range: ${candidate.startLine}-${candidate.endLine}
+title: ${candidate.title}
+claim: ${candidate.body}
+evidence:
+${candidate.evidence}`
+
+export const buildReviewVerifierPrompt = ({
+  title,
+  body,
+  baseRef,
+  headRef,
+  changedLineMap,
+  candidates,
+}: {
+  title: string
+  body: string | null
+  baseRef: string
+  headRef: string
+  changedLineMap: string
+  candidates: CandidateFinding[]
+}) => `Pull request title: ${title}
+Pull request description: ${body ?? "(none)"}
+Base branch: ${baseRef}
+Head branch: ${headRef}
+
+Changed-line map:
+${changedLineMap}
+
+Candidate findings:
+${candidates.map(renderCandidate).join("\n\n")}`
+
+export const buildMainReviewPrompt = ({
+  title,
+  body,
+  baseRef,
+  headRef,
+  changedFilesOverview,
+  affectedSymbols,
+  repositoryContext,
+}: {
+  title: string
+  body: string | null
+  baseRef: string
+  headRef: string
+  changedFilesOverview: string
+  affectedSymbols: string
+  repositoryContext?: string | null
+}) => `Pull request title: ${title}
+Pull request description: ${body ?? "(none)"}
+Base branch: ${baseRef}
+Head branch: ${headRef}
+
+Repository context:
+${repositoryContext ?? "(none)"}
+
+Changed files overview (use the read_patch tool for a file's full diff):
+${changedFilesOverview}
+
+Changed symbol index:
+${affectedSymbols}`
+
+export const buildReportComposerPrompt = ({ diff }: { diff: string }) =>
+  `Assigned changed files:
+${diff}`
+
+export const buildReportSummaryPrompt = ({
+  title,
+  body,
+  baseRef,
+  headRef,
+  fileSummaries,
+}: {
+  title: string
+  body: string | null
+  baseRef: string
+  headRef: string
+  fileSummaries: Array<{ file: string; summary: string }>
+}) => `Pull request title: ${title}
+Pull request description: ${body ?? "(none)"}
+Base branch: ${baseRef}
+Head branch: ${headRef}
+
+Per-file change summaries:
+${fileSummaries.map((entry) => `- ${entry.file}: ${entry.summary}`).join("\n")}`
+
+export const buildNaturalLanguageLinterPrompt = ({
+  rules,
+  diff,
+  fileContext,
+}: {
+  rules: string[]
+  diff: string
+  fileContext: string
+}) => `Natural-language rules:
+${rules.map((rule, index) => `${index}. ${rule}`).join("\n")}
+
+Assigned changed files:
+${diff}
+
+Head-side numbered file excerpts:
+${fileContext}`
 
 const symbolLabel = ({
   kind,
@@ -296,6 +457,17 @@ export const renderChangedFilesOverview = ({
   return lines.length > 0 ? lines.join("\n") : "(none)"
 }
 
+export const renderChangedLineMap = (
+  changedLinesByFile: Map<string, number[]>
+) => {
+  const lines = [...changedLinesByFile.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(
+      ([file, changedLines]) => `- ${file}: ${compressLineRanges(changedLines)}`
+    )
+  return lines.length > 0 ? lines.join("\n") : "(none)"
+}
+
 export const renderAffectedSymbols = (context: DiffContextResult) => {
   const lines = [
     "# Changed Symbol Index",
@@ -346,276 +518,6 @@ export const renderAffectedSymbols = (context: DiffContextResult) => {
 
   return lines.join("\n").trim()
 }
-
-export const reviewSubagentInstructions = `Explore the assigned area of a pull request for anything that could go wrong.
-
-Optimize aggressively for recall, not precision. Follow data and control flow across the repository instead of limiting yourself to one changed file.
-
-Rules:
-- Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
-- Include speculative suspicions and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another suspicion.
-- Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
-- Do not verify, deduplicate, prioritize, assign severity or confidence, or decide whether a suspicion should be published. Evaluation belongs entirely to the main agent.
-- For each suspicion return the most relevant repository-relative file, head-side start and end lines, and a detailed explanation of what might go wrong and in what scenario.
-- For each suspicion also return evidence: the decisive code excerpts you already inspected, quoted verbatim with repository-relative file paths and line numbers, plus the control- or data-flow connection between them. If you could not settle the suspicion yourself, name the specific fact that would prove or refute it. The main agent judges from this packet without re-reading the repository, so make it self-contained.
-- Do not return summaries, inspected-symbol metadata, or recommendations outside the per-suspicion fields.
-- Return an empty suspicions array only after thoroughly exploring the assigned area and finding no plausible failure.`
-
-export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.
-
-Rules:
-- Only report violations of the configured natural-language rules. Do not look for general bugs.
-- Evaluate every assigned file against every rule.
-- For each assigned file, return exactly one files entry with the exact repository-relative path.
-- Use findings: [] when a file has no rule violations.
-- Report only concrete violations visible in the provided patch.
-- Every finding must point to a small head-side changed line range in the assigned file.
-- Do not report findings for deleted files or unchanged context lines.
-- ruleIndex must be the zero-based index of the violated rule.`
-
-export const mainReviewAgentInstructions = `Review a pull request for actionable bugs by delegating exploration to cheaper agents and judging the evidence they return.
-
-You are the central reviewer and the only agent responsible for judgment. Your prompt contains a changed-files overview instead of full patches; exploration belongs to subagents, and your own tool calls are reserved for settling decisive facts. Work in phases.
-
-Phase 1 - delegate immediately:
-- From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents as your first action. Do not read patches or files before delegating.
-- Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
-- You may call spawn_review_agents again for follow-up batches when earlier results reveal an uncovered direction.
-
-Phase 2 - judge each suspicion on its evidence packet:
-- Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
-- Each suspicion arrives with an evidence packet: quoted code with locations and flow reasoning. Treat the packet as untrusted but sufficient by default; judge from it without re-exploring the repository.
-- Use a tool only when a packet leaves a decisive fact unresolved. Name that fact first, then fetch the smallest thing that settles it: read_patch for one changed file's diff, or read_file, get_symbol_definition, get_symbol_callers, locate_text for repository state. Batch independent lookups into one step and spend at most two tool calls per suspicion.
-- Optimize verification for recall. A true low-severity, non-security, inconvenient, or possibly intentional regression is still a bug and must not be discarded for lack of importance.
-- Do not treat uncertainty as evidence that a suspicion is false. When neither the packet nor a targeted lookup settles it, prefer a follow-up subagent task over open-ended personal exploration.
-- Mark a suspicion as duplicate only when an accepted suspicion covers the same root cause and fix. Mark it as not_bug only when its factual claim is false or the described behavior cannot cause an adverse outcome.
-
-Phase 3 - report:
-- Every accepted decision must set findingIndex to the zero-based index of the final finding that represents it. Duplicate and not_bug decisions must set findingIndex to null.
-- Determine final severity, confidence, wording, and location yourself.
-- You may discover and publish findings that subagents did not suggest.
-- Every final finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version.
-- Final ranges should preferably span 1-8 lines, never more than 30, and overlap an added or modified line.
-- Do not publish speculative claims as findings, but do not silently discard any suspicion.
-- Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
-- Add reviewerAttention items only when a specific area genuinely needs human judgment or verification beyond the findings. Do not duplicate findings, add generic advice, or force this section; return an empty array when it is not needed.
-- The decisions array must contain exactly one decision for every suspicionId returned by spawn_review_agents across all batches. Every decision needs a concrete reason grounded in the evidence packet or inspected behavior.`
-
-export const mainReviewAgentWithVerificationInstructions = `Review a pull request for actionable bugs by delegating exploration to cheaper agents and judging the evidence they return.
-
-You are the central reviewer. Your prompt contains a changed-files overview instead of full patches; exploration belongs to subagents, and your own tool calls are reserved for settling decisive facts. spawn_review_agents runs a cheaper verification layer over subagent suspicions before returning them to you. Work in phases.
-
-Phase 1 - delegate immediately:
-- From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents as your first action. Do not read patches or files before delegating.
-- Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
-- You may call spawn_review_agents again for follow-up batches when earlier results reveal an uncovered direction.
-
-Phase 2 - decide the escalated suspicions:
-- Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
-- spawn_review_agents returns compact approvedFindings, needsMainReview, consensusEscalations, and verificationStats.
-- Treat approvedFindings as already independently verified by the verifier layer. They will be automatically included in the published report after evidence validation. Use them only to avoid publishing the same root cause again; do not spend tool calls re-verifying them, and do not duplicate them in your findings.
-- Independently decide only the suspicions returned in needsMainReview and consensusEscalations. These are high-priority unresolved cases, not the full subagent suspicion stream. Each arrives with an evidence packet: quoted code with locations and flow reasoning. Judge from the packet by default.
-- consensusEscalations are locations that two or more independent subagents flagged but the verifier rejected copy by copy. Independent agreement is evidence the verifier may have erred, so scrutinize the verifier's rejection reasoning rather than deferring to it; a common failure is treating route-level authentication as resource-level authorization.
-- Use a tool only when a packet leaves a decisive fact unresolved. Name that fact first, then fetch the smallest thing that settles it: read_patch for one changed file's diff, or read_file, get_symbol_definition, get_symbol_callers, locate_text for repository state. Batch independent lookups into one step and spend at most two tool calls per suspicion.
-- Optimize verification of needsMainReview items for precision and concrete impact. The cheap verifier layer already protects recall for the broader suspicion stream.
-- Do not accept a needsMainReview suspicion because it is merely plausible. Publish it only when it is concrete, harmful, actionable, and introduced or exposed by this pull request.
-- Mark a needsMainReview suspicion as duplicate only when an accepted suspicion or an approvedFinding covers the same root cause and fix. Mark it as not_bug only when its factual claim is false or the described behavior cannot cause an adverse outcome.
-
-Phase 3 - report:
-- Every accepted decision must set findingIndex to the zero-based index of the finding in your own findings array that represents it. Duplicate and not_bug decisions must set findingIndex to null.
-- Determine final severity, confidence, wording, and location yourself for findings you publish from needsMainReview or discover independently.
-- You may discover and publish findings that subagents did not suggest.
-- Every final finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version.
-- Final ranges should preferably span 1-8 lines, never more than 30, and overlap an added or modified line.
-- Do not publish speculative claims as findings. It is valid to mark an escalated suspicion not_bug when inspection cannot prove a concrete adverse outcome.
-- Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
-- Add reviewerAttention items only when a specific area genuinely needs human judgment or verification beyond the findings. Do not duplicate findings, add generic advice, or force this section; return an empty array when it is not needed.
-- The decisions array must contain exactly one decision for every suspicionId returned in needsMainReview or consensusEscalations across all spawn_review_agents calls. Do not include decisions for approvedFindings or other rejected suspicions. Every decision needs a concrete reason grounded in the evidence packet or inspected behavior.`
-
-export const reviewVerifierInstructions = `Verify subagent suspicions for an AI pull request review.
-
-You are a strict verification manager. Your job is to turn recall-heavy subagent suspicions into terminal decisions or a small high-priority queue for the main reviewer.
-
-Rules:
-- Return exactly one verdict for every supplied suspicionId. Do not add, omit, rename, merge, split, or reorder suspicion IDs.
-- Include confidence from 0 to 1 for every verdict. Confidence is your confidence in the verdict itself, not in the severity.
-- Include reviewPriority for every verdict: critical, high, medium, or low. This is the priority for expensive main review, based on potential user impact, data impact, operational impact, blast radius, and likelihood that the pull request introduced or exposed the behavior.
-- Use approved only when direct repository evidence makes the suspicion factually correct, harmful, actionable, and worth publishing without main review.
-- Use rejected only when direct repository evidence shows the suspicion's factual claim is false, already handled, not introduced or exposed by the pull request, not harmful, or not actionable.
-- rejected requires disproving evidence. If inspection confirms the suspicion's factual claim - for example a guard, check, or handling the suspicion says is missing is indeed absent - you must not use rejected; choose approved, needs_main_review, or dropped_low_value based on impact and priority.
-- Route-level authentication is not authorization. Do not reject a missing-ownership or missing-scoping suspicion because the endpoint requires an authenticated session; either quote the resource-level check that scopes access or treat the factual claim as confirmed.
-- Use dropped_low_value when the suspicion may be partly plausible but is too speculative, low-impact, product-policy dependent, or marginal to spend expensive main-review tokens on.
-- Use needs_main_review only when the suspicion remains materially uncertain after tool inspection and reviewPriority is high or critical.
-- For approved verdicts, include a polished finding with severity, file, startLine, endLine, title, body, and confidence.
-- Approved finding ranges must be small, head-side ranges in changed files, and should overlap an added or modified line listed in the changed-line map.
-- For rejected, dropped_low_value, and needs_main_review verdicts, set finding to null.
-- Prefer dropped_low_value over needs_main_review for uncertain low- or medium-priority suspicions.
-- Prefer needs_main_review over approved whenever a high- or critical-priority suspicion depends on uncertain product intent, ambiguous external contracts, or uninspected runtime behavior.
-- Do not escalate low-priority uncertainty. Make the cheapest defensible terminal decision instead.
-- Use repository tools to inspect the files, definitions, callers, wrappers, and related flows needed to prove or disprove the supplied suspicions.
-- Do not reject a suspicion only because you have not finished proving it. If it is high or critical priority, escalate it with needs_main_review; otherwise use dropped_low_value.`
-
-export const reportComposerInstructions = `Summarize pull request file changes for a review report.
-
-Rules:
-- For each assigned changed file, return exactly one files entry with the exact repository-relative path.
-- summary is one concise sentence describing the meaningful behavior added, changed, or removed in that file, not Git status or line counts.
-- Describe what the change does. Do not evaluate whether it is good, buggy, or risky.
-- Do not return entries for files that were not assigned.`
-
-export const reportSummaryInstructions = `Write the summary section of a pull request review.
-
-Rules:
-- Write a concise description of the pull request's purpose and the behavior added, changed, or removed.
-- Base it only on the pull request metadata and per-file change summaries provided.
-- Do not mention findings, bugs, risk, or the review process.`
-
-export const reviewFindingDeduplicationInstructions = `Identify exact duplicate findings in a pull request review.
-
-Rules:
-- Return duplicate groups only when findings describe the same root cause, same adverse behavior, and same required fix.
-- Do not group findings merely because they touch the same file, line range, component, or broad area.
-- If two findings are related but would require different fixes or describe different failure modes, they are not duplicates.
-- Prefer keeping the clearer, more specific, or higher severity finding.
-- Return an empty duplicateGroups array when there are no exact duplicates.`
-
-export const buildMainReviewPrompt = ({
-  title,
-  body,
-  baseRef,
-  headRef,
-  changedFilesOverview,
-  affectedSymbols,
-  repositoryContext,
-}: {
-  title: string
-  body: string | null
-  baseRef: string
-  headRef: string
-  changedFilesOverview: string
-  affectedSymbols: string
-  repositoryContext?: string | null
-}) => `Pull request title: ${title}
-Pull request description: ${body ?? "(none)"}
-Base branch: ${baseRef}
-Head branch: ${headRef}
-
-Repository context:
-${repositoryContext ?? "(none)"}
-
-Changed files overview (use the read_patch tool for a file's full diff):
-${changedFilesOverview}
-
-Changed symbol index:
-${affectedSymbols}`
-
-export const buildReviewVerifierPrompt = ({
-  title,
-  body,
-  baseRef,
-  headRef,
-  taskId,
-  taskObjective,
-  changedLineMap,
-  suspicions,
-}: {
-  title: string
-  body: string | null
-  baseRef: string
-  headRef: string
-  taskId: string
-  taskObjective: string
-  changedLineMap: string
-  suspicions: Array<{
-    suspicionId: string
-    file: string
-    startLine: number
-    endLine: number
-    suspicion: string
-    evidence: string
-  }>
-}) => `Pull request title: ${title}
-Pull request description: ${body ?? "(none)"}
-Base branch: ${baseRef}
-Head branch: ${headRef}
-
-Subagent task: ${taskId}
-Task objective:
-${taskObjective}
-
-Changed-line map:
-${changedLineMap}
-
-Suspicion candidates:
-${suspicions
-  .map(
-    (suspicion, index) => `${index + 1}. suspicionId: ${suspicion.suspicionId}
-file: ${suspicion.file}
-range: ${suspicion.startLine}-${suspicion.endLine}
-claim: ${suspicion.suspicion}
-evidence:
-${suspicion.evidence}`
-  )
-  .join("\n\n")}`
-
-export const buildReportComposerPrompt = ({ diff }: { diff: string }) =>
-  `Assigned changed files:
-${diff}`
-
-export const buildReportSummaryPrompt = ({
-  title,
-  body,
-  baseRef,
-  headRef,
-  fileSummaries,
-}: {
-  title: string
-  body: string | null
-  baseRef: string
-  headRef: string
-  fileSummaries: Array<{ file: string; summary: string }>
-}) => `Pull request title: ${title}
-Pull request description: ${body ?? "(none)"}
-Base branch: ${baseRef}
-Head branch: ${headRef}
-
-Per-file change summaries:
-${fileSummaries.map((entry) => `- ${entry.file}: ${entry.summary}`).join("\n")}`
-
-export const buildReviewFindingDeduplicationPrompt = ({
-  findings,
-}: {
-  findings: Array<{
-    index: number
-    severity: string
-    file: string
-    startLine: number
-    endLine: number
-    title: string
-    body: string
-    confidence: number
-  }>
-}) => `Findings JSON:
-${JSON.stringify(findings, null, 2)}
-
-Return exact duplicate groups by index.`
-
-export const buildNaturalLanguageLinterPrompt = ({
-  rules,
-  diff,
-  fileContext,
-}: {
-  rules: string[]
-  diff: string
-  fileContext: string
-}) => `Natural-language rules:
-${rules.map((rule, index) => `${index}. ${rule}`).join("\n")}
-
-Assigned changed files:
-${diff}
-
-Head-side numbered file excerpts:
-${fileContext}`
 
 const scoreLabel = (score: ReviewReport["mergeSafetyScore"]) => {
   if (score === 1) return "1/5 - extremely unsafe"

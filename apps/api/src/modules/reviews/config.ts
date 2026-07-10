@@ -12,19 +12,14 @@ export const reviewAgentConfig = {
     maxSteps: 16,
   },
   subagent: {
-    reasoningEffort: "high" as ReviewReasoningEffort,
+    reasoningEffort: "low" as ReviewReasoningEffort,
     maxSteps: 40,
   },
-  verification: {
-    reasoningEffort: "high" as ReviewReasoningEffort,
+  verifier: {
+    reasoningEffort: "medium" as ReviewReasoningEffort,
     maxSteps: 18,
-    minApprovedConfidence: 0.9,
-    minMainReviewPriority: "high" as "critical" | "high" | "medium" | "low",
-    maxFailedOpenEscalationsPerTask: 5,
-    maxConsensusEscalationsPerBatch: 5,
-  },
-  deduplication: {
-    maxSteps: 4,
+    maxFindingsPerCall: 12,
+    maxFailedOpenEscalations: 5,
   },
   naturalLanguageLinter: {
     maxSteps: 5,

@@ -37,11 +37,8 @@ export const env = z
     OPENROUTER_API_KEY: z.string().min(1).optional(),
     AI_GATEWAY_API_KEY: z.string().min(1).optional(),
     REVIEW_MODEL: z.string().min(1).default("openai/gpt-5.5"),
+    REVIEW_SUBAGENT_MODEL: z.string().min(1).optional(),
     REVIEW_VERIFIER_MODEL: z.string().min(1).default("openai/gpt-5.4-mini"),
-    REVIEW_EXPERIMENTAL_VERIFICATION_LAYER: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
     REVIEW_WORKDIR: z.string().min(1).default(".data/reviews"),
     REVIEW_RUNS_DIR: z.string().min(1).default(".runs"),
     QDRANT_URL: z.string().min(1).optional(),

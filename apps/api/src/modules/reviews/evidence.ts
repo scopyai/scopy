@@ -365,29 +365,3 @@ export const validateReviewReportEvidence = async ({
     findings,
   }
 }
-
-export const filterReportToValidEvidence = (
-  report: ReviewReport,
-  validation: ReviewReportEvidenceValidation
-): ReviewReport => {
-  const validIndexes = new Set(
-    validation.findings
-      .filter((finding) => finding.valid)
-      .map((finding) => finding.findingIndex)
-  )
-  const findings = report.findings.filter((_, index) => validIndexes.has(index))
-  if (report.findings.length > 0 && findings.length === 0) {
-    return {
-      ...report,
-      mergeSafetyScore: 5,
-      mergeSafetyReason:
-        "All candidate findings were dropped because their file/startLine/endLine evidence ranges were invalid.",
-      findings,
-    }
-  }
-
-  return {
-    ...report,
-    findings,
-  }
-}
