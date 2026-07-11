@@ -120,8 +120,14 @@ export const mergeOverlappingCandidates = (
 export const isSameIssue = (first: ReviewFinding, second: ReviewFinding) =>
   sameIssue(first, findingTokens(first), second, findingTokens(second))
 
-// Order matters: the first occurrence of an issue is kept, so pass a list
-// already sorted by preference (e.g. severity).
+export const resemblesSameIssue = (
+  first: ReviewFinding,
+  second: ReviewFinding
+) =>
+  isSameIssue(first, second) ||
+  tokenOverlapScore(findingTokens(first), findingTokens(second)) >=
+    SAME_ISSUE_TOKEN_OVERLAP
+
 export const dedupeSameIssueFindings = <T extends ReviewFinding>(
   findings: T[]
 ): T[] => {

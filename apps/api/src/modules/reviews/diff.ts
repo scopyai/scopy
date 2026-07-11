@@ -31,8 +31,7 @@ export const filterPullRequestFiles = (
       !getPullRequestFileOmittedReason(file, includePatterns, excludePatterns)
   )
 
-export const builtinExcludePatterns = [
-  // lockfiles
+export const hardExcludePatterns = [
   "**/pnpm-lock.yaml",
   "**/package-lock.json",
   "**/yarn.lock",
@@ -44,7 +43,6 @@ export const builtinExcludePatterns = [
   "**/Gemfile.lock",
   "**/composer.lock",
   "**/go.sum",
-  // images, fonts, media, archives
   "**/*.png",
   "**/*.jpg",
   "**/*.jpeg",
@@ -69,7 +67,6 @@ export const builtinExcludePatterns = [
   "**/*.tar",
   "**/*.jar",
   "**/*.wasm",
-  // generated code artifacts
   "**/*.min.js",
   "**/*.min.css",
   "**/*.map",
@@ -85,11 +82,11 @@ export const getPullRequestFileOmittedReason = (
   includePatterns: string[],
   excludePatterns: string[]
 ) => {
-  const builtinPattern = builtinExcludePatterns.find((pattern) =>
+  const hardPattern = hardExcludePatterns.find((pattern) =>
     matchesPattern(file.filename, pattern)
   )
-  if (builtinPattern) {
-    return `content omitted by built-in exclude pattern for binary or generated files: ${builtinPattern}`
+  if (hardPattern) {
+    return `content omitted by built-in exclude pattern for binary or generated files: ${hardPattern}`
   }
 
   if (
@@ -124,6 +121,30 @@ export const annotatePullRequestFilesForReview = (
       ? { ...file, patch: undefined, omittedReason }
       : { ...file, omittedReason: undefined }
   })
+
+export const defaultGeneratedPathPatterns = [
+  "**/*.gen.*",
+  "**/*.generated.*",
+  "**/*_generated.*",
+  "**/__generated__/**",
+  "**/generated/**",
+  "**/*.pb.go",
+  "**/*.pb.cc",
+  "**/*.pb.h",
+  "**/*_pb2.py",
+  "**/*_pb2_grpc.py",
+  "**/*_pb.ts",
+  "**/*_pb.js",
+  "**/*.d.ts",
+  "**/*.g.dart",
+  "**/*.g.cs",
+  "**/zz_generated*",
+]
+
+export const isLikelyGeneratedFile = (
+  filename: string,
+  patterns: string[] = defaultGeneratedPathPatterns
+) => patterns.some((pattern) => matchesPattern(filename, pattern))
 
 export const countPullRequestChangedLines = (files: PullRequestFile[]) =>
   files.reduce((total, file) => total + file.additions + file.deletions, 0)

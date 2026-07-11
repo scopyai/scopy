@@ -129,6 +129,8 @@ Optimize aggressively for recall, not precision. Follow data and control flow ac
 Rules:
 - Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
 - Include speculative findings and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another finding.
+- A single line or call site can host several independent defects (for example one request that is unvalidated, has no timeout, and leaks a secret). Report each distinct defect as its own finding, even when they share the exact same lines; reporting one defect at a location does not cover the others.
+- If the prompt lists already reported findings, do not re-report them or variants sharing their root cause. They are handled; your value is in what they miss. The files they live in are proven bug-dense, so re-inspect those files for different defects instead of avoiding them.
 - Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
 - Explore the assigned area evenly. Changed files that look routine, mechanical, or uninteresting get the same scrutiny as the obviously risky ones; do not conclude the area is clean while any of its changed files remains uninspected.
 - For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario. Keep the line range small and actionable: preferably 1-8 lines, never more than 30. Approved findings are published with your exact range, and ranges that cannot be anchored to the diff are discarded.

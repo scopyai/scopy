@@ -20,6 +20,7 @@ import {
 import type { PullRequestFile } from "./diff"
 import {
   batchNaturalLanguageLinterFiles,
+  isLikelyGeneratedFile,
   serializePullRequestFiles,
 } from "./diff"
 import {
@@ -64,6 +65,7 @@ import {
   dropFindingsCoveredBy,
   isSameIssue,
   mergeOverlappingCandidates,
+  resemblesSameIssue,
   sortBySeverity,
 } from "./findings"
 import { createReviewRunRecorder } from "./debug-run"
@@ -797,6 +799,18 @@ export const runReviewAgent = async ({
         batch,
         tasks: tasks.map((task) => task.id),
       })
+      const knownFindings =
+        routedCandidates.length > 0
+          ? `
+
+Already reported findings (do not re-report these or restate their root causes — but the files they live in are proven bug-dense, so look for different defects in those same files as well as everywhere else):
+${routedCandidates
+  .map(
+    (candidate) =>
+      `- ${candidate.file}:${candidate.startLine}-${candidate.endLine} [${candidate.severity}] ${candidate.title}`
+  )
+  .join("\n")}`
+          : ""
       const sharedContext = `Pull request title: ${pullRequest.title}
 Pull request description: ${pullRequest.body ?? "(none)"}
 Base branch: ${pullRequest.baseRef}
@@ -809,7 +823,7 @@ Changed files:
 ${diff}
 
 Changed symbol index:
-${affectedSymbols}`
+${affectedSymbols}${knownFindings}`
 
       type TaskResult = {
         taskId: string
@@ -925,7 +939,10 @@ ${task.objective}`
       }
       const uncoveredFiles = filteredFiles
         .map((file) => file.filename)
-        .filter((file) => !subagentCoveredFiles.has(file))
+        .filter(
+          (file) =>
+            !subagentCoveredFiles.has(file) && !isLikelyGeneratedFile(file)
+        )
 
       const freshCandidates: CandidateFinding[] = []
       for (const candidate of rawCandidates) {
@@ -1462,12 +1479,33 @@ ${task.objective}`
   })
 
   const composedReportPromise = runReportComposer()
-  const mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
-  const mainUsage = await recordBilling(
-    "main",
-    agentLayers.main.modelId,
-    mainGeneration
-  )
+  let mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
+  const mainUsages = [
+    await recordBilling("main", agentLayers.main.modelId, mainGeneration),
+  ]
+  const uncoveredAfterMain = filteredFiles
+    .map((file) => file.filename)
+    .filter(
+      (file) => !subagentCoveredFiles.has(file) && !isLikelyGeneratedFile(file)
+    )
+  if (uncoveredAfterMain.length > 0) {
+    await recorder.appendEvent("main.coverage_enforced", {
+      files: uncoveredAfterMain,
+    })
+    mainGeneration = await mainAgent.generate({
+      messages: [
+        { role: "user" as const, content: mainPrompt },
+        ...mainGeneration.response.messages,
+        {
+          role: "user" as const,
+          content: `These changed files were never inspected by any subagent: ${uncoveredAfterMain.join(", ")}. Spawn one follow-up batch that covers them (a single task is fine), then return the final report again with one decision per reviewQueue id, including any newly escalated ids.`,
+        },
+      ],
+    })
+    mainUsages.push(
+      await recordBilling("main", agentLayers.main.modelId, mainGeneration)
+    )
+  }
   const mainOutput = mainOutputSchema.parse(mainGeneration.output)
   if (spawnBatch === 0) {
     logger.error("Main agent returned a report without spawning subagents", {
@@ -1509,11 +1547,48 @@ ${task.objective}`
       source: "review" as const,
     })
   )
-  // Self-dedup the whole list: approved findings from different batches can
-  // duplicate each other, not just main's findings. Severity order first so
-  // the strongest copy of an issue is the one kept.
+  const publishedPool = [...mainFindings, ...approvedFindings]
+  const restoredDuplicates = mainOutput.decisions
+    .filter((decision) => decision.decision === "duplicate")
+    .flatMap((decision) => {
+      const candidate = mainQueue.find((item) => item.id === decision.id)
+      if (!candidate) return []
+      const covered = publishedPool.some(
+        (finding) =>
+          severityRank[finding.severity] <= severityRank[candidate.severity] &&
+          resemblesSameIssue(finding, candidate)
+      )
+      return covered ? [] : [candidate]
+    })
+  for (const candidate of restoredDuplicates) {
+    findingDecisions.push({
+      id: candidate.id,
+      stage: "main",
+      decision: "accept",
+      reason:
+        "Duplicate decision overridden: no surviving finding of equal or higher severity resembles this candidate.",
+    })
+  }
+  if (restoredDuplicates.length > 0) {
+    await recorder.appendEvent("main.duplicate_overridden", {
+      ids: restoredDuplicates.map((candidate) => candidate.id),
+    })
+  }
+  const restoredFindings = restoredDuplicates.map(
+    ({
+      id: _id,
+      taskId: _t,
+      supportingTaskIds: _s,
+      evidence: _e,
+      queuedBy: _q,
+      ...finding
+    }) => ({
+      ...finding,
+      source: "review" as const,
+    })
+  )
   const bugFindings = dedupeSameIssueFindings(
-    sortBySeverity([...mainFindings, ...approvedFindings])
+    sortBySeverity([...mainFindings, ...approvedFindings, ...restoredFindings])
   )
   const candidateReport: ReviewReport = {
     summary: composedReport.summary,
@@ -1593,7 +1668,7 @@ ${task.objective}`
     inlineReview: { kind: "not_needed" },
   })
   await recorder.writeText("rendered-comment.md", renderedReport)
-  const generationUsage = { main: mainUsage, ...usages }
+  const generationUsage = { main: mainUsages, ...usages }
   const decisionCounts = findingDecisions.reduce<Record<string, number>>(
     (counts, decision) => {
       const key = `${decision.stage}:${decision.decision}`
