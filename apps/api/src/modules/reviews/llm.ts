@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { createGateway } from "ai"
+import { createGateway, type ToolLoopAgentSettings } from "ai"
 import { env } from "../../env"
 import {
   resolveGatewayGenerationCost,
@@ -36,17 +36,25 @@ export const createReviewLlm = () => {
       : openrouter.chat(modelId)
   }
 
-  type ReasoningProviderOptions =
-    | { openrouter: { reasoning: { effort: ReviewReasoningEffort } } }
-    | { openai: { reasoningEffort: ReviewReasoningEffort } }
+  type ProviderOptions = ToolLoopAgentSettings["providerOptions"]
   const providerOptionsFor = (
     modelId: string,
     reasoningEffort: ReviewReasoningEffort
-  ): ReasoningProviderOptions | undefined => {
-    if (!modelId.startsWith("openai/")) return undefined
-    return openrouter
-      ? { openrouter: { reasoning: { effort: reasoningEffort } } }
-      : { openai: { reasoningEffort } }
+  ): ProviderOptions => {
+    if (openrouter) {
+      return modelId.startsWith("openai/")
+        ? { openrouter: { reasoning: { effort: reasoningEffort } } }
+        : undefined
+    }
+    const options: NonNullable<ProviderOptions> = {}
+    if (modelId.startsWith("openai/")) {
+      options.openai = { reasoningEffort }
+    }
+    const serviceTier = reviewAgentConfig.openai.serviceTier
+    if (serviceTier !== "default") {
+      options.gateway = { serviceTier }
+    }
+    return Object.keys(options).length > 0 ? options : undefined
   }
 
   return {

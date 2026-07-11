@@ -24,8 +24,11 @@ export type ReviewRuntimePaths = {
 export type PreparedReviewRuntime = {
   paths: ReviewRuntimePaths
   codeIndex: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
-  baseCodeIndex: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
   baseSha: string
+  loadBase: () => Promise<{
+    repositoryPath: string
+    index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
+  }>
   qdrant: QdrantInferenceConfig | null
 }
 
@@ -44,7 +47,7 @@ export const getReviewRuntimePaths = ({
     env.REVIEW_WORKDIR,
     safeSegment(repositoryId),
     safeSegment(headSha),
-    safeSegment(reviewRunId),
+    safeSegment(reviewRunId)
   )
 
   return {
@@ -63,25 +66,19 @@ const createAskPassScript = async (runPath: string) => {
     scriptPath,
     [
       "#!/bin/sh",
-      "case \"$1\" in",
+      'case "$1" in',
       "  *Username*) printf '%s\\n' 'x-access-token' ;;",
       "  *) printf '%s\\n' \"$REVIEW_GITHUB_TOKEN\" ;;",
       "esac",
       "",
     ].join("\n"),
-    "utf8",
+    "utf8"
   )
   await chmod(scriptPath, 0o700)
   return scriptPath
 }
 
-const gitEnv = ({
-  askPass,
-  token,
-}: {
-  askPass: string
-  token: string
-}) => ({
+const gitEnv = ({ askPass, token }: { askPass: string; token: string }) => ({
   ...process.env,
   GIT_ASKPASS: askPass,
   GIT_TERMINAL_PROMPT: "0",
@@ -117,7 +114,7 @@ const cloneRepository = async ({
     {
       env,
       maxBuffer: 20 * 1024 * 1024,
-    },
+    }
   )
   await execFileAsync(
     "git",
@@ -126,23 +123,7 @@ const cloneRepository = async ({
       cwd: paths.repositoryPath,
       env,
       maxBuffer: 20 * 1024 * 1024,
-    },
-  )
-  await execFileAsync(
-    "git",
-    [
-      "worktree",
-      "add",
-      "--quiet",
-      "--detach",
-      paths.baseRepositoryPath,
-      `origin/${pullRequest.baseRef}`,
-    ],
-    {
-      cwd: paths.repositoryPath,
-      env,
-      maxBuffer: 20 * 1024 * 1024,
-    },
+    }
   )
   await execFileAsync(
     "git",
@@ -151,17 +132,18 @@ const cloneRepository = async ({
       cwd: paths.repositoryPath,
       env,
       maxBuffer: 20 * 1024 * 1024,
-    },
+    }
   )
   await execFileAsync("git", ["checkout", "--quiet", pullRequest.headSha], {
     cwd: paths.repositoryPath,
     env,
     maxBuffer: 20 * 1024 * 1024,
   })
+  return env
 }
 
-const revParseHead = async (repositoryPath: string) => {
-  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+const revParse = async (repositoryPath: string, ref: string) => {
+  const { stdout } = await execFileAsync("git", ["rev-parse", ref], {
     cwd: repositoryPath,
     maxBuffer: 1024 * 1024,
   })
@@ -169,7 +151,7 @@ const revParseHead = async (repositoryPath: string) => {
 }
 
 const serializeCodeIndex = (
-  index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>,
+  index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
 ) => ({
   repository: index.repository,
   repositoryFiles: index.repositoryFiles,
@@ -211,25 +193,54 @@ export const prepareReviewRuntime = async ({
     reviewRunId,
   })
   await mkdir(path.dirname(paths.indexPath), { recursive: true })
-  await cloneRepository({ repo, pullRequest, installationId, paths })
-
-  const baseSha = await revParseHead(paths.baseRepositoryPath)
-  const baseCodeIndex = await buildRepositoryCodeIndex({
-    repository: paths.baseRepositoryPath,
+  const cloneEnv = await cloneRepository({
+    repo,
+    pullRequest,
+    installationId,
+    paths,
   })
+
+  const baseSha = await revParse(
+    paths.repositoryPath,
+    `origin/${pullRequest.baseRef}`
+  )
   const codeIndex = await buildRepositoryCodeIndex({
     repository: paths.repositoryPath,
     changedFiles,
   })
-  await writeFile(
-    paths.baseIndexPath,
-    JSON.stringify(serializeCodeIndex(baseCodeIndex), null, 2),
-    "utf8",
-  )
+  let basePromise: ReturnType<PreparedReviewRuntime["loadBase"]> | null = null
+  const loadBase: PreparedReviewRuntime["loadBase"] = () =>
+    (basePromise ??= (async () => {
+      await execFileAsync(
+        "git",
+        [
+          "worktree",
+          "add",
+          "--quiet",
+          "--detach",
+          paths.baseRepositoryPath,
+          baseSha,
+        ],
+        {
+          cwd: paths.repositoryPath,
+          env: cloneEnv,
+          maxBuffer: 20 * 1024 * 1024,
+        }
+      )
+      const index = await buildRepositoryCodeIndex({
+        repository: paths.baseRepositoryPath,
+      })
+      await writeFile(
+        paths.baseIndexPath,
+        JSON.stringify(serializeCodeIndex(index), null, 2),
+        "utf8"
+      )
+      return { repositoryPath: paths.baseRepositoryPath, index }
+    })())
   await writeFile(
     paths.indexPath,
     JSON.stringify(serializeCodeIndex(codeIndex), null, 2),
-    "utf8",
+    "utf8"
   )
   await writeFile(
     paths.metadataPath,
@@ -246,16 +257,16 @@ export const prepareReviewRuntime = async ({
         preparedAt: new Date().toISOString(),
       },
       null,
-      2,
+      2
     ),
-    "utf8",
+    "utf8"
   )
 
   return {
     paths,
     codeIndex,
-    baseCodeIndex,
     baseSha,
+    loadBase,
     qdrant: qdrantConfig(),
   }
 }

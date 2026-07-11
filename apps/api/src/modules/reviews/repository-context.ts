@@ -472,8 +472,7 @@ const generateRepositoryContext = async ({
 export const prepareRepositoryContextForReview = async ({
   repo,
   pullRequest,
-  baseRepositoryPath,
-  baseIndex,
+  loadBase,
   baseSha,
   contextModel,
   contextModelId,
@@ -483,8 +482,10 @@ export const prepareRepositoryContextForReview = async ({
 }: {
   repo: Repository
   pullRequest: PullRequest
-  baseRepositoryPath: string
-  baseIndex: RepositoryCodeIndex
+  loadBase: () => Promise<{
+    repositoryPath: string
+    index: RepositoryCodeIndex
+  }>
   baseSha: string
   contextModel: LanguageModel
   contextModelId: string
@@ -531,11 +532,12 @@ export const prepareRepositoryContextForReview = async ({
   })
 
   if (shouldGenerate) {
+    const base = await loadBase()
     const generated = await generateRepositoryContext({
       repo,
       pullRequest,
-      repositoryPath: baseRepositoryPath,
-      index: baseIndex,
+      repositoryPath: base.repositoryPath,
+      index: base.index,
       analyzedSha: baseSha,
       model: contextModel,
       modelId: contextModelId,

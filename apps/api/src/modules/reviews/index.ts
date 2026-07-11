@@ -381,13 +381,7 @@ export const runReviewAgent = async ({
     : null
   await recorder.writeJson("runtime.json", {
     paths: runtime.paths,
-    base: {
-      sha: runtime.baseSha,
-      repositoryPath: runtime.paths.baseRepositoryPath,
-      diagnostics: runtime.baseCodeIndex.diagnostics.length,
-      repositoryFiles: runtime.baseCodeIndex.repositoryFiles.length,
-      parsedFiles: runtime.baseCodeIndex.files.length,
-    },
+    base: { sha: runtime.baseSha },
     semantic: { enabled: semanticEnabled },
     qdrant: runtime.qdrant
       ? {
@@ -398,10 +392,6 @@ export const runReviewAgent = async ({
         }
       : { configured: false },
   })
-  await recorder.writeJson(
-    "context/base-code-index.json",
-    runtime.baseCodeIndex
-  )
   await recorder.writeJson("context/code-index.json", runtime.codeIndex)
   await recorder.writeJson("context/diff-context.json", diffContext)
   await recorder.writeText("context/affected-symbols.md", affectedSymbols)
@@ -458,8 +448,7 @@ export const runReviewAgent = async ({
   const preparedRepositoryContext = await prepareRepositoryContextForReview({
     repo: repository,
     pullRequest,
-    baseRepositoryPath: runtime.paths.baseRepositoryPath,
-    baseIndex: runtime.baseCodeIndex,
+    loadBase: runtime.loadBase,
     baseSha: runtime.baseSha,
     contextModel: agentLayers.main.model,
     contextModelId: agentLayers.main.modelId,
@@ -493,7 +482,10 @@ export const runReviewAgent = async ({
   let vectorQueryBytes = 0
   let vectorNetworkBytes = 0
   let vectorQueryCount = 0
-  const createRepositoryTools = (scope: string) => {
+  const createRepositoryTools = (
+    scope: string,
+    onFileRead?: (file: string) => void
+  ) => {
     const base = {
       read_file: tool({
         description:
@@ -511,6 +503,7 @@ export const runReviewAgent = async ({
             startLine,
             maxLines,
           })
+          onFileRead?.(file)
           await recorder.recordToolCall({
             name: `${scope}.read_file`,
             input,
@@ -628,6 +621,7 @@ export const runReviewAgent = async ({
   const mainQueue: QueueItem[] = []
   const mainQueueIds = new Set<string>()
   const findingDecisions: FindingDecision[] = []
+  const subagentCoveredFiles = new Set<string>()
   let spawnBatch = 0
 
   const compactFinding = (candidate: CandidateFinding) => ({
@@ -689,6 +683,7 @@ export const runReviewAgent = async ({
     )
     let lastError: unknown
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const attemptSteps: unknown[] = []
       try {
         const agent = new ToolLoopAgent({
           model: agentLayers.verifier.model,
@@ -706,7 +701,10 @@ export const runReviewAgent = async ({
           ),
           stopWhen: stepCountIs(reviewAgentConfig.verifier.maxSteps),
           maxRetries: 2,
-          onStepFinish: async (step) => recorder.recordStep(step),
+          onStepFinish: async (step) => {
+            attemptSteps.push(step)
+            await recorder.recordStep(step)
+          },
         })
         const generation = await agent.generate({ prompt })
         usages.verification!.push(generation.totalUsage)
@@ -715,6 +713,7 @@ export const runReviewAgent = async ({
           agentLayers.verifier.modelId,
           generation
         )
+        attemptSteps.length = 0
         const output = outputSchema.parse(generation.output)
         await recorder.writeJson(
           `verifier/batch-${batch}/chunk-${chunkId}/attempt-${attempt}.json`,
@@ -727,6 +726,11 @@ export const runReviewAgent = async ({
         return output.verdicts
       } catch (error) {
         lastError = error
+        if (attemptSteps.length > 0) {
+          await recordBilling("verification", agentLayers.verifier.modelId, {
+            steps: attemptSteps,
+          })
+        }
         await recorder.writeJson(
           `verifier/batch-${batch}/chunk-${chunkId}/attempt-${attempt}-error.json`,
           { error }
@@ -739,8 +743,6 @@ export const runReviewAgent = async ({
         })
       }
     }
-    // Failed open: keep the most severe candidates for main review, drop the
-    // rest, so a broken verifier neither hides bugs nor floods the main agent.
     const bySeverity = [...candidates].sort(
       (first, second) =>
         severityRank[first.severity] - severityRank[second.severity] ||
@@ -828,12 +830,14 @@ ${task.objective}`
         )
         let lastError: unknown
         for (let attempt = 1; attempt <= 2; attempt += 1) {
+          const attemptSteps: unknown[] = []
           try {
             const agent = new ToolLoopAgent({
               model: agentLayers.subagent.model,
               instructions: reviewSubagentInstructions,
               tools: createRepositoryTools(
-                `subagent.${batch}.${safeId}.${attempt}`
+                `subagent.${batch}.${safeId}.${attempt}`,
+                (file) => subagentCoveredFiles.add(file)
               ),
               providerOptions: agentLayers.subagent.providerOptions,
               output: repairedJsonOutput(
@@ -846,7 +850,10 @@ ${task.objective}`
               ),
               stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
               maxRetries: 2,
-              onStepFinish: async (step) => recorder.recordStep(step),
+              onStepFinish: async (step) => {
+                attemptSteps.push(step)
+                await recorder.recordStep(step)
+              },
             })
             const generation = await agent.generate({ prompt })
             usages.subagents!.push(generation.totalUsage)
@@ -855,6 +862,7 @@ ${task.objective}`
               agentLayers.subagent.modelId,
               generation
             )
+            attemptSteps.length = 0
             const output = reviewSubagentOutputSchema.parse(generation.output)
             const candidates = output.findings.map((finding, index) => {
               const id = `b${batch}:${task.id}:${index + 1}`
@@ -885,6 +893,11 @@ ${task.objective}`
             return { taskId: task.id, candidates }
           } catch (error) {
             lastError = error
+            if (attemptSteps.length > 0) {
+              await recordBilling("subagents", agentLayers.subagent.modelId, {
+                steps: attemptSteps,
+              })
+            }
             await recorder.writeJson(
               `subagents/batch-${batch}/${safeId}/attempt-${attempt}-error.json`,
               { error }
@@ -906,6 +919,12 @@ ${task.objective}`
 
       const taskResults = await mapConcurrent(tasks, 4, runTask)
       const rawCandidates = taskResults.flatMap((result) => result.candidates)
+      for (const candidate of rawCandidates) {
+        subagentCoveredFiles.add(candidate.file)
+      }
+      const uncoveredFiles = filteredFiles
+        .map((file) => file.filename)
+        .filter((file) => !subagentCoveredFiles.has(file))
 
       const freshCandidates: CandidateFinding[] = []
       for (const candidate of rawCandidates) {
@@ -1008,6 +1027,7 @@ ${task.objective}`
           ({ taskId: _taskId, queuedBy: _queuedBy, ...item }) => item
         ),
         approvedFindings: batchApproved.map(compactFinding),
+        uncoveredFiles,
         stats: {
           rawFindings: rawCandidates.length,
           mergedDuplicates: rawCandidates.length - merged.length,
@@ -1015,6 +1035,7 @@ ${task.objective}`
           approved: batchApproved.length,
           rejected: rejectedCount,
           queuedForMainReview: batchQueue.length,
+          uncoveredFiles: uncoveredFiles.length,
         },
       }
       await recorder.writeJson(`subagents/batch-${batch}/result.json`, output)

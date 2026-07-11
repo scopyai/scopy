@@ -130,6 +130,7 @@ Rules:
 - Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
 - Include speculative findings and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another finding.
 - Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
+- Explore the assigned area evenly. Changed files that look routine, mechanical, or uninteresting get the same scrutiny as the obviously risky ones; do not conclude the area is clean while any of its changed files remains uninspected.
 - For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario. Keep the line range small and actionable: preferably 1-8 lines, never more than 30. Approved findings are published with your exact range, and ranges that cannot be anchored to the diff are discarded.
 - severity is the worst-case impact if the finding is real: critical (data loss, security breach, or outage), high (serious user-facing or data defect), medium (real defect with limited blast radius), low (minor or edge-case defect). Critical and high findings are routed directly to an expensive reviewer, so do not inflate severity; base it on impact, not on your certainty.
 - confidence from 0 to 1 is how likely the finding is real given what you inspected. Uncertain findings belong in the output with low confidence, not omitted.
@@ -159,6 +160,7 @@ Phase 1 - delegate immediately:
 - From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents as your first action. Do not read patches or files before delegating.
 - Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
 - You may call spawn_review_agents again for follow-up batches when earlier results reveal an uncovered direction.
+- spawn_review_agents returns uncoveredFiles: changed files no subagent has read or reported a finding in yet. A file looking boring is not evidence it is safe; when uncovered files could plausibly hide a defect, cover them with a follow-up batch before reporting.
 
 Phase 2 - decide the review queue:
 - spawn_review_agents deduplicates subagent findings, auto-verifies the low-severity ones with a cheaper verifier, and returns two lists: approvedFindings and reviewQueue.
