@@ -1,20 +1,20 @@
 ---
 title: "Code Review Best Practices for Fast-Moving Teams"
-description: "Practical, battle-tested code review practices that keep pull requests moving without sacrificing quality — from PR size to review SLAs to using AI as a first pass."
-date: "2026-06-24"
+description: "Practical code review best practices that keep pull requests moving without sacrificing quality, from PR size and review SLAs to using AI as a first pass."
+date: "2026-06-13"
 author: "Matt, founder"
 tags: "code review, best practices, pull requests"
 ---
 
 # Code Review Best Practices for Fast-Moving Teams
 
-Code review is where most teams quietly lose time. A pull request sits for two days waiting for eyes, the author context-switches, the reviewer skims because the diff is 900 lines, and a bug slips through anyway. None of that is inevitable. The teams that ship fast _and_ keep quality high tend to follow the same small set of habits.
+Code review is where many teams quietly lose time. A pull request waits for two days, the author moves on to something else and the eventual reviewer skims because the diff is 900 lines. By then even a small comment creates another round of context switching.
 
-Here are the practices that consistently work, whether your reviews are done by humans, by an [AI code reviewer](/blog/what-is-ai-code-review), or (ideally) both.
+The following practices are the ones I find useful whether the first review is done by a person, an [AI code reviewer](/blog/what-is-ai-code-review), or both.
 
 ## 1. Keep pull requests small
 
-The single highest-leverage change you can make. Review quality falls off a cliff as diffs grow: reviewers give thorough feedback on a 50-line change and rubber-stamp a 900-line one. Aim for PRs that do **one thing** and can be reviewed in under fifteen minutes.
+This is usually the highest-leverage change. Review quality gets worse as diffs grow because people stop following every detail. Try to make a PR do one thing and keep it small enough that somebody can review it without reserving half of their afternoon.
 
 Small PRs are easier to reason about, faster to approve, safer to revert, and far less likely to hide a bug in the noise. If a change is genuinely large, split it: scaffolding first, then behavior, then cleanup.
 
@@ -44,7 +44,7 @@ Not all feedback is equal. Spend reviewer attention on, in rough priority order:
 4. **Readability** — will the next person understand it?
 5. **Style** — naming, formatting, conventions.
 
-The crucial move is to **automate the bottom of that list** so humans can focus on the top. Formatting and style should be enforced by tooling instead of people writing "nit:" comments.
+Automate the bottom of that list so people can focus on the top. Formatting and simple style rules should be handled by tooling instead of reviewers leaving the same `nit:` comment for the hundredth time.
 
 ## 5. Separate blocking from non-blocking feedback
 
@@ -73,7 +73,7 @@ Every team accumulates rules: "always use the typed client", "never log request 
 
 ## Putting it together
 
-Fast, high-quality review isn't about reviewing harder. It's about **small PRs, clear intent, low latency, the right focus, and automating everything a machine can handle** so humans spend their judgment where it counts.
+Good review is not about asking people to concentrate harder. It mostly comes from small PRs, clear intent, a reasonable response time and tooling that handles the repetitive parts.
 
 Scopy AI is an [open-source AI code reviewer](/) that handles the first pass for you — full-context analysis of every pull request, your custom rules applied consistently, inline on GitHub. Pair it with the human practices above and review stops being the bottleneck.
 

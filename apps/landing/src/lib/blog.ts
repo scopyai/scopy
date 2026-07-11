@@ -1,4 +1,26 @@
+import hljs from "highlight.js/lib/core"
+import bash from "highlight.js/lib/languages/bash"
+import go from "highlight.js/lib/languages/go"
+import json from "highlight.js/lib/languages/json"
+import markdown from "highlight.js/lib/languages/markdown"
+import python from "highlight.js/lib/languages/python"
+import rust from "highlight.js/lib/languages/rust"
+import typescript from "highlight.js/lib/languages/typescript"
 import { marked } from "marked"
+
+hljs.registerLanguage("bash", bash)
+hljs.registerLanguage("go", go)
+hljs.registerLanguage("json", json)
+hljs.registerLanguage("markdown", markdown)
+hljs.registerLanguage("python", python)
+hljs.registerLanguage("rust", rust)
+hljs.registerLanguage("typescript", typescript)
+hljs.registerAliases(["sh", "shell"], { languageName: "bash" })
+hljs.registerAliases(["md"], { languageName: "markdown" })
+hljs.registerAliases(["py"], { languageName: "python" })
+hljs.registerAliases(["ts", "tsx", "js", "jsx"], {
+  languageName: "typescript",
+})
 
 function escapeHtml(value: string): string {
   return value
@@ -22,6 +44,8 @@ export type BlogPost = {
   slug: string
   title: string
   description: string
+  cover?: string
+  coverAlt?: string
   date: string
   author: string
   tags: string[]
@@ -33,6 +57,8 @@ export type BlogPost = {
 type Frontmatter = {
   title: string
   description: string
+  cover?: string
+  coverAlt?: string
   date: string
   author?: string
   tags?: string
@@ -49,6 +75,15 @@ marked.use({
   renderer: {
     html({ text }) {
       return escapeHtml(text)
+    },
+    code({ text, lang }) {
+      const requestedLanguage = lang?.trim().split(/\s+/)[0]
+      const result =
+        requestedLanguage && hljs.getLanguage(requestedLanguage)
+          ? hljs.highlight(text, { language: requestedLanguage })
+          : hljs.highlightAuto(text)
+
+      return `<div class="l-code-block"><button type="button" class="l-code-copy" data-copy-code aria-label="Copy code to clipboard"><svg class="l-code-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg><svg class="l-code-copy-check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button><pre><code class="hljs">${result.value}</code></pre></div>`
     },
   },
   walkTokens(token) {
@@ -92,7 +127,11 @@ function readingMinutes(body: string): number {
 
 function buildPost(path: string, raw: string): BlogPost {
   const { data, body } = parseFrontmatter(raw)
-  if (!data.title || !data.description || !data.date) {
+  if (
+    !data.title ||
+    !data.description ||
+    !data.date
+  ) {
     throw new Error(`Blog post ${path} is missing required frontmatter`)
   }
 
@@ -100,6 +139,8 @@ function buildPost(path: string, raw: string): BlogPost {
     slug: slugFromPath(path),
     title: data.title,
     description: data.description,
+    cover: data.cover,
+    coverAlt: data.coverAlt,
     date: data.date,
     author: data.author ?? "The Scopy team",
     tags: data.tags ? data.tags.split(",").map((t) => t.trim()) : [],

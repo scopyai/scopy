@@ -60,6 +60,7 @@ import {
   type ReviewReport,
 } from "./prompt"
 import {
+  dedupeSameIssueFindings,
   dropFindingsCoveredBy,
   isSameIssue,
   mergeOverlappingCandidates,
@@ -1496,22 +1497,24 @@ ${task.objective}`
     ...finding,
     source: "review" as const,
   }))
-  const approvedFindings = dropFindingsCoveredBy(
-    approvedCandidates.map(
-      ({
-        id: _id,
-        taskId: _t,
-        supportingTaskIds: _s,
-        evidence: _e,
-        ...finding
-      }) => ({
-        ...finding,
-        source: "review" as const,
-      })
-    ),
-    mainFindings
+  const approvedFindings = approvedCandidates.map(
+    ({
+      id: _id,
+      taskId: _t,
+      supportingTaskIds: _s,
+      evidence: _e,
+      ...finding
+    }) => ({
+      ...finding,
+      source: "review" as const,
+    })
   )
-  const bugFindings = sortBySeverity([...mainFindings, ...approvedFindings])
+  // Self-dedup the whole list: approved findings from different batches can
+  // duplicate each other, not just main's findings. Severity order first so
+  // the strongest copy of an issue is the one kept.
+  const bugFindings = dedupeSameIssueFindings(
+    sortBySeverity([...mainFindings, ...approvedFindings])
+  )
   const candidateReport: ReviewReport = {
     summary: composedReport.summary,
     changedFiles: composedReport.changedFiles,

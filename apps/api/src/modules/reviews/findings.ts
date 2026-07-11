@@ -36,15 +36,41 @@ const findingTokens = (finding: Pick<ReviewFinding, "title" | "body">) =>
   ])
 
 const SAME_ISSUE_TOKEN_OVERLAP = 0.4
+// Paraphrase-heavy duplicates of one defect can score below the token
+// threshold while pointing at nearly the same lines (observed 0.36 on real
+// duplicates); when the ranges nearly coincide, require less textual
+// similarity. Distinct bugs on nearly identical lines stay apart because
+// their token overlap falls below the reduced floor (observed <= 0.26).
+const NEAR_IDENTICAL_RANGE_JACCARD = 0.6
+const NEAR_IDENTICAL_TOKEN_OVERLAP = 0.3
+
+const rangeJaccard = (first: Range, second: Range) => {
+  const intersection =
+    Math.min(first.endLine, second.endLine) -
+    Math.max(first.startLine, second.startLine) +
+    1
+  if (intersection <= 0) return 0
+  const union =
+    Math.max(first.endLine, second.endLine) -
+    Math.min(first.startLine, second.startLine) +
+    1
+  return intersection / union
+}
 
 const sameIssue = (
   first: ReviewFinding,
   firstTokens: Set<string>,
   second: ReviewFinding,
   secondTokens: Set<string>
-) =>
-  overlaps(first, second) &&
-  tokenOverlapScore(firstTokens, secondTokens) >= SAME_ISSUE_TOKEN_OVERLAP
+) => {
+  if (!overlaps(first, second)) return false
+  const score = tokenOverlapScore(firstTokens, secondTokens)
+  return (
+    score >= SAME_ISSUE_TOKEN_OVERLAP ||
+    (score >= NEAR_IDENTICAL_TOKEN_OVERLAP &&
+      rangeJaccard(first, second) >= NEAR_IDENTICAL_RANGE_JACCARD)
+  )
+}
 
 const preferredCandidate = (
   first: CandidateFinding,
@@ -93,6 +119,20 @@ export const mergeOverlappingCandidates = (
 
 export const isSameIssue = (first: ReviewFinding, second: ReviewFinding) =>
   sameIssue(first, findingTokens(first), second, findingTokens(second))
+
+// Order matters: the first occurrence of an issue is kept, so pass a list
+// already sorted by preference (e.g. severity).
+export const dedupeSameIssueFindings = <T extends ReviewFinding>(
+  findings: T[]
+): T[] => {
+  const kept: T[] = []
+  for (const finding of findings) {
+    if (!kept.some((existing) => isSameIssue(existing, finding))) {
+      kept.push(finding)
+    }
+  }
+  return kept
+}
 
 export const dropFindingsCoveredBy = (
   findings: ReviewFinding[],

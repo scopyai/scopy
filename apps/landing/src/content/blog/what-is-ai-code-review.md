@@ -1,16 +1,16 @@
 ---
 title: "What Is AI Code Review? A Practical Guide for Engineering Teams"
 description: "AI code review uses large language models to read pull requests and flag bugs, risks and style issues before merge. Here's how it works, where it helps, and where it doesn't."
-date: "2026-06-28"
+date: "2026-06-09"
 author: "Matt, founder"
 tags: "AI code review, fundamentals"
 ---
 
 # What Is AI Code Review?
 
-**AI code review** is the practice of using large language models (LLMs) to read a change to your codebase — usually a pull request — and leave feedback the way a human reviewer would: pointing out bugs, risky changes, unclear logic and violations of your team's conventions. Instead of waiting for a teammate to find time, an AI code review tool reads the diff the moment it's pushed and comments directly on the lines that matter.
+**AI code review** means using a large language model to read a change, usually a pull request, and leave feedback on bugs, risky logic and violations of your team's conventions. It runs when the code is pushed, so the author can get a first round of feedback without waiting for somebody else to stop what they are doing.
 
-It is not a replacement for human judgment, and it isn't a linter. It sits in between: more context-aware than a static analyzer, more available than a busy senior engineer. This guide explains how it works, what it's genuinely good at, what stays with your engineers, and how to introduce it without slowing your team down.
+I do not think it replaces human judgment, and it is not a more expensive linter either. It is useful in the space between the two: it can reason about a particular change, but it is available for every pull request. This guide explains what happens under the hood and where that is actually useful.
 
 ## How AI code review works
 
@@ -25,23 +25,15 @@ The quality of an AI review is dominated by step one. A tool that only sees the 
 
 ## What AI code review is good at
 
-In day-to-day use, AI review earns its keep on the unglamorous work that humans skip when they're tired or rushed:
+In day-to-day work, AI review is good at the boring things people skip when they are tired or in a hurry. It can catch a swapped argument, an unhandled promise or a missing null case and it does not get bored after the twentieth file. It is also useful for asking uncomfortable edge-case questions on every PR, not only on the changes that happen to receive a careful reviewer.
 
-- **Catching mechanical bugs.** Off-by-one errors, null/undefined handling, swapped arguments, unhandled promise rejections, resource leaks — the kind of thing that's obvious once pointed out but easy to miss for an engineer focused on high-level architectural decisions.
-- **Surfacing edge cases.** "What happens over long time range when the buffer overflows?" "This assumes the user is authenticated." A model is relentless about asking these questions on every PR.
-- **Enforcing conventions consistently.** Humans apply style and architectural rules unevenly. A tool with [custom review rules](/blog/code-review-best-practices) applies them to every pull request the same way.
-- **Reducing review latency.** The first round of feedback arrives in several minutes, so authors can fix obvious issues before a human ever looks. That shortens the whole review cycle.
-- **Spreading review coverage.** Small teams, solo maintainers and open-source projects often have no one available to review at all. AI review gives them a baseline.
+The other practical benefit is consistency. If your team has a rule such as “every tenant query must include a workspace ID”, an AI reviewer can check it on every change. The first feedback also arrives quickly, which gives the author a chance to fix obvious problems before a teammate reads the code. For small teams and open-source maintainers, sometimes that is the only review available at all.
 
 ## What stays with your engineers
 
-With today's models, AI review is genuinely good at the local, line-level reasoning that most review comments are actually about — and on a capable model, confidently-wrong findings are the rare exception. So the reason to keep humans in the loop isn't to babysit a tool you can't trust. It's that human attention is your most expensive resource, and spending it hunting for off-by-one errors is a waste of it.
+Current models are good at local, line-level reasoning, especially when they receive enough repository context. They still do not know why a strange workaround exists or which trade-off the team already discussed last month. That is the main reason to keep people in the loop, not because every AI comment needs babysitting.
 
-The work that should stay with people is the work a model doesn't have the context to own:
-
-- **Architecture and system design.** Whether a change fits the system, what it does to coupling and complexity, and where the codebase should head over the next year.
-- **Product judgment.** Whether the change should be built at all, whether it solves the right problem, and what it means for users.
-- **Domain and intent.** Why a "weird" workaround exists, which trade-offs the team already debated, and what the roadmap actually needs next.
+Architecture and product judgment should still belong to engineers. A model can point out that a change increases coupling, but it cannot own where the codebase should be in a year. It can inspect the implementation, but it does not know whether the feature should exist or what the roadmap needs next. Those decisions require context that usually is not written anywhere the model can read.
 
 ## AI code review vs. linters and static analysis
 
@@ -51,12 +43,7 @@ They're complementary. Keep your linter for the rules it enforces perfectly, and
 
 ## How to introduce AI code review without friction
 
-A few practices make adoption smooth:
-
-- **Start in report-only mode** on a couple of active repositories before turning it on everywhere.
-- **Tune for signal.** If the tool is noisy, tighten its rules. A reviewer that comments on everything gets ignored; one that comments rarely but accurately gets read.
-- **Keep humans in the loop.** Use AI review as the first reviewer, not the only one.
-- **Mind your data.** If your code is sensitive, prefer a tool you can [self-host](/blog/self-hosted-ai-code-review) so nothing leaves your infrastructure.
+Start with one or two active repositories and treat the comments as advisory. If the reviewer is noisy, fix that before rolling it out further; a tool that comments on everything teaches people to ignore it very quickly. I would use it as the first reviewer rather than the only reviewer. And if the code is sensitive, check the full data path or use a tool you can [self-host](/blog/self-hosted-ai-code-review).
 
 ## Getting started
 
