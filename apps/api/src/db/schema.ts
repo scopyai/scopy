@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 import {
   boolean,
   bigint,
@@ -74,6 +74,11 @@ export const workspaceChargeType = pgEnum("workspace_charge_type", [
   "payment",
   "refund",
   "dispute",
+])
+export const docSourceStatus = pgEnum("doc_source_status", [
+  "idle",
+  "crawling",
+  "error",
 ])
 
 export type ProviderActor = {
@@ -583,10 +588,10 @@ export const reviewUsage = pgTable(
     uniqueIndex("review_usage_review_run_id_idx").on(table.reviewRunId),
     index("review_usage_workspace_created_at_idx").on(
       table.workspaceId,
-      table.createdAt,
+      table.createdAt
     ),
     index("review_usage_repository_id_idx").on(table.repositoryId),
-  ],
+  ]
 )
 
 export const workspaceCharge = pgTable(
@@ -610,13 +615,71 @@ export const workspaceCharge = pgTable(
   },
   (table) => [
     uniqueIndex("workspace_charge_creem_transaction_id_idx").on(
-      table.creemTransactionId,
+      table.creemTransactionId
     ),
     index("workspace_charge_workspace_created_at_idx").on(
       table.workspaceId,
-      table.createdAt,
+      table.createdAt
     ),
-  ],
+  ]
+)
+
+export type DocTocEntry = {
+  section: string | null
+  title: string
+  url: string
+  description: string | null
+}
+
+export const docSource = pgTable(
+  "doc_source",
+  {
+    id: text("id").primaryKey(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    llmsTxtUrl: text("llms_txt_url").notNull(),
+    activeCrawlId: text("active_crawl_id"),
+    toc: jsonb("toc").$type<DocTocEntry[]>(),
+    pageCount: integer("page_count").default(0).notNull(),
+    status: docSourceStatus("status").default("idle").notNull(),
+    lastError: text("last_error"),
+    lastCrawledAt: timestamp("last_crawled_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [uniqueIndex("doc_source_slug_idx").on(table.slug)]
+)
+
+export const docPage = pgTable(
+  "doc_page",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => docSource.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    title: text("title").notNull(),
+    contentMd: text("content_md").notNull(),
+    contentHash: text("content_hash").notNull(),
+    approxTokens: integer("approx_tokens").default(0).notNull(),
+    lastSeenCrawlId: text("last_seen_crawl_id").notNull(),
+    fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("doc_page_source_id_url_idx").on(table.sourceId, table.url),
+    index("doc_page_source_last_seen_idx").on(
+      table.sourceId,
+      table.lastSeenCrawlId
+    ),
+  ]
 )
 
 export const userRelations = relations(user, ({ many }) => ({
@@ -767,3 +830,52 @@ export const workspaceChargeRelations = relations(
     }),
   })
 )
+
+export const docChunk = pgTable(
+  "doc_chunk",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => docSource.id, { onDelete: "cascade" }),
+    pageId: text("page_id")
+      .notNull()
+      .references(() => docPage.id, { onDelete: "cascade" }),
+    ord: integer("ord").notNull(),
+    heading: text("heading"),
+    contentMd: text("content_md").notNull(),
+    approxTokens: integer("approx_tokens").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("doc_chunk_page_id_ord_idx").on(table.pageId, table.ord),
+    index("doc_chunk_source_id_idx").on(table.sourceId),
+    index("doc_chunk_content_fts_idx").using(
+      "gin",
+      sql`to_tsvector('english', ${table.contentMd})`
+    ),
+  ]
+)
+
+export const docSourceRelations = relations(docSource, ({ many }) => ({
+  pages: many(docPage),
+}))
+
+export const docPageRelations = relations(docPage, ({ one, many }) => ({
+  source: one(docSource, {
+    fields: [docPage.sourceId],
+    references: [docSource.id],
+  }),
+  chunks: many(docChunk),
+}))
+
+export const docChunkRelations = relations(docChunk, ({ one }) => ({
+  source: one(docSource, {
+    fields: [docChunk.sourceId],
+    references: [docSource.id],
+  }),
+  page: one(docPage, {
+    fields: [docChunk.pageId],
+    references: [docPage.id],
+  }),
+}))

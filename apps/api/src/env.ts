@@ -64,6 +64,12 @@ export const env = z
       .int()
       .nonnegative()
       .default(90_000),
+    DOCS_LIBRARIAN_MODEL: z.string().min(1).optional(),
+    DOCS_RECRAWL_INTERVAL_HOURS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(168),
     TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
     TELEGRAM_FEEDBACK_CHAT_ID: z.string().min(1).optional(),
   })

@@ -1,4 +1,6 @@
 import type { TaskList } from "graphile-worker"
+import { crawlDocSource } from "../modules/docs/crawler"
+import { enqueueDueDocSourceCrawls } from "../modules/docs/service"
 import { executeReviewPullRequest } from "../modules/reviews/task"
 import { processGitHubWebhookEvent } from "../modules/webhooks/service"
 import { jobPayloadSchemas } from "./definitions"
@@ -27,5 +29,12 @@ export const taskList: TaskList = {
         maxAttempts: helpers.job.max_attempts,
       },
     )
+  },
+  crawl_doc_source: async (payload, helpers) => {
+    const { slug } = jobPayloadSchemas.crawlDocSource.parse(payload)
+    await crawlDocSource({ slug, logger: helpers.logger })
+  },
+  crawl_all_doc_sources: async (_payload, helpers) => {
+    await enqueueDueDocSourceCrawls({ logger: helpers.logger })
   },
 }

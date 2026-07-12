@@ -8,6 +8,9 @@ export const jobPayloadSchemas = {
   reviewPullRequest: z.object({
     reviewRunId: z.uuid(),
   }),
+  crawlDocSource: z.object({
+    slug: z.string().min(1),
+  }),
 }
 
 export const jobs = {
@@ -28,6 +31,16 @@ export const jobs = {
       enqueueJob(executor, "review_pull_request", payload, {
         jobKey: `pull-request-review:${payload.reviewRunId}`,
         maxAttempts: 5,
+      }),
+  },
+  crawlDocSource: {
+    enqueue: (
+      executor: JobExecutor,
+      payload: z.infer<typeof jobPayloadSchemas.crawlDocSource>,
+    ) =>
+      enqueueJob(executor, "crawl_doc_source", payload, {
+        jobKey: `docs-crawl:${payload.slug}`,
+        maxAttempts: 3,
       }),
   },
 }
