@@ -177,7 +177,6 @@ function BlogPost() {
     </>
   )
 }
-
 function PostNotFound() {
   return (
     <>

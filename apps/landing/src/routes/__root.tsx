@@ -47,7 +47,6 @@ const jsonLd = {
     },
   ],
 }
-
 export const Route = createRootRoute({
   head: () => ({
     meta: [

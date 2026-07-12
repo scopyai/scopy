@@ -1234,7 +1234,7 @@ body {
 }
 
 .l-blog-head {
-  margin-bottom: 48px;
+  margin-bottom: 56px;
 }
 
 .l-blog-title {
@@ -1275,7 +1275,7 @@ body {
   grid-template-columns: minmax(0, 1fr);
   gap: 32px;
   align-items: center;
-  padding: 28px 0;
+  padding: 34px 0 36px;
   text-decoration: none;
   color: inherit;
 }
@@ -1295,11 +1295,11 @@ body {
 }
 
 .l-blog-card-title {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  line-height: 1.25;
-  margin: 0 0 8px;
+  line-height: 1.22;
+  margin: 0 0 10px;
   color: var(--l-fg);
   transition: color 0.12s;
 }
@@ -1307,8 +1307,9 @@ body {
 .l-blog-card-desc {
   margin: 0;
   font-size: 15.5px;
-  line-height: 1.6;
-  color: var(--l-muted);
+  line-height: 1.68;
+  color: #c0c0cf;
+  max-width: 68ch;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -1316,7 +1317,7 @@ body {
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 .l-post-wrap {
-  max-width: 720px;
+  max-width: 748px;
 }
 
 .l-post-back {
@@ -1335,7 +1336,7 @@ body {
 }
 
 .l-post-head {
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .l-post-meta {
@@ -1356,17 +1357,17 @@ body {
 .l-post-title {
   font-size: clamp(2rem, 4.2vw, 3rem);
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.06;
   letter-spacing: -0.03em;
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   text-wrap: balance;
 }
 
 .l-post-lede {
   margin: 0;
-  font-size: 1.125rem;
-  line-height: 1.6;
-  color: var(--l-muted);
+  font-size: 1.1875rem;
+  line-height: 1.65;
+  color: #c2c2d0;
 }
 
 .l-post-cover {
@@ -1399,9 +1400,10 @@ body {
 
 /* Rendered markdown body */
 .l-post-body {
-  color: var(--l-muted);
-  font-size: 16.5px;
-  line-height: 1.75;
+  max-width: 690px;
+  color: #c8c8d4;
+  font-size: 17.5px;
+  line-height: 1.8;
 }
 
 .l-post-body > :first-child {
@@ -1414,24 +1416,24 @@ body {
 }
 
 .l-post-body h2 {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.25;
   color: var(--l-fg);
-  margin: 44px 0 16px;
+  margin: 52px 0 18px;
 }
 
 .l-post-body h3 {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--l-fg);
-  margin: 32px 0 12px;
+  margin: 36px 0 14px;
 }
 
 .l-post-body p {
-  margin: 0 0 20px;
+  margin: 0 0 22px;
 }
 
 .l-post-body p:has(> img:only-child) {
@@ -1461,7 +1463,7 @@ body {
 
 .l-post-body li {
   display: list-item;
-  line-height: 1.65;
+  line-height: 1.72;
   padding-left: 4px;
 }
 
