@@ -31,11 +31,64 @@ export const filterPullRequestFiles = (
       !getPullRequestFileOmittedReason(file, includePatterns, excludePatterns)
   )
 
+export const hardExcludePatterns = [
+  "**/pnpm-lock.yaml",
+  "**/package-lock.json",
+  "**/yarn.lock",
+  "**/bun.lockb",
+  "**/bun.lock",
+  "**/Cargo.lock",
+  "**/poetry.lock",
+  "**/uv.lock",
+  "**/Gemfile.lock",
+  "**/composer.lock",
+  "**/go.sum",
+  "**/*.png",
+  "**/*.jpg",
+  "**/*.jpeg",
+  "**/*.gif",
+  "**/*.webp",
+  "**/*.avif",
+  "**/*.ico",
+  "**/*.icns",
+  "**/*.bmp",
+  "**/*.woff",
+  "**/*.woff2",
+  "**/*.ttf",
+  "**/*.otf",
+  "**/*.eot",
+  "**/*.mp3",
+  "**/*.mp4",
+  "**/*.webm",
+  "**/*.wav",
+  "**/*.pdf",
+  "**/*.zip",
+  "**/*.gz",
+  "**/*.tar",
+  "**/*.jar",
+  "**/*.wasm",
+  "**/*.min.js",
+  "**/*.min.css",
+  "**/*.map",
+  "**/__snapshots__/**",
+  "**/*.snap",
+  "**/drizzle/meta/**",
+  "**/node_modules/**",
+  "**/vendor/**",
+]
+
 export const getPullRequestFileOmittedReason = (
   file: PullRequestFile,
   includePatterns: string[],
   excludePatterns: string[]
 ) => {
+  const hardPattern = hardExcludePatterns.find((pattern) =>
+    matchesPattern(file.filename, pattern)
+  )
+  if (hardPattern) {
+    return `content omitted by built-in exclude pattern for binary or generated files: ${hardPattern}`
+  }
+
   if (
     includePatterns.length > 0 &&
     !includePatterns.some((pattern) => matchesPattern(file.filename, pattern))
@@ -68,6 +121,29 @@ export const annotatePullRequestFilesForReview = (
       ? { ...file, patch: undefined, omittedReason }
       : { ...file, omittedReason: undefined }
   })
+
+export const defaultGeneratedPathPatterns = [
+  "**/*.gen.*",
+  "**/*.generated.*",
+  "**/*_generated.*",
+  "**/__generated__/**",
+  "**/generated/**",
+  "**/*.pb.go",
+  "**/*.pb.cc",
+  "**/*.pb.h",
+  "**/*_pb2.py",
+  "**/*_pb2_grpc.py",
+  "**/*_pb.ts",
+  "**/*_pb.js",
+  "**/*.g.dart",
+  "**/*.g.cs",
+  "**/zz_generated*",
+]
+
+export const isLikelyGeneratedFile = (
+  filename: string,
+  patterns: string[] = defaultGeneratedPathPatterns
+) => patterns.some((pattern) => matchesPattern(filename, pattern))
 
 export const countPullRequestChangedLines = (files: PullRequestFile[]) =>
   files.reduce((total, file) => total + file.additions + file.deletions, 0)

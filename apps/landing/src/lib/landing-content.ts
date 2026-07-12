@@ -13,11 +13,11 @@ export const steps: NamedItem[] = [
   },
   {
     name: "Open a pull request",
-    desc: "Scopy reviews each new pull request automatically, building context from the diff, the affected symbols and the wider repository before it comments.",
+    desc: "Scopy reviews new pull requests automatically, building context from the diff, the affected symbols and the wider repository before it comments.",
   },
   {
     name: "Get actionable feedback",
-    desc: "AI code review comments land on the exact lines that matter - flagging bugs, risky changes and rule violations so your team can fix them before merge.",
+    desc: "Comments land on the exact lines that matter, flagging bugs, risky changes and rule violations so your team can fix them before merge.",
   },
 ]
 

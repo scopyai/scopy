@@ -2,7 +2,6 @@ import { env } from "#/env"
 import { contactFounderHref } from "@workspace/billing/contact"
 import {
   ENTERPRISE_BILLING_PLAN,
-  FREE_INCLUDED_REVIEW_CREDITS,
   PREMIUM_BILLING_PLAN,
   ULTRA_BILLING_PLAN,
 } from "@workspace/billing/plans"
@@ -26,7 +25,6 @@ export type LandingPlan = {
 }
 
 export function getLandingPlans(): LandingPlan[] {
-  const freeCredits = formatReviewCredits(FREE_INCLUDED_REVIEW_CREDITS)
   const premiumCredits = formatReviewCredits(
     PREMIUM_BILLING_PLAN.monthlyCredits
   )
@@ -37,15 +35,15 @@ export function getLandingPlans(): LandingPlan[] {
       name: "Free",
       priceLabel: "Free",
       period: "",
-      computeLabel: `${freeCredits} included`,
+      computeLabel: `Self-hosted version with any LLM provider`,
       desc: "Start free, then add a paid plan for managed cloud reviews — or self-host without limits.",
       features: [
-        "Bring-your-own-key support planned",
+        "Bring-your-own-key support",
         "Self-host with your own model keys",
         "Full source code access",
       ],
-      cta: "Get started",
-      href: env.appUrl,
+      cta: "View on GitHub",
+      href: env.githubUrl,
       variant: "ghost",
       featured: false,
     },
@@ -54,7 +52,7 @@ export function getLandingPlans(): LandingPlan[] {
       priceLabel: formatPlanPriceAmount(PREMIUM_BILLING_PLAN.price),
       period: "/mo",
       computeLabel: `${premiumCredits} / month included`,
-      desc: "Hosted Scopy for teams getting started.",
+      desc: "Hosted Scopy for teams that ship fast.",
       features: [
         "Unlimited repositories",
         "Team workspace management",
@@ -70,7 +68,7 @@ export function getLandingPlans(): LandingPlan[] {
       priceLabel: formatPlanPriceAmount(ULTRA_BILLING_PLAN.price),
       period: "/mo",
       computeLabel: `${ultraCredits} / month included`,
-      desc: "More monthly credits for teams that ship fast.",
+      desc: "More monthly credits for teams that value quality",
       features: [
         "Everything in Premium",
         "Higher monthly review credits",

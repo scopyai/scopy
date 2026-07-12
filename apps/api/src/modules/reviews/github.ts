@@ -316,16 +316,28 @@ export const publishPullRequestReview = async ({
 
   const octokit = await getOctokit(installationId)
   const comments = buildPullRequestReviewComments(findings, repo.fullName)
-  const review = await octokit.request(
-    "POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
-    {
+  const createReview = (reviewComments: PullRequestReviewComment[]) =>
+    octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
       owner: repo.owner,
       repo: repo.name,
       pull_number: pullRequestNumber,
       commit_id: headSha,
-      comments,
-    }
-  )
+      comments: reviewComments,
+    })
+  let review: Awaited<ReturnType<typeof createReview>>
+  try {
+    review = await createReview(comments)
+  } catch (error) {
+    const singleLineComments = comments.map(
+      ({ start_line: _startLine, start_side: _startSide, ...comment }) =>
+        comment
+    )
+    const hadRangeComments =
+      singleLineComments.length !== comments.length ||
+      comments.some((comment) => "start_line" in comment)
+    if (!hadRangeComments) throw error
+    review = await createReview(singleLineComments)
+  }
 
   await octokit.request(
     "POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events",

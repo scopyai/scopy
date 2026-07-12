@@ -18,6 +18,11 @@ export const Route = createFileRoute("/blog/$slug")({
   head: ({ loaderData }) => {
     if (!loaderData) return {}
     const url = `${env.siteUrl}/blog/${loaderData.slug}`
+    const imageUrl = loaderData.cover
+      ? loaderData.cover.startsWith("http")
+        ? loaderData.cover
+        : `${env.siteUrl}${loaderData.cover}`
+      : undefined
     const jsonLd = {
       "@context": "https://schema.org",
       "@type": "BlogPosting",
@@ -25,6 +30,7 @@ export const Route = createFileRoute("/blog/$slug")({
       description: loaderData.description,
       datePublished: loaderData.date,
       dateModified: loaderData.date,
+      ...(imageUrl ? { image: imageUrl } : {}),
       author: { "@type": "Organization", name: loaderData.author },
       publisher: {
         "@type": "Organization",
@@ -43,10 +49,25 @@ export const Route = createFileRoute("/blog/$slug")({
         { property: "og:title", content: loaderData.title },
         { property: "og:description", content: loaderData.description },
         { property: "og:url", content: url },
+        ...(imageUrl
+          ? [
+              { property: "og:image", content: imageUrl },
+              { property: "og:image:alt", content: loaderData.coverAlt ?? "" },
+            ]
+          : []),
         { property: "article:published_time", content: loaderData.date },
-        { name: "twitter:card", content: "summary" },
+        {
+          name: "twitter:card",
+          content: imageUrl ? "summary_large_image" : "summary",
+        },
         { name: "twitter:title", content: loaderData.title },
         { name: "twitter:description", content: loaderData.description },
+        ...(imageUrl
+          ? [
+              { name: "twitter:image", content: imageUrl },
+              { name: "twitter:image:alt", content: loaderData.coverAlt ?? "" },
+            ]
+          : []),
       ],
       links: [{ rel: "canonical", href: url }],
       scripts: [
@@ -63,6 +84,27 @@ export const Route = createFileRoute("/blog/$slug")({
 
 function BlogPost() {
   const post = useLoaderData({ from: "/blog/$slug" })
+
+  async function copyCode(event: React.MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement
+    const button = target.closest<HTMLButtonElement>("[data-copy-code]")
+    if (!button) return
+
+    const code = button.parentElement?.querySelector("code")?.textContent
+    if (!code) return
+
+    try {
+      await navigator.clipboard.writeText(code)
+      button.classList.add("is-copied")
+      button.setAttribute("aria-label", "Copied to clipboard")
+      window.setTimeout(() => {
+        button.classList.remove("is-copied")
+        button.setAttribute("aria-label", "Copy code to clipboard")
+      }, 1800)
+    } catch {
+      button.setAttribute("aria-label", "Could not copy code")
+    }
+  }
 
   return (
     <>
@@ -86,8 +128,20 @@ function BlogPost() {
             <p className="l-post-lede">{post.description}</p>
           </header>
 
+          {post.cover && (
+            <figure className="l-post-cover">
+              <img
+                src={post.cover}
+                alt={post.coverAlt ?? ""}
+                width={1200}
+                height={630}
+              />
+            </figure>
+          )}
+
           <div
             className="l-post-body"
+            onClick={copyCode}
             dangerouslySetInnerHTML={{ __html: post.html }}
           />
 

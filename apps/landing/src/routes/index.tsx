@@ -334,9 +334,8 @@ function Pricing() {
         <div className="l-price-header">
           <h2 className="l-price-title">Simple, credit-based pricing</h2>
           <p className="l-price-sub">
-            Reviews use credits based on how much a pull request changes — most
-            cost a single credit, larger ones a bit more. Pick a monthly plan
-            when you need managed cloud reviews — no per-seat pricing.
+            Reviews use credits based on how much a pull request changes — no
+            per-seat pricing.
           </p>
         </div>
 

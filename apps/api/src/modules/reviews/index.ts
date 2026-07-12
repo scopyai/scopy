@@ -1,5 +1,4 @@
-import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { createGateway, Output, ToolLoopAgent, stepCountIs, tool } from "ai"
+import { Output, ToolLoopAgent, stepCountIs, tool } from "ai"
 import {
   buildDiffContext,
   chunksForRepositoryIndex,
@@ -12,18 +11,16 @@ import {
   parseUnifiedDiff,
 } from "tools"
 import { z } from "zod"
-import { env } from "../../env"
 import type { pullRequest, repository } from "../../db/schema"
 import {
   calculateVectorNetworkCostMicrocents,
   calculateVectorQueryCostMicrocents,
   calculateVectorWriteCostMicrocents,
-  resolveGatewayGenerationCost,
-  resolveOpenRouterGenerationCost,
 } from "../billing/usage"
 import type { PullRequestFile } from "./diff"
 import {
   batchNaturalLanguageLinterFiles,
+  isLikelyGeneratedFile,
   serializePullRequestFiles,
 } from "./diff"
 import {
@@ -37,46 +34,53 @@ import { validateReviewReportEvidence } from "./evidence"
 import {
   buildMainReviewPrompt,
   buildNaturalLanguageLinterPrompt,
+  buildReportComposerPrompt,
+  buildReportSummaryPrompt,
+  buildReviewVerifierPrompt,
   mainReviewAgentInstructions,
+  mainReviewReportSchema,
   naturalLanguageLinterInstructions,
   naturalLanguageLinterOutputSchema,
   renderAffectedSymbols,
+  renderChangedFilesOverview,
+  renderChangedLineMap,
   renderReviewSummaryComment,
   renderSemanticCoverage,
-  reviewReportSchema,
+  reportComposerInstructions,
+  reportComposerOutputSchema,
+  reportSummaryInstructions,
+  reportSummaryOutputSchema,
+  reviewDecisionSchema,
   reviewSubagentInstructions,
   reviewSubagentOutputSchema,
-  reviewSuspicionDecisionSchema,
+  reviewVerifierInstructions,
+  reviewVerifierOutputSchema,
   safePathSegment,
+  severityRank,
+  type CandidateFinding,
   type ReviewReport,
 } from "./prompt"
+import {
+  dedupeSameIssueFindings,
+  dropFindingsCoveredBy,
+  isSameIssue,
+  mergeOverlappingCandidates,
+  resemblesSameIssue,
+  sortBySeverity,
+} from "./findings"
 import { createReviewRunRecorder } from "./debug-run"
 import { reviewAgentConfig } from "./config"
+import {
+  createReviewLlm,
+  recordLlmBilling,
+  repairedJsonOutput,
+  reviewModels,
+} from "./llm"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"
 
-export const REVIEW_MODEL = env.REVIEW_MODEL
-export const REVIEW_VERIFIER_MODEL =
-  env.REVIEW_VERIFIER_MODEL ?? env.REVIEW_MODEL
-const reviewModelProviderOptions = REVIEW_MODEL.startsWith("openai/")
-  ? {
-      openrouter: {
-        reasoning: {
-          effort: reviewAgentConfig.main.reasoningEffort,
-        },
-      },
-    }
-  : undefined
-const verifierModelProviderOptions = REVIEW_VERIFIER_MODEL.startsWith("openai/")
-  ? {
-      openrouter: {
-        reasoning: {
-          effort: reviewAgentConfig.subagent.reasoningEffort,
-        },
-      },
-    }
-  : undefined
+export const REVIEW_MODEL = reviewModels.main
 
 type Logger = {
   info: (message: string, details?: Record<string, unknown>) => void
@@ -110,7 +114,8 @@ export type ReviewAgentResult = {
   summary?: string
   triggerSource: string
   modelId: string
-  verifierModelId?: string
+  subagentModelId: string
+  verifierModelId: string
   fetchedFileCount: number
   filteredFileCount: number
   diffChangedLineCount: number
@@ -145,17 +150,7 @@ export type ReviewAgentResult = {
   durationMs: number
 }
 
-const openRouterChat = (
-  openrouter: ReturnType<typeof createOpenRouter>,
-  modelId: string
-) =>
-  modelId.startsWith("openai/")
-    ? openrouter.chat(modelId, {
-        extraBody: { service_tier: reviewAgentConfig.openai.serviceTier },
-      })
-    : openrouter.chat(modelId)
-
-const toolText = (text: string, maxBytes = 90_000) => {
+const toolText = (text: string, maxBytes = 20_000) => {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
   let output = text
   while (Buffer.byteLength(output, "utf8") > maxBytes) {
@@ -166,129 +161,50 @@ const toolText = (text: string, maxBytes = 90_000) => {
 
 const textBytes = (text: string) => Buffer.byteLength(text, "utf8")
 
-const recordLlmBilling = async (
-  stages: Record<string, unknown>,
-  stage: string,
-  modelId: string,
-  generation: unknown,
-  provider: "openrouter" | "gateway",
-  resolveGenerationCost: typeof resolveOpenRouterGenerationCost
+const chunked = <T>(items: T[], size: number) => {
+  const chunks: T[][] = []
+  for (let offset = 0; offset < items.length; offset += size) {
+    chunks.push(items.slice(offset, offset + size))
+  }
+  return chunks
+}
+
+const mapConcurrent = async <T, R>(
+  items: T[],
+  concurrency: number,
+  run: (item: T, index: number) => Promise<R>
 ) => {
-  const cost = await resolveGenerationCost(generation)
-  const resolvedStepCostMicrocents = cost.steps.reduce<number>(
-    (total, step) => {
-      if (
-        typeof step === "object" &&
-        step !== null &&
-        "costMicrocents" in step &&
-        typeof (step as { costMicrocents?: unknown }).costMicrocents ===
-          "number"
-      ) {
-        return total + (step as { costMicrocents: number }).costMicrocents
-      }
-      return total
-    },
-    0
-  )
-  const resolvedStepCostUsd = cost.steps.reduce<number>((total, step) => {
-    if (
-      typeof step === "object" &&
-      step !== null &&
-      "costUsd" in step &&
-      typeof (step as { costUsd?: unknown }).costUsd === "number"
-    ) {
-      return total + (step as { costUsd: number }).costUsd
-    }
-    return total
-  }, 0)
-  const costIsPartial = cost.costMicrocents === null
-  if (
-    costIsPartial &&
-    (provider !== "gateway" || resolvedStepCostMicrocents <= 0)
-  ) {
-    const statusCounts = cost.steps.reduce<Record<string, number>>(
-      (counts, step) => {
-        if (
-          typeof step === "object" &&
-          step !== null &&
-          "costStatus" in step &&
-          typeof (step as { costStatus?: unknown }).costStatus === "string"
-        ) {
-          const status = (step as { costStatus: string }).costStatus
-          counts[status] = (counts[status] ?? 0) + 1
-        }
-        return counts
-      },
-      {}
-    )
-    const detail = Object.entries(statusCounts)
-      .map(([status, count]) => `${status}: ${count}`)
-      .join(", ")
-    throw new Error(
-      `${provider} cost is missing for ${stage}${detail ? ` (${detail})` : ""}`
+  const results: R[] = []
+  for (let offset = 0; offset < items.length; offset += concurrency) {
+    results.push(
+      ...(await Promise.all(
+        items
+          .slice(offset, offset + concurrency)
+          .map((item, index) => run(item, offset + index))
+      ))
     )
   }
-  const recordedCostUsd = costIsPartial ? resolvedStepCostUsd : cost.cost
-  const recordedCostMicrocents = costIsPartial
-    ? resolvedStepCostMicrocents
-    : cost.costMicrocents
-  const usage =
-    typeof generation === "object" &&
-    generation !== null &&
-    "totalUsage" in generation
-      ? (generation as { totalUsage: unknown }).totalUsage
-      : undefined
-  const entry = {
-    modelId,
-    provider,
-    usage,
-    billingUnit: "micro_usd",
-    costUsd: recordedCostUsd,
-    costMicroUsd: recordedCostMicrocents,
-    costMicrocents: recordedCostMicrocents,
-    ...(costIsPartial ? { costStatus: "partial" } : {}),
-    steps: cost.steps,
-    stepCount: cost.steps.length,
-    providerMetadata:
-      typeof generation === "object" &&
-      generation !== null &&
-      "providerMetadata" in generation
-        ? (generation as { providerMetadata: unknown }).providerMetadata
-        : undefined,
-  }
-  const existing = stages[stage]
-  if (
-    existing &&
-    typeof existing === "object" &&
-    "costMicrocents" in existing &&
-    typeof (existing as { costMicrocents?: unknown }).costMicrocents ===
-      "number"
-  ) {
-    const existingEntry = existing as {
-      costUsd?: number
-      costMicroUsd: number
-      costMicrocents: number
-      costStatus?: string
-      stepCount?: number
-      steps?: unknown[]
-      calls?: unknown[]
-    }
-    stages[stage] = {
-      ...existingEntry,
-      costUsd: (existingEntry.costUsd ?? 0) + recordedCostUsd,
-      costMicroUsd: existingEntry.costMicroUsd + recordedCostMicrocents,
-      costMicrocents: existingEntry.costMicrocents + recordedCostMicrocents,
-      ...(costIsPartial || existingEntry.costStatus === "partial"
-        ? { costStatus: "partial" }
-        : {}),
-      steps: [...(existingEntry.steps ?? []), ...cost.steps],
-      stepCount: (existingEntry.stepCount ?? 0) + cost.steps.length,
-      calls: [...(existingEntry.calls ?? []), entry],
-    }
-  } else {
-    stages[stage] = { ...entry, calls: [entry] }
-  }
-  return usage
+  return results
+}
+
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
+
+type QueueItem = CandidateFinding & { queuedBy: "severity" | "verifier" }
+
+type FindingDecision = {
+  id: string
+  stage: "merge" | "verifier" | "main"
+  decision:
+    | "duplicate"
+    | "approve"
+    | "reject"
+    | "escalate"
+    | "accept"
+    | "failed_open"
+  reason: string
+  confidence?: number
+  findingIndex?: number | null
 }
 
 export const runReviewAgent = async ({
@@ -308,8 +224,9 @@ export const runReviewAgent = async ({
     repository: repository.fullName,
     headSha: pullRequest.headSha,
     triggerSource,
-    modelId: REVIEW_MODEL,
-    verifierModelId: REVIEW_VERIFIER_MODEL,
+    modelId: reviewModels.main,
+    subagentModelId: reviewModels.subagent,
+    verifierModelId: reviewModels.verifier,
   }
   const reviewCommentRunId =
     triggerSource === "mention" ? reviewRunId : undefined
@@ -318,7 +235,7 @@ export const runReviewAgent = async ({
     repo: repository,
     pullRequest,
     triggerSource,
-    modelId: REVIEW_MODEL,
+    modelId: reviewModels.main,
   })
   await recorder.appendEvent("review.started", context)
 
@@ -355,57 +272,58 @@ export const runReviewAgent = async ({
   await recorder.writeJson("omitted-files.json", omittedFiles)
   await recorder.writeText("context/diff.md", diff)
   await recorder.writeText("context/unified.diff", unifiedDiff)
+  const diffStats = {
+    fetchedFileCount,
+    filteredFileCount: filteredFiles.length,
+    omittedFileCount: omittedFiles.length,
+    additions,
+    deletions,
+    diffChangedLineCount,
+  }
   logger.info("Review agent stage completed", {
     ...context,
     stage: "diff",
-    fetchedFileCount,
-    filteredFileCount: filteredFiles.length,
-    omittedFileCount: omittedFiles.length,
-    additions,
-    deletions,
-    diffChangedLineCount,
+    ...diffStats,
   })
-  await recorder.appendEvent("stage.completed", {
-    stage: "diff",
-    fetchedFileCount,
-    filteredFileCount: filteredFiles.length,
-    omittedFileCount: omittedFiles.length,
-    additions,
-    deletions,
-    diffChangedLineCount,
-  })
+  await recorder.appendEvent("stage.completed", { stage: "diff", ...diffStats })
 
   logger.info("Review agent stage started", { ...context, stage: "runtime" })
   await recorder.appendEvent("stage.started", { stage: "runtime" })
-  const openrouter = env.OPENROUTER_API_KEY
-    ? createOpenRouter({ apiKey: env.OPENROUTER_API_KEY })
-    : null
-  const gateway =
-    !openrouter && env.AI_GATEWAY_API_KEY
-      ? createGateway({ apiKey: env.AI_GATEWAY_API_KEY })
-      : null
-  if (!openrouter && !gateway) {
-    throw new Error(
-      "OPENROUTER_API_KEY or AI_GATEWAY_API_KEY is required to run the review agent"
-    )
+  const llm = createReviewLlm()
+  const agentLayers = {
+    main: {
+      modelId: reviewModels.main,
+      model: llm.chatModel(reviewModels.main),
+      providerOptions: llm.providerOptionsFor(
+        reviewModels.main,
+        reviewAgentConfig.main.reasoningEffort
+      ),
+    },
+    subagent: {
+      modelId: reviewModels.subagent,
+      model: llm.chatModel(reviewModels.subagent),
+      providerOptions: llm.providerOptionsFor(
+        reviewModels.subagent,
+        reviewAgentConfig.subagent.reasoningEffort
+      ),
+    },
+    verifier: {
+      modelId: reviewModels.verifier,
+      model: llm.chatModel(reviewModels.verifier),
+      providerOptions: llm.providerOptionsFor(
+        reviewModels.verifier,
+        reviewAgentConfig.verifier.reasoningEffort
+      ),
+    },
+    composer: {
+      modelId: reviewModels.subagent,
+      model: llm.chatModel(reviewModels.subagent),
+      providerOptions: llm.providerOptionsFor(
+        reviewModels.subagent,
+        reviewAgentConfig.reportComposer.reasoningEffort
+      ),
+    },
   }
-  const provider = openrouter ? "openrouter" : "gateway"
-  const mainModel = openrouter
-    ? openRouterChat(openrouter, REVIEW_MODEL)
-    : gateway!.chat(REVIEW_MODEL)
-  const subagentModel = openrouter
-    ? openRouterChat(openrouter, REVIEW_VERIFIER_MODEL)
-    : gateway!.chat(REVIEW_VERIFIER_MODEL)
-  const resolveGenerationCost = openrouter
-    ? resolveOpenRouterGenerationCost
-    : (generation: unknown) =>
-        resolveGatewayGenerationCost(generation, gateway!.getGenerationInfo)
-  const mainProviderOptions = openrouter
-    ? reviewModelProviderOptions
-    : undefined
-  const subagentProviderOptions = openrouter
-    ? verifierModelProviderOptions
-    : undefined
   const llmBilling: Record<string, unknown> = {}
   const recordBilling = (stage: string, modelId: string, generation: unknown) =>
     recordLlmBilling(
@@ -413,9 +331,15 @@ export const runReviewAgent = async ({
       stage,
       modelId,
       generation,
-      provider,
-      resolveGenerationCost
+      llm.provider,
+      llm.resolveGenerationCost
     )
+  const usages: Record<string, unknown[]> = {
+    subagents: [],
+    verification: [],
+    naturalLanguageLinter: [],
+    reportComposer: [],
+  }
   const runtime = await prepareReviewRuntime({
     reviewRunId,
     repo: repository,
@@ -437,6 +361,7 @@ export const runReviewAgent = async ({
       ...new Set(diffFile.hunks.flatMap((hunk) => hunk.touchedNewLines)),
     ])
   }
+  const changedLineMap = renderChangedLineMap(changedLinesByFile)
   const diffContext = await buildDiffContext({
     repository: runtime.paths.repositoryPath,
     diffFiles: parsedDiffFiles,
@@ -459,16 +384,8 @@ export const runReviewAgent = async ({
     : null
   await recorder.writeJson("runtime.json", {
     paths: runtime.paths,
-    base: {
-      sha: runtime.baseSha,
-      repositoryPath: runtime.paths.baseRepositoryPath,
-      diagnostics: runtime.baseCodeIndex.diagnostics.length,
-      repositoryFiles: runtime.baseCodeIndex.repositoryFiles.length,
-      parsedFiles: runtime.baseCodeIndex.files.length,
-    },
-    semantic: {
-      enabled: semanticEnabled,
-    },
+    base: { sha: runtime.baseSha },
+    semantic: { enabled: semanticEnabled },
     qdrant: runtime.qdrant
       ? {
           collection: runtime.qdrant.collection,
@@ -478,10 +395,6 @@ export const runReviewAgent = async ({
         }
       : { configured: false },
   })
-  await recorder.writeJson(
-    "context/base-code-index.json",
-    runtime.baseCodeIndex
-  )
   await recorder.writeJson("context/code-index.json", runtime.codeIndex)
   await recorder.writeJson("context/diff-context.json", diffContext)
   await recorder.writeText("context/affected-symbols.md", affectedSymbols)
@@ -510,28 +423,24 @@ export const runReviewAgent = async ({
     qdrantIgnoredFiles = indexResult.ignoredFiles
     qdrantLogicalWriteBytes = indexResult.logicalWriteBytes
   }
+  const runtimeStats = {
+    repositoryPath: runtime.paths.repositoryPath,
+    diagnostics: runtime.codeIndex.diagnostics.length,
+    semanticEnabled,
+    qdrantEnabled: semanticEnabled,
+    qdrantChunks,
+    qdrantIndexedFiles,
+    qdrantIgnoredFiles,
+    qdrantLogicalWriteBytes,
+  }
   logger.info("Review agent stage completed", {
     ...context,
     stage: "runtime",
-    repositoryPath: runtime.paths.repositoryPath,
-    diagnostics: runtime.codeIndex.diagnostics.length,
-    semanticEnabled,
-    qdrantEnabled: semanticEnabled,
-    qdrantChunks,
-    qdrantIndexedFiles,
-    qdrantIgnoredFiles,
-    qdrantLogicalWriteBytes,
+    ...runtimeStats,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "runtime",
-    repositoryPath: runtime.paths.repositoryPath,
-    diagnostics: runtime.codeIndex.diagnostics.length,
-    semanticEnabled,
-    qdrantEnabled: semanticEnabled,
-    qdrantChunks,
-    qdrantIndexedFiles,
-    qdrantIgnoredFiles,
-    qdrantLogicalWriteBytes,
+    ...runtimeStats,
   })
 
   logger.info("Review agent stage started", {
@@ -542,54 +451,52 @@ export const runReviewAgent = async ({
   const preparedRepositoryContext = await prepareRepositoryContextForReview({
     repo: repository,
     pullRequest,
-    baseRepositoryPath: runtime.paths.baseRepositoryPath,
-    baseIndex: runtime.baseCodeIndex,
+    loadBase: runtime.loadBase,
     baseSha: runtime.baseSha,
-    contextModel: mainModel,
-    contextModelId: REVIEW_MODEL,
-    contextProviderOptions: mainProviderOptions,
+    contextModel: agentLayers.subagent.model,
+    contextModelId: agentLayers.subagent.modelId,
+    contextProviderOptions: agentLayers.subagent.providerOptions,
     recorder,
     logger,
   })
   if (preparedRepositoryContext.billingGeneration) {
     await recordBilling(
       "repository_context",
-      REVIEW_MODEL,
+      agentLayers.subagent.modelId,
       preparedRepositoryContext.billingGeneration
     )
   }
+  const repositoryContextStats = {
+    stage: "repository-context",
+    source: preparedRepositoryContext.source,
+    reason: preparedRepositoryContext.reason,
+    contextId: preparedRepositoryContext.contextId,
+    baseSha: preparedRepositoryContext.baseSha,
+    markdownBytes: textBytes(preparedRepositoryContext.markdown),
+  }
   logger.info("Review agent stage completed", {
     ...context,
-    stage: "repository-context",
-    source: preparedRepositoryContext.source,
-    contextId: preparedRepositoryContext.contextId,
-    baseSha: preparedRepositoryContext.baseSha,
-    changesArchitecture:
-      preparedRepositoryContext.architectureImpact.changesArchitecture,
-    markdownBytes: textBytes(preparedRepositoryContext.markdown),
+    ...repositoryContextStats,
   })
-  await recorder.appendEvent("stage.completed", {
-    stage: "repository-context",
-    source: preparedRepositoryContext.source,
-    contextId: preparedRepositoryContext.contextId,
-    baseSha: preparedRepositoryContext.baseSha,
-    architectureImpact: preparedRepositoryContext.architectureImpact,
-    markdownBytes: textBytes(preparedRepositoryContext.markdown),
-  })
+  await recorder.appendEvent("stage.completed", repositoryContextStats)
 
   logger.info("Review agent stage started", { ...context, stage: "generation" })
   await recorder.appendEvent("stage.started", { stage: "generation" })
   let vectorQueryBytes = 0
   let vectorNetworkBytes = 0
   let vectorQueryCount = 0
-  const createRepositoryTools = (scope: string) => {
+  const createRepositoryTools = (
+    scope: string,
+    onFileRead?: (file: string) => void
+  ) => {
     const base = {
       read_file: tool({
-        description: "Read numbered lines from any repository file.",
+        description:
+          "Read numbered lines from any repository file. Reads 300 lines by default and up to 800; prefer one large read over paging through a file in small chunks.",
         inputSchema: z.object({
           file: z.string().min(1),
           startLine: z.number().int().positive().optional(),
-          maxLines: z.number().int().positive().max(200).optional(),
+          maxLines: z.number().int().positive().max(800).optional(),
         }),
         execute: async ({ file, startLine, maxLines }) => {
           const input = { file, startLine, maxLines }
@@ -599,6 +506,7 @@ export const runReviewAgent = async ({
             startLine,
             maxLines,
           })
+          onFileRead?.(file)
           await recorder.recordToolCall({
             name: `${scope}.read_file`,
             input,
@@ -612,7 +520,6 @@ export const runReviewAgent = async ({
           "Get symbol definitions, signatures, locations, scopes, and source.",
         inputSchema: z.object({ symbol: z.string().min(1) }),
         execute: async ({ symbol }) => {
-          const input = { symbol }
           const result = await getSymbolDefinition({
             repository: runtime.paths.repositoryPath,
             index: runtime.codeIndex,
@@ -621,7 +528,7 @@ export const runReviewAgent = async ({
           const output = { ...result.json, stats: result.stats }
           await recorder.recordToolCall({
             name: `${scope}.get_symbol_definition`,
-            input,
+            input: { symbol },
             output,
           })
           return output
@@ -631,7 +538,6 @@ export const runReviewAgent = async ({
         description: "Get direct call locations and enclosing caller metadata.",
         inputSchema: z.object({ symbol: z.string().min(1) }),
         execute: async ({ symbol }) => {
-          const input = { symbol }
           const result = await getSymbolCallers({
             repository: runtime.paths.repositoryPath,
             index: runtime.codeIndex,
@@ -640,7 +546,7 @@ export const runReviewAgent = async ({
           const output = { ...result.json, stats: result.stats }
           await recorder.recordToolCall({
             name: `${scope}.get_symbol_callers`,
-            input,
+            input: { symbol },
             output,
           })
           return output
@@ -650,7 +556,6 @@ export const runReviewAgent = async ({
         description: "Search exact text across repository files.",
         inputSchema: z.object({ query: z.string().min(1) }),
         execute: async ({ query }) => {
-          const input = { query }
           const result = await searchRepositoryText({
             repository: runtime.paths.repositoryPath,
             index: runtime.codeIndex,
@@ -663,7 +568,7 @@ export const runReviewAgent = async ({
           }
           await recorder.recordToolCall({
             name: `${scope}.locate_text`,
-            input,
+            input: { query },
             output,
           })
           return output
@@ -681,7 +586,6 @@ export const runReviewAgent = async ({
           limit: z.number().int().positive().max(20).optional(),
         }),
         execute: async ({ query, limit = 10 }) => {
-          const input = { query, limit }
           if (!runtime.qdrant)
             return {
               chunks: 0,
@@ -705,7 +609,7 @@ export const runReviewAgent = async ({
           }
           await recorder.recordToolCall({
             name: `${scope}.search_code`,
-            input,
+            input: { query, limit },
             output,
           })
           return output
@@ -714,10 +618,151 @@ export const runReviewAgent = async ({
     }
   }
 
-  const subagentUsages: unknown[] = []
-  const linterUsages: unknown[] = []
-  const suspicionIds = new Set<string>()
+  const allCandidateIds = new Set<string>()
+  let routedCandidates: CandidateFinding[] = []
+  const approvedCandidates: CandidateFinding[] = []
+  const mainQueue: QueueItem[] = []
+  const mainQueueIds = new Set<string>()
+  const findingDecisions: FindingDecision[] = []
+  const subagentCoveredFiles = new Set<string>()
   let spawnBatch = 0
+
+  const compactFinding = (candidate: CandidateFinding) => ({
+    id: candidate.id,
+    severity: candidate.severity,
+    file: candidate.file,
+    startLine: candidate.startLine,
+    endLine: candidate.endLine,
+    title: candidate.title,
+  })
+
+  const overlapsRouted = (candidate: CandidateFinding) =>
+    routedCandidates.find((routed) => isSameIssue(routed, candidate))
+
+  const runVerifierChunk = async ({
+    batch,
+    chunkIndex,
+    candidates,
+  }: {
+    batch: number
+    chunkIndex: number
+    candidates: CandidateFinding[]
+  }) => {
+    const chunkId = String(chunkIndex + 1).padStart(2, "0")
+    const expectedIds = candidates.map((candidate) => candidate.id)
+    const expectedIdSet = new Set(expectedIds)
+    const outputSchema = reviewVerifierOutputSchema.superRefine(
+      (output, validation) => {
+        const seen = new Set<string>()
+        const problems: string[] = []
+        for (const verdict of output.verdicts) {
+          if (!expectedIdSet.has(verdict.id))
+            problems.push(`unknown ${verdict.id}`)
+          seen.add(verdict.id)
+        }
+        for (const id of expectedIds) {
+          if (!seen.has(id)) problems.push(`missing ${id}`)
+        }
+        if (problems.length > 0) {
+          validation.addIssue({
+            code: "custom",
+            path: ["verdicts"],
+            message: `Return exactly one verdict per candidate id. Problems: ${problems.join(", ")}.`,
+          })
+        }
+      }
+    )
+    const prompt = buildReviewVerifierPrompt({
+      title: pullRequest.title,
+      body: pullRequest.body,
+      baseRef: pullRequest.baseRef,
+      headRef: pullRequest.headRef,
+      changedLineMap,
+      candidates,
+    })
+    await recorder.writeText(
+      `verifier/batch-${batch}/chunk-${chunkId}/prompt.txt`,
+      prompt
+    )
+    let lastError: unknown
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const attemptSteps: unknown[] = []
+      try {
+        const agent = new ToolLoopAgent({
+          model: agentLayers.verifier.model,
+          instructions: reviewVerifierInstructions,
+          tools: createRepositoryTools(
+            `verifier.${batch}.${chunkId}.${attempt}`
+          ),
+          providerOptions: agentLayers.verifier.providerOptions,
+          output: repairedJsonOutput(
+            Output.object({
+              schema: outputSchema,
+              name: "verified_findings",
+              description: "One verdict for every supplied candidate id",
+            })
+          ),
+          stopWhen: stepCountIs(reviewAgentConfig.verifier.maxSteps),
+          maxRetries: 2,
+          onStepFinish: async (step) => {
+            attemptSteps.push(step)
+            await recorder.recordStep(step)
+          },
+        })
+        const generation = await agent.generate({ prompt })
+        usages.verification!.push(generation.totalUsage)
+        await recordBilling(
+          "verification",
+          agentLayers.verifier.modelId,
+          generation
+        )
+        attemptSteps.length = 0
+        const output = outputSchema.parse(generation.output)
+        await recorder.writeJson(
+          `verifier/batch-${batch}/chunk-${chunkId}/attempt-${attempt}.json`,
+          {
+            finishReason: generation.finishReason,
+            usage: generation.totalUsage,
+            output,
+          }
+        )
+        return output.verdicts
+      } catch (error) {
+        lastError = error
+        if (attemptSteps.length > 0) {
+          await recordBilling("verification", agentLayers.verifier.modelId, {
+            steps: attemptSteps,
+          })
+        }
+        await recorder.writeJson(
+          `verifier/batch-${batch}/chunk-${chunkId}/attempt-${attempt}-error.json`,
+          { error }
+        )
+        await recorder.appendEvent("verifier.attempt.failed", {
+          batch,
+          chunk: chunkId,
+          attempt,
+          error: errorMessage(error),
+        })
+      }
+    }
+    const reason = `Verifier failed open: ${errorMessage(lastError)}`
+    await recorder.appendEvent("verifier.failed_open", {
+      batch,
+      chunk: chunkId,
+      candidates: candidates.length,
+      escalated: candidates.length,
+      error: reason,
+    })
+    return candidates.map((candidate) => ({
+      id: candidate.id,
+      verdict: "escalate" as const,
+      confidence: 0,
+      reason,
+      failedOpen: true,
+    }))
+  }
+
   const spawnReviewAgents = tool({
     description:
       "Run focused review subagents concurrently. Delegate architectural areas and end-to-end flows. May be called repeatedly.",
@@ -740,12 +785,19 @@ export const runReviewAgent = async ({
         batch,
         tasks: tasks.map((task) => task.id),
       })
-      const runTask = async (task: { id: string; objective: string }) => {
-        const safeId = `${String(tasks.indexOf(task) + 1).padStart(2, "0")}-${safePathSegment(task.id)}`
-        const prompt = `Assigned exploration:
-${task.objective}
+      const knownFindings =
+        routedCandidates.length > 0
+          ? `
 
-Pull request title: ${pullRequest.title}
+Already reported findings (do not re-report these or restate their root causes — but the files they live in are proven bug-dense, so look for different defects in those same files as well as everywhere else):
+${routedCandidates
+  .map(
+    (candidate) =>
+      `- ${candidate.file}:${candidate.startLine}-${candidate.endLine} [${candidate.severity}] ${candidate.title}`
+  )
+  .join("\n")}`
+          : ""
+      const sharedContext = `Pull request title: ${pullRequest.title}
 Pull request description: ${pullRequest.body ?? "(none)"}
 Base branch: ${pullRequest.baseRef}
 Head branch: ${pullRequest.headRef}
@@ -757,58 +809,100 @@ Changed files:
 ${diff}
 
 Changed symbol index:
-${affectedSymbols}`
+${affectedSymbols}${knownFindings}`
+
+      type TaskResult = {
+        taskId: string
+        candidates: CandidateFinding[]
+        error?: string
+      }
+      const runTask = async (task: {
+        id: string
+        objective: string
+      }): Promise<TaskResult> => {
+        const safeId = `${String(tasks.indexOf(task) + 1).padStart(2, "0")}-${safePathSegment(task.id)}`
+        const prompt = `${sharedContext}
+
+Assigned exploration:
+${task.objective}`
         await recorder.writeText(
           `subagents/batch-${batch}/${safeId}/prompt.txt`,
           prompt
         )
         let lastError: unknown
+        const taskReadFiles = new Set<string>()
         for (let attempt = 1; attempt <= 2; attempt += 1) {
+          const attemptSteps: unknown[] = []
           try {
             const agent = new ToolLoopAgent({
-              model: subagentModel,
+              model: agentLayers.subagent.model,
               instructions: reviewSubagentInstructions,
               tools: createRepositoryTools(
-                `subagent.${batch}.${safeId}.${attempt}`
+                `subagent.${batch}.${safeId}.${attempt}`,
+                (file) => taskReadFiles.add(file)
               ),
-              providerOptions: subagentProviderOptions,
-              output: Output.object({
-                schema: reviewSubagentOutputSchema,
-                name: "review_suspicions",
-                description: "Unfiltered suspicious code locations",
-              }),
+              providerOptions: agentLayers.subagent.providerOptions,
+              output: repairedJsonOutput(
+                Output.object({
+                  schema: reviewSubagentOutputSchema,
+                  name: "review_findings",
+                  description:
+                    "Unfiltered candidate bug findings with evidence",
+                })
+              ),
               stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
               maxRetries: 2,
-              onStepFinish: async (step) => recorder.recordStep(step),
+              onStepFinish: async (step) => {
+                attemptSteps.push(step)
+                await recorder.recordStep(step)
+              },
             })
             const generation = await agent.generate({ prompt })
-            subagentUsages.push(generation.totalUsage)
-            await recordBilling("subagents", REVIEW_VERIFIER_MODEL, generation)
+            usages.subagents!.push(generation.totalUsage)
+            await recordBilling(
+              "subagents",
+              agentLayers.subagent.modelId,
+              generation
+            )
+            attemptSteps.length = 0
             const output = reviewSubagentOutputSchema.parse(generation.output)
-            const suspicions = output.suspicions.map((suspicion, index) => {
-              const suspicionId = `batch-${batch}:${task.id}:${index + 1}`
-              suspicionIds.add(suspicionId)
-              return { suspicionId, ...suspicion }
+            const candidates = output.findings.map((finding, index) => {
+              const id = `b${batch}:${task.id}:${index + 1}`
+              allCandidateIds.add(id)
+              return {
+                ...finding,
+                startLine: Math.min(finding.startLine, finding.endLine),
+                endLine: Math.max(finding.startLine, finding.endLine),
+                id,
+                taskId: task.id,
+                supportingTaskIds: [task.id],
+              } satisfies CandidateFinding
             })
             await recorder.writeJson(
               `subagents/batch-${batch}/${safeId}/attempt-${attempt}.json`,
               {
                 finishReason: generation.finishReason,
                 usage: generation.totalUsage,
-                providerMetadata: generation.providerMetadata,
                 output,
-                text: generation.text,
               }
             )
             await recorder.appendEvent("subagent.completed", {
               batch,
               taskId: task.id,
               attempt,
-              suspicions: suspicions.length,
+              findings: candidates.length,
             })
-            return { taskId: task.id, suspicions }
+            for (const file of taskReadFiles) {
+              subagentCoveredFiles.add(file)
+            }
+            return { taskId: task.id, candidates }
           } catch (error) {
             lastError = error
+            if (attemptSteps.length > 0) {
+              await recordBilling("subagents", agentLayers.subagent.modelId, {
+                steps: attemptSteps,
+              })
+            }
             await recorder.writeJson(
               `subagents/batch-${batch}/${safeId}/attempt-${attempt}-error.json`,
               { error }
@@ -817,27 +911,140 @@ ${affectedSymbols}`
               batch,
               taskId: task.id,
               attempt,
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             })
           }
         }
         return {
           taskId: task.id,
-          error:
-            lastError instanceof Error
-              ? lastError.message
-              : "Subagent failed after retry",
+          candidates: [],
+          error: errorMessage(lastError),
         }
       }
-      const results: Awaited<ReturnType<typeof runTask>>[] = []
-      for (let offset = 0; offset < tasks.length; offset += 4) {
-        results.push(
-          ...(await Promise.all(tasks.slice(offset, offset + 4).map(runTask)))
-        )
+
+      const taskResults = await mapConcurrent(tasks, 4, runTask)
+      const rawCandidates = taskResults.flatMap((result) => result.candidates)
+      for (const candidate of rawCandidates) {
+        subagentCoveredFiles.add(candidate.file)
       }
+      const uncoveredFiles = filteredFiles
+        .map((file) => file.filename)
+        .filter(
+          (file) =>
+            !subagentCoveredFiles.has(file) && !isLikelyGeneratedFile(file)
+        )
+
+      const freshCandidates: CandidateFinding[] = []
+      for (const candidate of rawCandidates) {
+        const routed = overlapsRouted(candidate)
+        if (routed) {
+          findingDecisions.push({
+            id: candidate.id,
+            stage: "merge",
+            decision: "duplicate",
+            reason: `Overlaps ${routed.id}, which was already routed in an earlier batch.`,
+          })
+        } else {
+          freshCandidates.push(candidate)
+        }
+      }
+      const { merged, duplicates } = mergeOverlappingCandidates(freshCandidates)
+      for (const duplicate of duplicates) {
+        findingDecisions.push({
+          id: duplicate.id,
+          stage: "merge",
+          decision: "duplicate",
+          reason:
+            "Overlaps another candidate in this batch; the strongest representative was kept.",
+        })
+      }
+      routedCandidates.push(...merged)
+
+      const batchQueue: QueueItem[] = []
+      const queueCandidate = (
+        candidate: CandidateFinding,
+        queuedBy: QueueItem["queuedBy"]
+      ) => {
+        const item = { ...candidate, queuedBy }
+        batchQueue.push(item)
+        mainQueue.push(item)
+        mainQueueIds.add(candidate.id)
+      }
+      const toVerify: CandidateFinding[] = []
+      for (const candidate of merged) {
+        if (
+          candidate.severity === "critical" ||
+          candidate.severity === "high"
+        ) {
+          queueCandidate(candidate, "severity")
+        } else {
+          toVerify.push(candidate)
+        }
+      }
+
+      const batchApproved: CandidateFinding[] = []
+      let rejectedCount = 0
+      const verifierChunks = chunked(
+        toVerify,
+        reviewAgentConfig.verifier.maxFindingsPerCall
+      )
+      const verdictGroups = await mapConcurrent(
+        verifierChunks,
+        4,
+        (candidates, chunkIndex) =>
+          runVerifierChunk({ batch, chunkIndex, candidates })
+      )
+      const candidatesById = new Map(
+        toVerify.map((candidate) => [candidate.id, candidate])
+      )
+      const decidedIds = new Set<string>()
+      for (const verdict of verdictGroups.flat()) {
+        if (decidedIds.has(verdict.id)) continue
+        decidedIds.add(verdict.id)
+        const candidate = candidatesById.get(verdict.id)!
+        findingDecisions.push({
+          id: verdict.id,
+          stage: "verifier",
+          decision:
+            "failedOpen" in verdict && verdict.failedOpen
+              ? "failed_open"
+              : verdict.verdict,
+          reason: verdict.reason,
+          confidence: verdict.confidence,
+        })
+        if (verdict.verdict === "approve") {
+          approvedCandidates.push(candidate)
+          batchApproved.push(candidate)
+        } else if (verdict.verdict === "escalate") {
+          queueCandidate(candidate, "verifier")
+        } else {
+          rejectedCount += 1
+          routedCandidates = routedCandidates.filter(
+            (routed) => routed.id !== verdict.id
+          )
+        }
+      }
+
       const output = {
-        results: results.filter((item) => "suspicions" in item),
-        failures: results.filter((item) => "error" in item),
+        tasks: taskResults.map((result) =>
+          result.error
+            ? { taskId: result.taskId, error: result.error }
+            : { taskId: result.taskId, findings: result.candidates.length }
+        ),
+        reviewQueue: batchQueue.map(
+          ({ taskId: _taskId, queuedBy: _queuedBy, ...item }) => item
+        ),
+        approvedFindings: batchApproved.map(compactFinding),
+        uncoveredFiles,
+        stats: {
+          rawFindings: rawCandidates.length,
+          mergedDuplicates: rawCandidates.length - merged.length,
+          verified: toVerify.length,
+          approved: batchApproved.length,
+          rejected: rejectedCount,
+          queuedForMainReview: batchQueue.length,
+          uncoveredFiles: uncoveredFiles.length,
+        },
       }
       await recorder.writeJson(`subagents/batch-${batch}/result.json`, output)
       await recorder.recordToolCall({
@@ -847,8 +1054,7 @@ ${affectedSymbols}`
       })
       await recorder.appendEvent("subagents.batch.completed", {
         batch,
-        completed: output.results.length,
-        failed: output.failures.length,
+        ...output.stats,
       })
       return output
     },
@@ -899,9 +1105,7 @@ ${affectedSymbols}`
               })
               return `## ${file}\nChanged head lines: ${lines.join(", ")}\n\n${excerpt.content}`
             } catch (error) {
-              const message =
-                error instanceof Error ? error.message : "Could not read file."
-              return `## ${file}\nChanged head lines: ${lines.join(", ")}\nCould not read numbered excerpt: ${message}`
+              return `## ${file}\nChanged head lines: ${lines.join(", ")}\nCould not read numbered excerpt: ${errorMessage(error)}`
             }
           })
         )
@@ -917,58 +1121,41 @@ ${affectedSymbols}`
       )
 
       const agent = new ToolLoopAgent({
-        model: subagentModel,
+        model: agentLayers.subagent.model,
         instructions: naturalLanguageLinterInstructions,
         tools: {},
-        providerOptions: subagentProviderOptions,
-        output: Output.object({
-          schema: naturalLanguageLinterOutputSchema,
-          name: "natural_language_linter_findings",
-          description:
-            "Natural-language rule findings grouped by assigned file",
-        }),
+        providerOptions: agentLayers.subagent.providerOptions,
+        output: repairedJsonOutput(
+          Output.object({
+            schema: naturalLanguageLinterOutputSchema,
+            name: "natural_language_linter_findings",
+            description:
+              "Natural-language rule findings grouped by assigned file",
+          })
+        ),
         stopWhen: stepCountIs(reviewAgentConfig.naturalLanguageLinter.maxSteps),
         maxRetries: 2,
         onStepFinish: async (step) => recorder.recordStep(step),
       })
       const generation = await agent.generate({ prompt })
-      linterUsages.push(generation.totalUsage)
+      usages.naturalLanguageLinter!.push(generation.totalUsage)
       await recordBilling(
         "natural_language_linter",
-        REVIEW_VERIFIER_MODEL,
+        agentLayers.subagent.modelId,
         generation
       )
 
       const output = naturalLanguageLinterOutputSchema.parse(generation.output)
-      const outputByFile = new Map<string, (typeof output.files)[number]>()
-      const duplicateFiles = new Set<string>()
-      for (const file of output.files) {
-        if (outputByFile.has(file.file)) {
-          duplicateFiles.add(file.file)
-          continue
-        }
-        outputByFile.set(file.file, file)
-      }
-      const missingFiles = assignedFiles.filter(
-        (file) => !outputByFile.has(file)
+      const outputByFile = new Map(
+        output.files.map((file) => [file.file, file])
       )
-      const extraFiles = output.files
-        .map((file) => file.file)
-        .filter((file) => !assignedFiles.includes(file))
       await recorder.writeJson(
         `natural-language-linter/batch-${batchId}/output.json`,
         {
           assignedFiles,
-          coverage: {
-            missingFiles,
-            extraFiles,
-            duplicateFiles: [...duplicateFiles],
-          },
           finishReason: generation.finishReason,
           usage: generation.totalUsage,
-          providerMetadata: generation.providerMetadata,
           output,
-          text: generation.text,
         }
       )
 
@@ -991,18 +1178,7 @@ ${affectedSymbols}`
       })
     }
 
-    const findings: ReviewReport["findings"] = []
-    for (let offset = 0; offset < batches.length; offset += 4) {
-      findings.push(
-        ...(
-          await Promise.all(
-            batches
-              .slice(offset, offset + 4)
-              .map((batch, index) => runBatch(batch, offset + index))
-          )
-        ).flat()
-      )
-    }
+    const findings = (await mapConcurrent(batches, 4, runBatch)).flat()
 
     await recorder.writeJson("natural-language-linter/findings.json", findings)
     logger.info("Review agent stage completed", {
@@ -1019,125 +1195,427 @@ ${affectedSymbols}`
     return findings
   }
 
+  const runReportComposer = async (): Promise<{
+    summary: string
+    changedFiles: ReviewReport["changedFiles"]
+  }> => {
+    const fallbackFileSummary = (file: PullRequestFile) => ({
+      file: file.filename,
+      summary: `${file.status} file with ${file.additions} added and ${file.deletions} deleted lines.`,
+    })
+    const omittedFileSummaries = omittedFiles.map((file) => ({
+      file: file.filename,
+      summary: file.omittedReason ?? "Patch omitted.",
+    }))
+    const fallbackSummary = `${pullRequest.title}${pullRequest.body ? `\n\n${pullRequest.body}` : ""}`
+
+    if (filteredFiles.length === 0) {
+      return { summary: fallbackSummary, changedFiles: omittedFileSummaries }
+    }
+
+    logger.info("Review agent stage started", {
+      ...context,
+      stage: "report-composer",
+      files: filteredFiles.length,
+    })
+    await recorder.appendEvent("stage.started", {
+      stage: "report-composer",
+      files: filteredFiles.length,
+    })
+
+    const runBatch = async (
+      batch: PullRequestFile[],
+      index: number
+    ): Promise<ReviewReport["changedFiles"]> => {
+      const batchId = String(index + 1).padStart(2, "0")
+      const assignedFiles = batch.map((file) => file.filename)
+      const prompt = buildReportComposerPrompt({
+        diff: serializePullRequestFiles(batch),
+      })
+      await recorder.writeText(
+        `report-composer/batch-${batchId}/prompt.txt`,
+        prompt
+      )
+      try {
+        const agent = new ToolLoopAgent({
+          model: agentLayers.composer.model,
+          instructions: reportComposerInstructions,
+          tools: {},
+          providerOptions: agentLayers.composer.providerOptions,
+          output: repairedJsonOutput(
+            Output.object({
+              schema: reportComposerOutputSchema,
+              name: "changed_file_summaries",
+              description: "One concise change summary per assigned file",
+            })
+          ),
+          stopWhen: stepCountIs(reviewAgentConfig.reportComposer.maxSteps),
+          maxRetries: 2,
+          onStepFinish: async (step) => recorder.recordStep(step),
+        })
+        const generation = await agent.generate({ prompt })
+        usages.reportComposer!.push(generation.totalUsage)
+        await recordBilling(
+          "report_composer",
+          agentLayers.composer.modelId,
+          generation
+        )
+        const output = reportComposerOutputSchema.parse(generation.output)
+        await recorder.writeJson(
+          `report-composer/batch-${batchId}/output.json`,
+          {
+            assignedFiles,
+            finishReason: generation.finishReason,
+            usage: generation.totalUsage,
+            output,
+          }
+        )
+        const outputByFile = new Map(
+          output.files.map((file) => [file.file, file])
+        )
+        return batch.map(
+          (file) => outputByFile.get(file.filename) ?? fallbackFileSummary(file)
+        )
+      } catch (error) {
+        await recorder.writeJson(
+          `report-composer/batch-${batchId}/error.json`,
+          {
+            error,
+          }
+        )
+        await recorder.appendEvent("report_composer.batch.failed_open", {
+          batch: batchId,
+          files: assignedFiles.length,
+          error: errorMessage(error),
+        })
+        return batch.map(fallbackFileSummary)
+      }
+    }
+
+    const batches = batchNaturalLanguageLinterFiles(filteredFiles, 8)
+    const changedFiles = (await mapConcurrent(batches, 4, runBatch)).flat()
+    changedFiles.push(...omittedFileSummaries)
+
+    let summary = fallbackSummary
+    try {
+      const prompt = buildReportSummaryPrompt({
+        title: pullRequest.title,
+        body: pullRequest.body,
+        baseRef: pullRequest.baseRef,
+        headRef: pullRequest.headRef,
+        fileSummaries: changedFiles,
+      })
+      await recorder.writeText("report-composer/summary-prompt.txt", prompt)
+      const agent = new ToolLoopAgent({
+        model: agentLayers.composer.model,
+        instructions: reportSummaryInstructions,
+        tools: {},
+        providerOptions: agentLayers.composer.providerOptions,
+        output: repairedJsonOutput(
+          Output.object({
+            schema: reportSummaryOutputSchema,
+            name: "review_summary",
+            description: "The summary section of the pull request review",
+          })
+        ),
+        stopWhen: stepCountIs(reviewAgentConfig.reportComposer.maxSteps),
+        maxRetries: 2,
+        onStepFinish: async (step) => recorder.recordStep(step),
+      })
+      const generation = await agent.generate({ prompt })
+      usages.reportComposer!.push(generation.totalUsage)
+      await recordBilling(
+        "report_composer",
+        agentLayers.composer.modelId,
+        generation
+      )
+      summary = reportSummaryOutputSchema.parse(generation.output).summary
+    } catch (error) {
+      await recorder.writeJson("report-composer/summary-error.json", { error })
+      await recorder.appendEvent("report_composer.summary.failed_open", {
+        error: errorMessage(error),
+      })
+    }
+
+    await recorder.writeJson("report-composer/result.json", {
+      summary,
+      changedFiles,
+    })
+    logger.info("Review agent stage completed", {
+      ...context,
+      stage: "report-composer",
+      batches: batches.length,
+      changedFiles: changedFiles.length,
+    })
+    await recorder.appendEvent("stage.completed", {
+      stage: "report-composer",
+      batches: batches.length,
+      changedFiles: changedFiles.length,
+    })
+    return { summary, changedFiles }
+  }
+
+  const changedFilesOverview = renderChangedFilesOverview({
+    files: filteredFiles,
+    omittedFiles,
+    changedLinesByFile,
+  })
+  const patchesByFile = new Map(
+    filteredFiles.map((file) => [file.filename, file])
+  )
+  const omittedByFile = new Map(
+    omittedFiles.map((file) => [file.filename, file])
+  )
+  const readPatch = tool({
+    description:
+      "Read the full diff patch for one changed file in this pull request.",
+    inputSchema: z.object({ file: z.string().min(1) }),
+    execute: async ({ file }) => {
+      const entry = patchesByFile.get(file)
+      const omitted = omittedByFile.get(file)
+      const output = entry
+        ? { file, patch: toolText(serializePullRequestFiles([entry])) }
+        : omitted
+          ? { file, patch: omitted.omittedReason ?? "Patch omitted." }
+          : {
+              file,
+              error:
+                "Not a changed file in this pull request. Use the exact repository-relative path from the changed files overview.",
+            }
+      await recorder.recordToolCall({
+        name: "main.read_patch",
+        input: { file },
+        output,
+      })
+      return output
+    },
+  })
   const mainPrompt = buildMainReviewPrompt({
     title: pullRequest.title,
     body: pullRequest.body,
     baseRef: pullRequest.baseRef,
     headRef: pullRequest.headRef,
-    diff,
+    changedFilesOverview,
     affectedSymbols,
     repositoryContext: preparedRepositoryContext.markdown,
   })
-  await recorder.writeText(
-    "context/main-review-instructions.txt",
-    mainReviewAgentInstructions
-  )
   await recorder.writeText("context/main-review-prompt.txt", mainPrompt)
   await recorder.writeJson("context/main-review-prompt-stats.json", {
     promptBytes: textBytes(mainPrompt),
     diffBytes: textBytes(diff),
+    changedFilesOverviewBytes: textBytes(changedFilesOverview),
     affectedSymbolsBytes: textBytes(affectedSymbols),
     repositoryContextBytes: textBytes(preparedRepositoryContext.markdown),
     repositoryContextSource: preparedRepositoryContext.source,
     semanticEnabled,
   })
-  const mainOutputSchema = reviewReportSchema
+  const mainOutputSchema = mainReviewReportSchema
     .extend({
-      decisions: z.array(reviewSuspicionDecisionSchema),
+      decisions: z.array(reviewDecisionSchema),
+      vetoedApprovedFindings: z.array(
+        z.object({ id: z.string(), reason: z.string() })
+      ),
     })
     .superRefine((output, validation) => {
       const seen = new Set<string>()
-      const duplicateIds = new Set<string>()
-      const unknownIds = new Set<string>()
+      const problems: string[] = []
       for (const decision of output.decisions) {
-        if (seen.has(decision.suspicionId)) {
-          duplicateIds.add(decision.suspicionId)
-        }
-        seen.add(decision.suspicionId)
-        if (!suspicionIds.has(decision.suspicionId)) {
-          unknownIds.add(decision.suspicionId)
-        }
+        if (!mainQueueIds.has(decision.id))
+          problems.push(`unknown ${decision.id}`)
+        seen.add(decision.id)
         if (
-          decision.decision === "accepted" &&
+          decision.decision === "accept" &&
           (decision.findingIndex === null ||
             decision.findingIndex >= output.findings.length)
         ) {
-          validation.addIssue({
-            code: "custom",
-            path: ["decisions"],
-            message: `Accepted suspicion ${decision.suspicionId} must reference an existing findingIndex.`,
-          })
+          problems.push(
+            `accepted ${decision.id} must reference an existing findingIndex`
+          )
         }
-        if (
-          decision.decision !== "accepted" &&
-          decision.findingIndex !== null
-        ) {
-          validation.addIssue({
-            code: "custom",
-            path: ["decisions"],
-            message: `Rejected suspicion ${decision.suspicionId} must set findingIndex to null.`,
-          })
+        if (decision.decision !== "accept" && decision.findingIndex !== null) {
+          problems.push(
+            `non-accepted ${decision.id} must set findingIndex to null`
+          )
         }
       }
-      const missingIds = [...suspicionIds].filter((id) => !seen.has(id))
-      if (
-        missingIds.length > 0 ||
-        duplicateIds.size > 0 ||
-        unknownIds.size > 0
-      ) {
+      for (const id of mainQueueIds) {
+        if (!seen.has(id)) problems.push(`missing ${id}`)
+      }
+      if (problems.length > 0) {
         validation.addIssue({
           code: "custom",
           path: ["decisions"],
-          message: `Invalid suspicion decision ledger. Missing: ${missingIds.join(", ") || "none"}; duplicate: ${[...duplicateIds].join(", ") || "none"}; unknown: ${[...unknownIds].join(", ") || "none"}.`,
+          message: `Return exactly one decision per reviewQueue id. Problems: ${problems.join(", ")}.`,
         })
       }
     })
   const mainAgent = new ToolLoopAgent({
-    model: mainModel,
+    model: agentLayers.main.model,
     instructions: mainReviewAgentInstructions,
     tools: {
       ...createRepositoryTools("main"),
+      read_patch: readPatch,
       spawn_review_agents: spawnReviewAgents,
     },
-    providerOptions: mainProviderOptions,
-    output: Output.object({
-      schema: mainOutputSchema,
-      name: "review_report",
-      description:
-        "Verified pull request review and a complete decision ledger for every delegated suspicion",
-    }),
+    providerOptions: agentLayers.main.providerOptions,
+    output: repairedJsonOutput(
+      Output.object({
+        schema: mainOutputSchema,
+        name: "review_report",
+        description:
+          "Final review findings and one decision per escalated reviewQueue id",
+      })
+    ),
     stopWhen: stepCountIs(reviewAgentConfig.main.maxSteps),
     maxRetries: 2,
     onStepFinish: async (step) => recorder.recordStep(step),
   })
-  const mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
-  const mainUsage = await recordBilling("main", REVIEW_MODEL, mainGeneration)
-  const mainOutput = mainOutputSchema.parse(mainGeneration.output)
-  const generatedReport = reviewReportSchema.parse(mainOutput)
-  const linterFindings = await runNaturalLanguageLinter()
-  const candidateReport: ReviewReport = {
-    ...generatedReport,
-    findings: [...generatedReport.findings, ...linterFindings],
+
+  const composedReportPromise = runReportComposer()
+  let mainGeneration = await mainAgent.generate({ prompt: mainPrompt })
+  const mainUsages = [
+    await recordBilling("main", agentLayers.main.modelId, mainGeneration),
+  ]
+  const uncoveredAfterMain = filteredFiles
+    .map((file) => file.filename)
+    .filter(
+      (file) => !subagentCoveredFiles.has(file) && !isLikelyGeneratedFile(file)
+    )
+  if (uncoveredAfterMain.length > 0) {
+    await recorder.appendEvent("main.coverage_enforced", {
+      files: uncoveredAfterMain,
+    })
+    mainGeneration = await mainAgent.generate({
+      messages: [
+        { role: "user" as const, content: mainPrompt },
+        ...mainGeneration.response.messages,
+        {
+          role: "user" as const,
+          content: `These changed files were never inspected by any subagent: ${uncoveredAfterMain.join(", ")}. Spawn one follow-up batch that covers them (a single task is fine), then return the final report again with one decision per reviewQueue id, including any newly escalated ids.`,
+        },
+      ],
+    })
+    mainUsages.push(
+      await recordBilling("main", agentLayers.main.modelId, mainGeneration)
+    )
   }
+  const mainOutput = mainOutputSchema.parse(mainGeneration.output)
+  if (spawnBatch === 0) {
+    logger.error("Main agent returned a report without spawning subagents", {
+      ...context,
+      stage: "generation",
+    })
+    await recorder.appendEvent("main.delegation_skipped", {
+      findings: mainOutput.findings.length,
+    })
+  }
+  const recordedDecisionIds = new Set<string>()
+  for (const decision of mainOutput.decisions) {
+    if (recordedDecisionIds.has(decision.id)) continue
+    recordedDecisionIds.add(decision.id)
+    findingDecisions.push({
+      id: decision.id,
+      stage: "main",
+      decision: decision.decision,
+      reason: decision.reason,
+      findingIndex: decision.findingIndex,
+    })
+  }
+  const linterFindings = await runNaturalLanguageLinter()
+  const composedReport = await composedReportPromise
+
+  const mainFindings = mainOutput.findings.map((finding) => ({
+    ...finding,
+    source: "review" as const,
+  }))
+  const vetoReasonById = new Map(
+    mainOutput.vetoedApprovedFindings
+      .filter((veto) =>
+        approvedCandidates.some((candidate) => candidate.id === veto.id)
+      )
+      .map((veto) => [veto.id, veto.reason])
+  )
+  for (const [id, reason] of vetoReasonById) {
+    findingDecisions.push({ id, stage: "main", decision: "reject", reason })
+  }
+  if (vetoReasonById.size > 0) {
+    await recorder.appendEvent("main.approved_vetoed", {
+      ids: [...vetoReasonById.keys()],
+    })
+  }
+  const approvedFindings = approvedCandidates
+    .filter((candidate) => !vetoReasonById.has(candidate.id))
+    .map(
+      ({
+        id: _id,
+        taskId: _t,
+        supportingTaskIds: _s,
+        evidence: _e,
+        ...finding
+      }) => ({
+        ...finding,
+        source: "review" as const,
+      })
+    )
+  const publishedPool = [...mainFindings, ...approvedFindings]
+  const restoredDuplicates = mainOutput.decisions
+    .filter((decision) => decision.decision === "duplicate")
+    .flatMap((decision) => {
+      const candidate = mainQueue.find((item) => item.id === decision.id)
+      if (!candidate) return []
+      const covered = publishedPool.some(
+        (finding) =>
+          severityRank[finding.severity] <= severityRank[candidate.severity] &&
+          resemblesSameIssue(finding, candidate)
+      )
+      return covered ? [] : [candidate]
+    })
+  for (const candidate of restoredDuplicates) {
+    findingDecisions.push({
+      id: candidate.id,
+      stage: "main",
+      decision: "accept",
+      reason:
+        "Duplicate decision overridden: no surviving finding of equal or higher severity resembles this candidate.",
+    })
+  }
+  if (restoredDuplicates.length > 0) {
+    await recorder.appendEvent("main.duplicate_overridden", {
+      ids: restoredDuplicates.map((candidate) => candidate.id),
+    })
+  }
+  const restoredFindings = restoredDuplicates.map(
+    ({
+      id: _id,
+      taskId: _t,
+      supportingTaskIds: _s,
+      evidence: _e,
+      queuedBy: _q,
+      ...finding
+    }) => ({
+      ...finding,
+      source: "review" as const,
+    })
+  )
+  const bugFindings = dedupeSameIssueFindings(
+    sortBySeverity([...mainFindings, ...approvedFindings, ...restoredFindings])
+  )
+  const candidateReport: ReviewReport = {
+    summary: composedReport.summary,
+    changedFiles: composedReport.changedFiles,
+    reviewerAttention: mainOutput.reviewerAttention,
+    mergeSafetyScore: mainOutput.mergeSafetyScore,
+    mergeSafetyReason: mainOutput.mergeSafetyReason,
+    findings: [...bugFindings, ...linterFindings],
+  }
+
   await recorder.writeJson("main-agent-output.json", {
     finishReason: mainGeneration.finishReason,
     usage: mainGeneration.totalUsage,
     providerMetadata: mainGeneration.providerMetadata,
     output: mainOutput,
-    text: mainGeneration.text,
   })
-  await recorder.writeJson("suspicion-decisions.json", mainOutput.decisions)
-  const decisionCounts = {
-    accepted: mainOutput.decisions.filter(
-      (decision) => decision.decision === "accepted"
-    ).length,
-    duplicate: mainOutput.decisions.filter(
-      (decision) => decision.decision === "duplicate"
-    ).length,
-    notBug: mainOutput.decisions.filter(
-      (decision) => decision.decision === "not_bug"
-    ).length,
-  }
+  await recorder.writeJson("finding-decisions.json", findingDecisions)
 
   const reportValidation = await validateReviewReportEvidence({
     repository: runtime.paths.repositoryPath,
@@ -1147,69 +1625,49 @@ ${affectedSymbols}`
   const invalidEvidenceFindings = candidateReport.findings.filter(
     (_, index) => !reportValidation.findings[index]?.valid
   )
-  const generatedFindingCount = generatedReport.findings.length
-  const validCandidateEntries = candidateReport.findings
-    .map((finding, index) => ({ finding, index }))
-    .filter((entry) => reportValidation.findings[entry.index]?.valid)
-  const validMainFindings = validCandidateEntries
-    .filter((entry) => entry.index < generatedFindingCount)
-    .map((entry, order) => ({ finding: entry.finding, order }))
-  const validLinterFindings = validCandidateEntries
-    .filter((entry) => entry.index >= generatedFindingCount)
-    .map((entry) => entry.finding)
-  const meaningfulTokens = (text: string) =>
-    new Set(
-      text
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")
-        .split(/\s+/)
-        .filter((token) => token.length > 2)
-        .map((token) =>
-          token.length > 3 && token.endsWith("s") ? token.slice(0, -1) : token
-        )
-    )
-  const overlap = (
-    first: ReviewReport["findings"][number],
-    second: ReviewReport["findings"][number]
-  ) =>
-    first.file === second.file &&
-    first.startLine <= second.endLine &&
-    second.startLine <= first.endLine
-  const tokenOverlapScore = (first: Set<string>, second: Set<string>) => {
-    if (first.size === 0 || second.size === 0) return 0
-    const shared = [...first].filter((token) => second.has(token)).length
-    return shared / Math.min(first.size, second.size)
-  }
-  const tokensForFinding = (finding: ReviewReport["findings"][number]) =>
-    new Set([
-      ...meaningfulTokens(finding.title),
-      ...meaningfulTokens(finding.body),
-    ])
-  const shouldDropLinterFinding = (
-    linterFinding: ReviewReport["findings"][number]
-  ) => {
-    const linterTokens = tokensForFinding(linterFinding)
-    return validMainFindings.some(({ finding }) => {
-      if (!overlap(linterFinding, finding)) return false
-      return tokenOverlapScore(linterTokens, tokensForFinding(finding)) >= 0.7
-    })
-  }
-  const severityRank = { critical: 0, high: 1, medium: 2, low: 3 }
+  const evidenceRepairedFindings = reportValidation.findings.filter(
+    (finding) => finding.status === "repairable"
+  )
+  const validatedFindings = candidateReport.findings.flatMap(
+    (finding, index) => {
+      const validation = reportValidation.findings[index]
+      if (!validation?.valid) return []
+      return [
+        validation.normalized
+          ? {
+              ...finding,
+              file: validation.normalized.file,
+              startLine: validation.normalized.startLine,
+              endLine: validation.normalized.endLine,
+            }
+          : finding,
+      ]
+    }
+  )
+  const validatedBugFindings = validatedFindings.filter(
+    (finding) => finding.source !== "natural_language_linter"
+  )
+  const validatedLinterFindings = validatedFindings.filter(
+    (finding) => finding.source === "natural_language_linter"
+  )
+  const finalFindings = [
+    ...validatedBugFindings,
+    ...dropFindingsCoveredBy(validatedLinterFindings, validatedBugFindings),
+  ]
   const finalReport: ReviewReport = {
     ...candidateReport,
-    findings: [
-      ...validMainFindings
-        .sort(
-          (first, second) =>
-            severityRank[first.finding.severity] -
-              severityRank[second.finding.severity] ||
-            first.order - second.order
-        )
-        .map((entry) => entry.finding),
-      ...validLinterFindings.filter(
-        (finding) => !shouldDropLinterFinding(finding)
-      ),
-    ],
+    ...(finalFindings.length === 0 && candidateReport.findings.length > 0
+      ? {
+          mergeSafetyScore: 5 as const,
+          mergeSafetyReason:
+            "No candidate findings had locatable evidence after validation; merge-safety is based on the absence of retained validated findings.",
+        }
+      : invalidEvidenceFindings.length > 0
+        ? {
+            mergeSafetyReason: `Merge-safety is based on ${finalFindings.length} retained validated finding(s). ${invalidEvidenceFindings.length} candidate finding(s) were omitted because their evidence could not be anchored; the final finding list below is authoritative.`,
+          }
+        : {}),
+    findings: finalFindings,
   }
   await recorder.writeJson(
     "candidate-review-report-validation.json",
@@ -1219,39 +1677,46 @@ ${affectedSymbols}`
     "evidence-filtered-findings.json",
     invalidEvidenceFindings
   )
+  await recorder.writeJson(
+    "evidence-repaired-findings.json",
+    evidenceRepairedFindings
+  )
   await recorder.writeJson("review-report.json", finalReport)
   const renderedReport = renderReviewSummaryComment({
     report: finalReport,
     inlineReview: { kind: "not_needed" },
   })
   await recorder.writeText("rendered-comment.md", renderedReport)
-  const generationUsage = {
-    main: mainUsage,
-    subagents: subagentUsages,
-    naturalLanguageLinter: linterUsages,
+  const generationUsage = { main: mainUsages, ...usages }
+  const decisionCounts = findingDecisions.reduce<Record<string, number>>(
+    (counts, decision) => {
+      const key = `${decision.stage}:${decision.decision}`
+      counts[key] = (counts[key] ?? 0) + 1
+      return counts
+    },
+    {}
+  )
+  const generationStats = {
+    usage: generationUsage,
+    spawnBatches: spawnBatch,
+    rawFindingCount: allCandidateIds.size,
+    mainQueueCount: mainQueueIds.size,
+    verifierApprovedCount: approvedCandidates.length,
+    decisionCounts,
+    publishedFindingCount: finalReport.findings.length,
+    mainFindings: mainOutput.findings.length,
+    naturalLanguageLinterFindings: linterFindings.length,
+    evidenceFilteredFindings: invalidEvidenceFindings.length,
+    evidenceRepairedFindings: evidenceRepairedFindings.length,
   }
   logger.info("Review agent stage completed", {
     ...context,
     stage: "generation",
-    usage: generationUsage,
-    spawnBatches: spawnBatch,
-    suspicionDecisions: decisionCounts,
-    mergeSafetyScore: finalReport.mergeSafetyScore,
-    findings: finalReport.findings.length,
-    generatedFindings: generatedReport.findings.length,
-    naturalLanguageLinterFindings: linterFindings.length,
-    evidenceFilteredFindings: invalidEvidenceFindings.length,
+    ...generationStats,
   })
   await recorder.appendEvent("stage.completed", {
     stage: "generation",
-    usage: generationUsage,
-    spawnBatches: spawnBatch,
-    suspicionDecisions: decisionCounts,
-    mergeSafetyScore: finalReport.mergeSafetyScore,
-    findings: finalReport.findings.length,
-    generatedFindings: generatedReport.findings.length,
-    naturalLanguageLinterFindings: linterFindings.length,
-    evidenceFilteredFindings: invalidEvidenceFindings.length,
+    ...generationStats,
   })
 
   logger.info("Review agent stage started", { ...context, stage: "publish" })
@@ -1277,31 +1742,31 @@ ${affectedSymbols}`
     }
     const inlineReviews: PublishedInlineReview[] = []
     try {
-      const bugFindings = finalReport.findings.filter(
+      const bugInlineFindings = finalReport.findings.filter(
         (finding) => finding.source !== "natural_language_linter"
       )
-      const lintFindings = finalReport.findings.filter(
+      const lintInlineFindings = finalReport.findings.filter(
         (finding) => finding.source === "natural_language_linter"
       )
 
-      if (bugFindings.length > 0) {
+      if (bugInlineFindings.length > 0) {
         const bugReview = await publishPullRequestReview({
           repo: repository,
           installationId,
           pullRequestNumber: pullRequest.number,
           headSha: pullRequest.headSha,
-          findings: bugFindings,
+          findings: bugInlineFindings,
         })
         if (bugReview) inlineReviews.push(bugReview)
       }
 
-      if (lintFindings.length > 0) {
+      if (lintInlineFindings.length > 0) {
         const lintReview = await publishPullRequestReview({
           repo: repository,
           installationId,
           pullRequestNumber: pullRequest.number,
           headSha: pullRequest.headSha,
-          findings: lintFindings,
+          findings: lintInlineFindings,
           body: "Linting rule violations from configured natural-language rules:",
         })
         if (lintReview) inlineReviews.push(lintReview)
@@ -1356,20 +1821,13 @@ ${affectedSymbols}`
       }
     }
     const lastInlineReview = inlineReviews.at(-1)
-    const inlineReview = lastInlineReview
-      ? {
-          reviewId: lastInlineReview.reviewId,
-          event: lastInlineReview.event,
-          inlineCommentCount: inlineReviews.reduce(
-            (total, review) => total + review.inlineCommentCount,
-            0
-          ),
-        }
-      : null
-    if (inlineReview) {
-      reviewId = inlineReview.reviewId
-      reviewEvent = inlineReview.event
-      inlineCommentCount = inlineReview.inlineCommentCount
+    if (lastInlineReview) {
+      reviewId = lastInlineReview.reviewId
+      reviewEvent = lastInlineReview.event
+      inlineCommentCount = inlineReviews.reduce(
+        (total, review) => total + review.inlineCommentCount,
+        0
+      )
     }
   }
   const llmCostMicrocents = Object.values(llmBilling).reduce<number>(
@@ -1396,6 +1854,11 @@ ${affectedSymbols}`
   const vectorNetworkCostMicrocents = semanticEnabled
     ? calculateVectorNetworkCostMicrocents(vectorNetworkBytes)
     : 0
+  const totalCostMicrocents =
+    llmCostMicrocents +
+    vectorWriteCostMicrocents +
+    vectorQueryCostMicrocents +
+    vectorNetworkCostMicrocents
   const billing = {
     billingUnit: "micro_usd" as const,
     llmCostMicroUsd: llmCostMicrocents,
@@ -1410,24 +1873,17 @@ ${affectedSymbols}`
     vectorQueryCostMicrocents,
     vectorNetworkCostMicroUsd: vectorNetworkCostMicrocents,
     vectorNetworkCostMicrocents,
-    totalCostMicroUsd:
-      llmCostMicrocents +
-      vectorWriteCostMicrocents +
-      vectorQueryCostMicrocents +
-      vectorNetworkCostMicrocents,
-    totalCostMicrocents:
-      llmCostMicrocents +
-      vectorWriteCostMicrocents +
-      vectorQueryCostMicrocents +
-      vectorNetworkCostMicrocents,
+    totalCostMicroUsd: totalCostMicrocents,
+    totalCostMicrocents,
     llm: llmBilling,
   }
   const result = {
     kind: "summary" as const,
     summary: publishedReport,
     triggerSource,
-    modelId: REVIEW_MODEL,
-    verifierModelId: REVIEW_VERIFIER_MODEL,
+    modelId: reviewModels.main,
+    subagentModelId: reviewModels.subagent,
+    verifierModelId: reviewModels.verifier,
     fetchedFileCount,
     filteredFileCount: filteredFiles.length,
     diffChangedLineCount,
@@ -1436,9 +1892,9 @@ ${affectedSymbols}`
     reviewEvent,
     inlineCommentCount,
     inlineReviewPublishError,
+    ...generationStats,
     mergeSafetyScore: finalReport.mergeSafetyScore,
     findings: finalReport.findings,
-    suspicionDecisions: decisionCounts,
     usage: generationUsage as unknown as Record<string, unknown>,
     billing,
     startedAt: startedAtIso,
@@ -1451,28 +1907,20 @@ ${affectedSymbols}`
     reviewRunId,
     repository: repository.fullName,
     pullRequestNumber: pullRequest.number,
-    modelId: REVIEW_MODEL,
-    verifierModelId: REVIEW_VERIFIER_MODEL,
+    modelId: reviewModels.main,
+    subagentModelId: reviewModels.subagent,
+    verifierModelId: reviewModels.verifier,
     fetchedFileCount,
     filteredFileCount: filteredFiles.length,
     diffChangedLineCount,
-    semanticEnabled,
-    qdrantEnabled: semanticEnabled,
-    qdrantChunks,
-    qdrantIndexedFiles,
-    qdrantIgnoredFiles,
-    qdrantLogicalWriteBytes,
-    generatedFindings: generatedReport.findings.length,
-    naturalLanguageLinterFindings: linterFindings.length,
-    evidenceFilteredFindings: invalidEvidenceFindings.length,
-    suspicionDecisions: decisionCounts,
+    ...runtimeStats,
+    ...generationStats,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
     confirmedFindings: finalReport.findings.length,
     inlineCommentCount,
     reviewId,
     reviewEvent,
     inlineReviewPublishError,
-    mergeSafetyScore: finalReport.mergeSafetyScore,
-    usage: result.usage,
     billing,
     counts: recorder.counts(),
     durationMs: result.durationMs,

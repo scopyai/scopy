@@ -46,8 +46,8 @@ function BlogIndex() {
           <header className="l-blog-head">
             <h1 className="l-blog-title">The Scopy blog</h1>
             <p className="l-blog-sub">
-              Practical guides on AI code review, pull requests and shipping
-              higher-quality code.
+              Practical guides on AI code review and shipping higher-quality
+              code.
             </p>
           </header>
 
@@ -59,15 +59,17 @@ function BlogIndex() {
                   params={{ slug: post.slug }}
                   className="l-blog-card-link"
                 >
-                  <div className="l-blog-card-meta">
-                    <time dateTime={post.date}>
-                      {formatPostDate(post.date)}
-                    </time>
-                    <span aria-hidden="true">·</span>
-                    <span>{post.readingMinutes} min read</span>
+                  <div className="l-blog-card-copy">
+                    <div className="l-blog-card-meta">
+                      <time dateTime={post.date}>
+                        {formatPostDate(post.date)}
+                      </time>
+                      <span aria-hidden="true">·</span>
+                      <span>{post.readingMinutes} min read</span>
+                    </div>
+                    <h2 className="l-blog-card-title">{post.title}</h2>
+                    <p className="l-blog-card-desc">{post.description}</p>
                   </div>
-                  <h2 className="l-blog-card-title">{post.title}</h2>
-                  <p className="l-blog-card-desc">{post.description}</p>
                 </Link>
               </li>
             ))}

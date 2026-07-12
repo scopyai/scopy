@@ -9,14 +9,23 @@ export type ReviewReasoningEffort =
 export const reviewAgentConfig = {
   main: {
     reasoningEffort: "low" as ReviewReasoningEffort,
-    maxSteps: 80,
+    maxSteps: 16,
   },
   subagent: {
-    reasoningEffort: "high" as ReviewReasoningEffort,
+    reasoningEffort: "low" as ReviewReasoningEffort,
     maxSteps: 40,
+  },
+  verifier: {
+    reasoningEffort: "medium" as ReviewReasoningEffort,
+    maxSteps: 18,
+    maxFindingsPerCall: 8,
   },
   naturalLanguageLinter: {
     maxSteps: 5,
+  },
+  reportComposer: {
+    reasoningEffort: "low" as ReviewReasoningEffort,
+    maxSteps: 2,
   },
   repositoryContext: {
     maxSteps: 40,
