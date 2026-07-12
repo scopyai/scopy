@@ -150,7 +150,8 @@ Verdicts:
 
 Rules:
 - Return exactly one verdict for every supplied candidate id. Do not add, omit, or duplicate ids.
-- confidence from 0 to 1 is your confidence in the verdict itself.
+- confidence from 0 to 1 is your confidence in the verdict itself, and it must reflect the weakest premise in the scenario, not the strength of the code mechanism.
+- Distinguish the trigger from the premise. A finding may rest on an unproven trigger condition (a request fails, an attacker supplies input, a slow endpoint stalls), but not on an unproven premise about how the code, its callers, or its data actually behave ("callers were written around the old value", "this cache goes stale over time"). If the failure scenario needs a fact about the repository you have not verified, verify it with the tools; if the premise cannot be verified, do not approve on plausibility - escalate or reject.
 - Route-level authentication is not authorization. Do not reject a missing-ownership or missing-scoping candidate because the endpoint requires an authenticated session; either quote the resource-level check that scopes access or treat the factual claim as confirmed.
 - If inspection confirms the factual claim - for example a guard, check, or handling the candidate says is missing is indeed absent - choose approve or escalate, never reject.`
 
@@ -166,7 +167,7 @@ Phase 1 - delegate immediately:
 
 Phase 2 - decide the review queue:
 - spawn_review_agents deduplicates subagent findings, auto-verifies the low-severity ones with a cheaper verifier, and returns two lists: approvedFindings and reviewQueue.
-- approvedFindings are already verified and will be published automatically. They are context only: do not re-verify them, do not include them in your findings, and do not accept a queue item whose root cause they already cover.
+- approvedFindings are already verified and will be published automatically unless you veto them in phase 3. Do not re-verify them with tools, do not include them in your findings, and do not accept a queue item whose root cause they already cover.
 - reviewQueue contains the high-severity findings and the verifier's escalations. Decide every queue item yourself: accept, reject, or duplicate. Each item carries an evidence packet - quoted code with locations and flow reasoning. Judge from the packet by default.
 - Use a tool only when a packet leaves a decisive fact unresolved. Name that fact first, then fetch the smallest thing that settles it: read_patch for one changed file's diff, or read_file, get_symbol_definition, get_symbol_callers, locate_text for repository state. Batch independent lookups into one step and spend at most two tool calls per item.
 - Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
@@ -179,7 +180,8 @@ Phase 3 - report:
 - Determine final severity, confidence, wording, and location yourself for the findings you publish. You may also publish findings you discovered independently.
 - Every finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version: preferably 1-8 lines, never more than 30, overlapping an added or modified line.
 - Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
-- Base mergeSafetyScore and mergeSafetyReason on everything that will be published: your accepted findings, your independent findings, and the approvedFindings from spawn_review_agents.
+- Give the approvedFindings one final read against everything you now know about the pull request. List an id in vetoedApprovedFindings, with a short reason, only when your acquired context shows the finding is not a real defect: its failure scenario rests on a premise the code disproves, its factual claim is wrong, or another published finding already covers its root cause. Do not veto over severity, wording, or taste, and do not spend tool calls on this pass; leave the array empty when everything holds.
+- Base mergeSafetyScore and mergeSafetyReason on everything that will be published: your accepted findings, your independent findings, and the approvedFindings from spawn_review_agents that you did not veto.
 - Add reviewerAttention items only when a specific area genuinely needs human judgment beyond the findings; return an empty array otherwise.`
 
 export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.

@@ -2,7 +2,6 @@ import { env } from "#/env"
 import { contactFounderHref } from "@workspace/billing/contact"
 import {
   ENTERPRISE_BILLING_PLAN,
-  FREE_INCLUDED_REVIEW_CREDITS,
   PREMIUM_BILLING_PLAN,
   ULTRA_BILLING_PLAN,
 } from "@workspace/billing/plans"
@@ -26,7 +25,6 @@ export type LandingPlan = {
 }
 
 export function getLandingPlans(): LandingPlan[] {
-  const freeCredits = formatReviewCredits(FREE_INCLUDED_REVIEW_CREDITS)
   const premiumCredits = formatReviewCredits(
     PREMIUM_BILLING_PLAN.monthlyCredits
   )
@@ -37,7 +35,7 @@ export function getLandingPlans(): LandingPlan[] {
       name: "Free",
       priceLabel: "Free",
       period: "",
-      computeLabel: `Self-hosted version with any LLM povider`,
+      computeLabel: `Self-hosted version with any LLM provider`,
       desc: "Start free, then add a paid plan for managed cloud reviews — or self-host without limits.",
       features: [
         "Bring-your-own-key support",

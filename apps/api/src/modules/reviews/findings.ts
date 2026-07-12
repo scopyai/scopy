@@ -36,11 +36,6 @@ const findingTokens = (finding: Pick<ReviewFinding, "title" | "body">) =>
   ])
 
 const SAME_ISSUE_TOKEN_OVERLAP = 0.4
-// Paraphrase-heavy duplicates of one defect can score below the token
-// threshold while pointing at nearly the same lines (observed 0.36 on real
-// duplicates); when the ranges nearly coincide, require less textual
-// similarity. Distinct bugs on nearly identical lines stay apart because
-// their token overlap falls below the reduced floor (observed <= 0.26).
 const NEAR_IDENTICAL_RANGE_JACCARD = 0.6
 const NEAR_IDENTICAL_TOKEN_OVERLAP = 0.3
 
@@ -80,9 +75,6 @@ const preferredCandidate = (
   second.confidence - first.confidence ||
   second.evidence.length - first.evidence.length
 
-// Independent subagents routinely report the same bug at the same location.
-// Collapse same-issue candidates to one representative up front so no
-// downstream layer ever sees (or pays for) the same bug twice.
 export const mergeOverlappingCandidates = (
   candidates: CandidateFinding[]
 ): { merged: CandidateFinding[]; duplicates: CandidateFinding[] } => {

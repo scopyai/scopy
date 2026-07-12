@@ -1422,6 +1422,9 @@ ${task.objective}`
   const mainOutputSchema = mainReviewReportSchema
     .extend({
       decisions: z.array(reviewDecisionSchema),
+      vetoedApprovedFindings: z
+        .array(z.object({ id: z.string(), reason: z.string() }))
+        .default([]),
     })
     .superRefine((output, validation) => {
       const seen = new Set<string>()
@@ -1535,18 +1538,35 @@ ${task.objective}`
     ...finding,
     source: "review" as const,
   }))
-  const approvedFindings = approvedCandidates.map(
-    ({
-      id: _id,
-      taskId: _t,
-      supportingTaskIds: _s,
-      evidence: _e,
-      ...finding
-    }) => ({
-      ...finding,
-      source: "review" as const,
-    })
+  const vetoReasonById = new Map(
+    mainOutput.vetoedApprovedFindings
+      .filter((veto) =>
+        approvedCandidates.some((candidate) => candidate.id === veto.id)
+      )
+      .map((veto) => [veto.id, veto.reason])
   )
+  for (const [id, reason] of vetoReasonById) {
+    findingDecisions.push({ id, stage: "main", decision: "reject", reason })
+  }
+  if (vetoReasonById.size > 0) {
+    await recorder.appendEvent("main.approved_vetoed", {
+      ids: [...vetoReasonById.keys()],
+    })
+  }
+  const approvedFindings = approvedCandidates
+    .filter((candidate) => !vetoReasonById.has(candidate.id))
+    .map(
+      ({
+        id: _id,
+        taskId: _t,
+        supportingTaskIds: _s,
+        evidence: _e,
+        ...finding
+      }) => ({
+        ...finding,
+        source: "review" as const,
+      })
+    )
   const publishedPool = [...mainFindings, ...approvedFindings]
   const restoredDuplicates = mainOutput.decisions
     .filter((decision) => decision.decision === "duplicate")

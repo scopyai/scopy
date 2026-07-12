@@ -135,7 +135,6 @@ export const defaultGeneratedPathPatterns = [
   "**/*_pb2_grpc.py",
   "**/*_pb.ts",
   "**/*_pb.js",
-  "**/*.d.ts",
   "**/*.g.dart",
   "**/*.g.cs",
   "**/zz_generated*",
