@@ -462,7 +462,7 @@ export const runReviewAgent = async ({
   if (preparedRepositoryContext.billingGeneration) {
     await recordBilling(
       "repository_context",
-      agentLayers.main.modelId,
+      agentLayers.subagent.modelId,
       preparedRepositoryContext.billingGeneration
     )
   }
@@ -1606,10 +1606,7 @@ ${task.objective}`
     reviewerAttention: mainOutput.reviewerAttention,
     mergeSafetyScore: mainOutput.mergeSafetyScore,
     mergeSafetyReason: mainOutput.mergeSafetyReason,
-    findings: [
-      ...bugFindings,
-      ...dropFindingsCoveredBy(linterFindings, bugFindings),
-    ],
+    findings: [...bugFindings, ...linterFindings],
   }
 
   await recorder.writeJson("main-agent-output.json", {
@@ -1631,20 +1628,32 @@ ${task.objective}`
   const evidenceRepairedFindings = reportValidation.findings.filter(
     (finding) => finding.status === "repairable"
   )
-  const finalFindings = candidateReport.findings.flatMap((finding, index) => {
-    const validation = reportValidation.findings[index]
-    if (!validation?.valid) return []
-    return [
-      validation.normalized
-        ? {
-            ...finding,
-            file: validation.normalized.file,
-            startLine: validation.normalized.startLine,
-            endLine: validation.normalized.endLine,
-          }
-        : finding,
-    ]
-  })
+  const validatedFindings = candidateReport.findings.flatMap(
+    (finding, index) => {
+      const validation = reportValidation.findings[index]
+      if (!validation?.valid) return []
+      return [
+        validation.normalized
+          ? {
+              ...finding,
+              file: validation.normalized.file,
+              startLine: validation.normalized.startLine,
+              endLine: validation.normalized.endLine,
+            }
+          : finding,
+      ]
+    }
+  )
+  const validatedBugFindings = validatedFindings.filter(
+    (finding) => finding.source !== "natural_language_linter"
+  )
+  const validatedLinterFindings = validatedFindings.filter(
+    (finding) => finding.source === "natural_language_linter"
+  )
+  const finalFindings = [
+    ...validatedBugFindings,
+    ...dropFindingsCoveredBy(validatedLinterFindings, validatedBugFindings),
+  ]
   const finalReport: ReviewReport = {
     ...candidateReport,
     ...(finalFindings.length === 0 && candidateReport.findings.length > 0

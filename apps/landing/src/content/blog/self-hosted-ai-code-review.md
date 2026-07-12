@@ -61,4 +61,4 @@ Scopy AI is an [open-source AI code reviewer](/) that can run either way. The so
 
 That means you can start in the cloud today and self-host later, or self-host from day one and keep your code entirely on your own machines. Either way you get repository-aware reviews and your own custom review rules — without surrendering control of your source.
 
-Ready to dig in? Start with [what AI code review is and how it works](/blog/what-is-ai-code-review), or [view Scopy on GitHub](/) to self-host it yourself.
+Ready to dig in? Start with [what AI code review is and how it works](/blog/what-is-ai-code-review), or [view Scopy on GitHub](https://github.com/scopyai/scopy) to self-host it yourself.
