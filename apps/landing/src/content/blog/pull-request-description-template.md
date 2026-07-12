@@ -1,7 +1,7 @@
 ---
 title: "Pull Request Description Template for Better Code Reviews"
 description: "Copy a practical pull request description template that gives reviewers the context they need, shortens review cycles and improves both human and AI code review."
-date: "2026-06-29"
+date: "2026-06-30"
 author: "Matt, founder"
 tags: "pull request template, PR description, code review, GitHub"
 ---

@@ -1,7 +1,7 @@
 ---
 title: "How to review AI-generated code: checklist for catching most of the bugs"
 description: "A practical checklist for reviewing AI-generated code: verifying intent, tracing data flow, testing failure paths, checking security boundaries and catching obvious mistakes before merge."
-date: "2026-07-11"
+date: "2026-07-12"
 author: "Matt, founder"
 tags: "AI-generated code, code review checklist, pull requests, AI coding"
 ---

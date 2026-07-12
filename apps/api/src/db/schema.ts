@@ -411,7 +411,10 @@ export const repositoryContext = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("repository_context_repository_id_idx").on(table.repositoryId),
+    uniqueIndex("repository_context_repository_id_base_sha_idx").on(
+      table.repositoryId,
+      table.baseSha
+    ),
     index("repository_context_base_sha_idx").on(table.baseSha),
   ]
 )

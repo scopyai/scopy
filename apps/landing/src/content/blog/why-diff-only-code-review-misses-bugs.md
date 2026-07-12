@@ -1,7 +1,7 @@
 ---
 title: "Why Diff-Only Code Review Misses Bugs"
 description: "A Git diff shows what changed, but many bugs depend on code that did not. See concrete examples of how repository context makes human and AI code review more accurate."
-date: "2026-07-07"
+date: "2026-07-08"
 author: "Matt, founder"
 tags: "code review, Git diff, repository context, AI code review"
 ---

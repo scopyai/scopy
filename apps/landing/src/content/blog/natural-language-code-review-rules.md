@@ -1,7 +1,7 @@
 ---
 title: "How to Write Natural-Language Code Review Rules"
 description: "Learn how to write precise natural-language code review rules for AI reviewers, with patterns, examples, scope, exceptions and a practical testing process."
-date: "2026-07-03"
+date: "2026-07-04"
 author: "Matt, founder"
 tags: "code review rules, AI code review, coding standards, pull requests"
 ---

@@ -453,9 +453,9 @@ export const runReviewAgent = async ({
     pullRequest,
     loadBase: runtime.loadBase,
     baseSha: runtime.baseSha,
-    contextModel: agentLayers.main.model,
-    contextModelId: agentLayers.main.modelId,
-    contextProviderOptions: agentLayers.main.providerOptions,
+    contextModel: agentLayers.subagent.model,
+    contextModelId: agentLayers.subagent.modelId,
+    contextProviderOptions: agentLayers.subagent.providerOptions,
     recorder,
     logger,
   })
@@ -746,33 +746,19 @@ export const runReviewAgent = async ({
         })
       }
     }
-    const bySeverity = [...candidates].sort(
-      (first, second) =>
-        severityRank[first.severity] - severityRank[second.severity] ||
-        second.confidence - first.confidence
-    )
-    const escalated = new Set(
-      bySeverity
-        .slice(0, reviewAgentConfig.verifier.maxFailedOpenEscalations)
-        .map((candidate) => candidate.id)
-    )
     const reason = `Verifier failed open: ${errorMessage(lastError)}`
     await recorder.appendEvent("verifier.failed_open", {
       batch,
       chunk: chunkId,
       candidates: candidates.length,
-      escalated: escalated.size,
+      escalated: candidates.length,
       error: reason,
     })
     return candidates.map((candidate) => ({
       id: candidate.id,
-      verdict: escalated.has(candidate.id)
-        ? ("escalate" as const)
-        : ("reject" as const),
+      verdict: "escalate" as const,
       confidence: 0,
-      reason: escalated.has(candidate.id)
-        ? reason
-        : `${reason}; dropped because failed-open escalation is capped at ${reviewAgentConfig.verifier.maxFailedOpenEscalations} candidates per verifier call.`,
+      reason,
       failedOpen: true,
     }))
   }
@@ -844,6 +830,7 @@ ${task.objective}`
           prompt
         )
         let lastError: unknown
+        const taskReadFiles = new Set<string>()
         for (let attempt = 1; attempt <= 2; attempt += 1) {
           const attemptSteps: unknown[] = []
           try {
@@ -852,7 +839,7 @@ ${task.objective}`
               instructions: reviewSubagentInstructions,
               tools: createRepositoryTools(
                 `subagent.${batch}.${safeId}.${attempt}`,
-                (file) => subagentCoveredFiles.add(file)
+                (file) => taskReadFiles.add(file)
               ),
               providerOptions: agentLayers.subagent.providerOptions,
               output: repairedJsonOutput(
@@ -905,6 +892,9 @@ ${task.objective}`
               attempt,
               findings: candidates.length,
             })
+            for (const file of taskReadFiles) {
+              subagentCoveredFiles.add(file)
+            }
             return { taskId: task.id, candidates }
           } catch (error) {
             lastError = error

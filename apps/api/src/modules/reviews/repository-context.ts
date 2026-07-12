@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import {
   Output,
   ToolLoopAgent,
@@ -451,9 +451,8 @@ const generateRepositoryContext = async ({
     .insert(repositoryContext)
     .values(values)
     .onConflictDoUpdate({
-      target: repositoryContext.repositoryId,
+      target: [repositoryContext.repositoryId, repositoryContext.baseSha],
       set: {
-        baseSha: values.baseSha,
         modelId: values.modelId,
         markdown: values.markdown,
         summary: values.summary,
@@ -497,22 +496,17 @@ export const prepareRepositoryContextForReview = async ({
     contextModelId,
   })
   const existing = await db.query.repositoryContext.findFirst({
-    where: eq(repositoryContext.repositoryId, repo.id),
+    where: and(
+      eq(repositoryContext.repositoryId, repo.id),
+      eq(repositoryContext.baseSha, baseSha)
+    ),
   })
   await recorder.writeJson("context/repository-context-existing.json", existing)
 
-  const maxAgeMs =
-    reviewAgentConfig.repositoryContext.maxAgeDays * 24 * 60 * 60 * 1000
-  const stale =
-    existing &&
-    existing.baseSha !== baseSha &&
-    Date.now() - existing.generatedAt.getTime() > maxAgeMs
-  const reason = !existing
-    ? "missing_repository_context"
-    : stale
-      ? "stale_repository_context"
-      : "reused_repository_context"
-  const shouldGenerate = !existing || Boolean(stale)
+  const reason = existing
+    ? "reused_repository_context"
+    : "missing_repository_context"
+  const shouldGenerate = !existing
   await recorder.appendEvent("repository_context.prepare.decision", {
     hasExistingContext: Boolean(existing),
     existingBaseSha: existing?.baseSha,

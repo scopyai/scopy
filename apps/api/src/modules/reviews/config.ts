@@ -19,7 +19,6 @@ export const reviewAgentConfig = {
     reasoningEffort: "medium" as ReviewReasoningEffort,
     maxSteps: 18,
     maxFindingsPerCall: 8,
-    maxFailedOpenEscalations: 5,
   },
   naturalLanguageLinter: {
     maxSteps: 5,
@@ -30,7 +29,6 @@ export const reviewAgentConfig = {
   },
   repositoryContext: {
     maxSteps: 40,
-    maxAgeDays: 14,
   },
   openai: {
     serviceTier: "flex" as "flex" | "priority" | "default",

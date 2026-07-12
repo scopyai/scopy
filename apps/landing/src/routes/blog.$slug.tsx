@@ -19,7 +19,9 @@ export const Route = createFileRoute("/blog/$slug")({
     if (!loaderData) return {}
     const url = `${env.siteUrl}/blog/${loaderData.slug}`
     const imageUrl = loaderData.cover
-      ? `${env.siteUrl}${loaderData.cover}`
+      ? loaderData.cover.startsWith("http")
+        ? loaderData.cover
+        : `${env.siteUrl}${loaderData.cover}`
       : undefined
     const jsonLd = {
       "@context": "https://schema.org",
