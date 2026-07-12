@@ -17,7 +17,7 @@ Scopy catches bugs, follows your team's rules to improve the code, and shows you
 https://github.com/user-attachments/assets/25f19a47-cc63-47be-8846-700c4608f51b
 
 <div align="center">
-<sub>Scopy dashboard product tour</sub>
+<sub>Scopy dashboard tour</sub>
 </div>
 
 <br />
