@@ -1422,9 +1422,9 @@ ${task.objective}`
   const mainOutputSchema = mainReviewReportSchema
     .extend({
       decisions: z.array(reviewDecisionSchema),
-      vetoedApprovedFindings: z
-        .array(z.object({ id: z.string(), reason: z.string() }))
-        .default([]),
+      vetoedApprovedFindings: z.array(
+        z.object({ id: z.string(), reason: z.string() })
+      ),
     })
     .superRefine((output, validation) => {
       const seen = new Set<string>()
