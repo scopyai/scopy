@@ -1,4 +1,4 @@
-This is an open-source ai code review tool, alternative to coderabbit, macroscope and greptile.
+Scopy is an open-source AI code reviewer focused on accurate findings through repository-wide context and multi-stage verification.
 
 This is a monorepo with a TanStack Start web app, an Elysia API, shadcn/ui components, Better Auth, Drizzle, and Eden treaty.
 

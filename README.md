@@ -22,9 +22,9 @@ https://github.com/user-attachments/assets/25f19a47-cc63-47be-8846-700c4608f51b
 
 <br />
 
-## Review code with context
+## Find real bugs without the noise
 
-Scopy goes beyond the changed lines. It explores the repository around a pull request, builds the context needed to reason about the change, and leaves focused feedback that prevents you from shipping bugs.
+Scopy goes beyond the changed lines. It explores the repository around a change, builds the context needed to reason about it, and independently verifies candidate issues before leaving focused feedback.
 
 |                            |                                                                                                                    |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |

@@ -17,7 +17,7 @@ function homeMarkdown(): string {
     "- Get started: " + env.appUrl,
     "- License: MIT",
     "",
-    "## How AI code review works with Scopy",
+    "## How code review works with Scopy",
     "",
     ...steps.map((step, i) => `${i + 1}. **${step.name}** — ${step.desc}`),
     "",
