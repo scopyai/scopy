@@ -18,7 +18,6 @@ CREATE TABLE "doc_page" (
 	"source_id" text NOT NULL,
 	"url" text NOT NULL,
 	"title" text NOT NULL,
-	"content_md" text NOT NULL,
 	"content_hash" text NOT NULL,
 	"approx_tokens" integer DEFAULT 0 NOT NULL,
 	"last_seen_crawl_id" text NOT NULL,
@@ -33,6 +32,7 @@ CREATE TABLE "doc_chunk" (
 	"ord" integer NOT NULL,
 	"heading" text,
 	"content_md" text NOT NULL,
+	"content_tsv" tsvector GENERATED ALWAYS AS (to_tsvector('english', content_md)) STORED,
 	"approx_tokens" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );--> statement-breakpoint
@@ -44,4 +44,4 @@ CREATE UNIQUE INDEX "doc_page_source_id_url_idx" ON "doc_page" ("source_id","url
 CREATE INDEX "doc_page_source_last_seen_idx" ON "doc_page" ("source_id","last_seen_crawl_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "doc_chunk_page_id_ord_idx" ON "doc_chunk" ("page_id","ord");--> statement-breakpoint
 CREATE INDEX "doc_chunk_source_id_idx" ON "doc_chunk" ("source_id");--> statement-breakpoint
-CREATE INDEX "doc_chunk_content_fts_idx" ON "doc_chunk" USING gin (to_tsvector('english', "content_md"));
+CREATE INDEX "doc_chunk_content_fts_idx" ON "doc_chunk" USING gin ("content_tsv");

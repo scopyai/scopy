@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import * as cheerio from "cheerio"
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import TurndownService from "turndown"
 import { db } from "../../db/client"
 import { docChunk, docPage, docSource } from "../../db/schema"
@@ -14,9 +14,9 @@ type Logger = {
 
 const USER_AGENT = "scopy-docs-crawler/1.0 (+https://scopy.dev)"
 const FETCH_TIMEOUT_MS = 15_000
-const FETCH_RETRIES = 2
+const FETCH_RETRIES = 4
 const PAGE_CONCURRENCY = 4
-const MAX_RAW_BYTES = 500_000
+const MAX_RAW_BYTES = 2_000_000
 const MAX_MARKDOWN_BYTES = 200_000
 const DB_BATCH_SIZE = 50
 
@@ -33,14 +33,21 @@ const fetchText = async (url: string) => {
       const response = await fetch(url, {
         headers: {
           "user-agent": USER_AGENT,
-          accept: "text/markdown, text/plain, text/html;q=0.9, */*;q=0.1",
+          accept: "*/*",
         },
         redirect: "follow",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       })
       if (response.status === 429 || response.status >= 500) {
         lastError = new Error(`HTTP ${response.status} for ${url}`)
-        await sleep(1000 * (attempt + 1))
+        const retryAfterSeconds = Number(response.headers.get("retry-after"))
+        const backoffMs =
+          response.status === 429
+            ? Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+              ? Math.min(retryAfterSeconds * 1000, 30_000)
+              : Math.min(2000 * 2 ** attempt, 30_000)
+            : 1000 * (attempt + 1)
+        await sleep(backoffMs)
         continue
       }
       if (!response.ok) {
@@ -78,6 +85,9 @@ export type ParsedIndexEntry = {
 
 const LINK_LINE = /^[-*]?\s*\[([^\]]+)\]\(([^)\s]+)\)\s*(?::\s*(.*))?$/
 
+const isFullDumpUrl = (url: string) =>
+  /\/llms[-_.]?full\.txt$/i.test(new URL(url).pathname)
+
 export const parseLlmsTxt = (
   text: string,
   baseUrl: string
@@ -103,6 +113,7 @@ export const parseLlmsTxt = (
       continue
     }
     if (!/^https?:/.test(url) || seen.has(url)) continue
+    if (isFullDumpUrl(url) || url === new URL(baseUrl).toString()) continue
     seen.add(url)
     entries.push({
       section,
@@ -179,6 +190,14 @@ const upsertPage = async ({
       .update(docPage)
       .set({ lastSeenCrawlId: crawlId })
       .where(eq(docPage.id, existing.id))
+    // Chunks are the only copy of the page text; restore them if a chunker
+    // change (or bug) wiped them, since we have the fetched markdown in hand.
+    const [chunk] = await db
+      .select({ id: docChunk.id })
+      .from(docChunk)
+      .where(eq(docChunk.pageId, existing.id))
+      .limit(1)
+    if (!chunk) await rebuildChunks({ sourceId, pageId: existing.id, markdown })
     return "unchanged"
   }
 
@@ -187,7 +206,6 @@ const upsertPage = async ({
       .update(docPage)
       .set({
         title,
-        contentMd: markdown,
         contentHash,
         approxTokens: approxTokens(markdown),
         lastSeenCrawlId: crawlId,
@@ -204,7 +222,6 @@ const upsertPage = async ({
     sourceId,
     url: entry.url,
     title,
-    contentMd: markdown,
     contentHash,
     approxTokens: approxTokens(markdown),
     lastSeenCrawlId: crawlId,
@@ -309,11 +326,25 @@ export const crawlDocSource = async ({
   if (!indexFetch.ok) {
     return failCrawl(`llms.txt fetch failed: ${indexFetch.error}`)
   }
-  const entries = parseLlmsTxt(indexFetch.text, config.llmsTxtUrl)
+  let entries = parseLlmsTxt(indexFetch.text, config.llmsTxtUrl)
   if (entries.length === 0) {
-    return failCrawl("llms.txt contained no parseable links")
+    if (indexFetch.text.trim().length < 500) {
+      return failCrawl("llms.txt contained no parseable links")
+    }
+    entries = [
+      {
+        section: null,
+        title: config.name,
+        url: config.llmsTxtUrl,
+        description: null,
+      },
+    ]
+    logger.info("Docs index is content-style; storing as single page", {
+      slug,
+    })
+  } else {
+    logger.info("Docs index parsed", { slug, entryCount: entries.length })
   }
-  logger.info("Docs index parsed", { slug, entryCount: entries.length })
 
   const outcomes: Record<PageOutcome, number> = {
     created: 0,
@@ -380,30 +411,6 @@ export const crawlDocSource = async ({
     outcomes.kept_stale
   if (pageCount === 0) {
     return failCrawl("no pages could be fetched")
-  }
-
-  const unchunkedPages = await db
-    .select({ id: docPage.id, contentMd: docPage.contentMd })
-    .from(docPage)
-    .where(
-      and(
-        eq(docPage.sourceId, source.id),
-        eq(docPage.lastSeenCrawlId, crawlId),
-        sql`not exists (select 1 from ${docChunk} where ${docChunk.pageId} = ${docPage.id})`
-      )
-    )
-  for (const page of unchunkedPages) {
-    await rebuildChunks({
-      sourceId: source.id,
-      pageId: page.id,
-      markdown: page.contentMd,
-    })
-  }
-  if (unchunkedPages.length > 0) {
-    logger.info("Docs chunk backfill", {
-      slug,
-      backfilledPages: unchunkedPages.length,
-    })
   }
 
   await db

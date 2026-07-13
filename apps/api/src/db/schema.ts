@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm"
 import {
   boolean,
   bigint,
+  customType,
   index,
   integer,
   jsonb,
@@ -12,6 +13,10 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core"
+
+const tsvector = customType<{ data: string }>({
+  dataType: () => "tsvector",
+})
 
 export const workspaceProvider = pgEnum("workspace_provider", ["github"])
 export const providerAccountType = pgEnum("provider_account_type", [
@@ -662,7 +667,8 @@ export const docPage = pgTable(
       .references(() => docSource.id, { onDelete: "cascade" }),
     url: text("url").notNull(),
     title: text("title").notNull(),
-    contentMd: text("content_md").notNull(),
+    // Page text lives only in doc_chunk (a page is its chunks concatenated);
+    // the hash of the fetched markdown is kept for crawl change detection.
     contentHash: text("content_hash").notNull(),
     approxTokens: integer("approx_tokens").default(0).notNull(),
     lastSeenCrawlId: text("last_seen_crawl_id").notNull(),
@@ -844,16 +850,18 @@ export const docChunk = pgTable(
     ord: integer("ord").notNull(),
     heading: text("heading"),
     contentMd: text("content_md").notNull(),
+    // Stored generated column: ranking reads this instead of re-parsing
+    // content_md per matched row (measured 3.3s -> ms on broad queries).
+    contentTsv: tsvector("content_tsv").generatedAlwaysAs(
+      (): ReturnType<typeof sql> => sql`to_tsvector('english', content_md)`
+    ),
     approxTokens: integer("approx_tokens").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("doc_chunk_page_id_ord_idx").on(table.pageId, table.ord),
     index("doc_chunk_source_id_idx").on(table.sourceId),
-    index("doc_chunk_content_fts_idx").using(
-      "gin",
-      sql`to_tsvector('english', ${table.contentMd})`
-    ),
+    index("doc_chunk_content_fts_idx").using("gin", table.contentTsv),
   ]
 )
 

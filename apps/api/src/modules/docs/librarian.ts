@@ -57,29 +57,6 @@ const toolText = (text: string, maxBytes = MAX_TOOL_BYTES) => {
   return `${output}\n\n[truncated]`
 }
 
-const sliceHeadingSection = (markdown: string, heading: string) => {
-  const lines = markdown.split("\n")
-  const target = heading.trim().toLowerCase()
-  let startIndex = -1
-  let startLevel = 0
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index]?.match(/^(#{1,6})\s+(.*)$/)
-    if (!match?.[1] || !match[2]) continue
-    if (startIndex === -1) {
-      if (match[2].trim().toLowerCase().includes(target)) {
-        startIndex = index
-        startLevel = match[1].length
-      }
-      continue
-    }
-    if (match[1].length <= startLevel) {
-      return lines.slice(startIndex, index).join("\n")
-    }
-  }
-  if (startIndex === -1) return null
-  return lines.slice(startIndex).join("\n")
-}
-
 const librarianInstructions = `You are a documentation librarian. You answer one question about a specific library using ONLY its indexed documentation.
 
 You are given the documentation table of contents. Use tools to read pages or search page content, then answer.
@@ -142,16 +119,16 @@ export const queryDocsLibrarian = async (
       }),
       execute: async ({ url, heading }) => {
         const page = await db.query.docPage.findFirst({
-          columns: { id: true, title: true, contentMd: true },
+          columns: { id: true, title: true },
           where: activePage(url),
         })
         if (!page) return { error: "no page stored for this url" }
+        const chunks = await db.query.docChunk.findMany({
+          columns: { ord: true, heading: true, contentMd: true },
+          where: eq(docChunk.pageId, page.id),
+          orderBy: [asc(docChunk.ord)],
+        })
         if (heading) {
-          const chunks = await db.query.docChunk.findMany({
-            columns: { ord: true, heading: true, contentMd: true },
-            where: eq(docChunk.pageId, page.id),
-            orderBy: [asc(docChunk.ord)],
-          })
           const target = heading.trim().toLowerCase()
           const matchIndex = chunks.findIndex((chunk) =>
             chunk.heading?.toLowerCase().includes(target)
@@ -169,12 +146,13 @@ export const queryDocsLibrarian = async (
               ),
             }
           }
-          const section = sliceHeadingSection(page.contentMd, heading)
-          if (section) {
-            return { title: page.title, heading, content: toolText(section) }
-          }
         }
-        return { title: page.title, content: toolText(page.contentMd) }
+        return {
+          title: page.title,
+          content: toolText(
+            chunks.map((chunk) => chunk.contentMd).join("\n\n")
+          ),
+        }
       },
     }),
     search_docs: tool({
@@ -191,7 +169,7 @@ export const queryDocsLibrarian = async (
               title: docPage.title,
               heading: docChunk.heading,
               snippet: sql<string>`ts_headline('english', ${docChunk.contentMd}, ${tsQuery}, 'MaxFragments=2, MaxWords=40, MinWords=10')`,
-              rank: sql<number>`ts_rank(to_tsvector('english', ${docChunk.contentMd}), ${tsQuery})`,
+              rank: sql<number>`ts_rank(${docChunk.contentTsv}, ${tsQuery})`,
             })
             .from(docChunk)
             .innerJoin(docPage, eq(docChunk.pageId, docPage.id))
@@ -199,7 +177,7 @@ export const queryDocsLibrarian = async (
               and(
                 eq(docChunk.sourceId, source.id),
                 eq(docPage.lastSeenCrawlId, activeCrawlId),
-                sql`to_tsvector('english', ${docChunk.contentMd}) @@ ${tsQuery}`
+                sql`${docChunk.contentTsv} @@ ${tsQuery}`
               )
             )
             .orderBy((table) => desc(table.rank))
