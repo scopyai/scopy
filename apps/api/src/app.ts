@@ -12,7 +12,7 @@ import { workspaceRoutes } from "./modules/workspaces"
 import { billingRoutes } from "./modules/billing"
 // import { providerKeyRoutes } from './modules/provider-keys'
 import { feedbackRoutes } from "./modules/feedback"
-import { docsRoutes } from "./modules/docs"
+import { docsRoutes, workspaceDocsRoutes } from "./modules/docs"
 
 export const app = new Elysia({
   name: "api",
@@ -36,6 +36,7 @@ export const app = new Elysia({
   // .use(providerKeyRoutes)
   .use(feedbackRoutes)
   .use(docsRoutes)
+  .use(workspaceDocsRoutes)
   .use(webhookRoutes)
 
 export type App = typeof app

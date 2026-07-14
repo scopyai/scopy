@@ -297,6 +297,11 @@ export const repository = pgTable(
     pathExcludePatterns: jsonb("path_exclude_patterns").$type<string[]>(),
     naturalLanguageRules: jsonb("natural_language_rules").$type<string[]>(),
     maxReviewChangedLines: integer("max_review_changed_lines"),
+    detectedDocLibraries: jsonb("detected_doc_libraries").$type<
+      Array<{ slug: string; name: string; manifest: string; dependency: string }>
+    >(),
+    docLibrariesDetectedAt: timestamp("doc_libraries_detected_at"),
+    excludedDocLibraries: jsonb("excluded_doc_libraries").$type<string[]>(),
     archived: boolean("archived").default(false).notNull(),
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),
@@ -640,6 +645,11 @@ export const docSource = pgTable(
   "doc_source",
   {
     id: text("id").primaryKey(),
+    // Null = global corpus entry (from the hardcoded config); set = a custom
+    // llms.txt added by that workspace, visible only to it.
+    workspaceId: text("workspace_id").references(() => workspace.id, {
+      onDelete: "cascade",
+    }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     llmsTxtUrl: text("llms_txt_url").notNull(),
@@ -655,7 +665,15 @@ export const docSource = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [uniqueIndex("doc_source_slug_idx").on(table.slug)]
+  (table) => [
+    uniqueIndex("doc_source_global_slug_idx")
+      .on(table.slug)
+      .where(sql`${table.workspaceId} is null`),
+    uniqueIndex("doc_source_workspace_slug_idx")
+      .on(table.workspaceId, table.slug)
+      .where(sql`${table.workspaceId} is not null`),
+    index("doc_source_workspace_id_idx").on(table.workspaceId),
+  ]
 )
 
 export const docPage = pgTable(

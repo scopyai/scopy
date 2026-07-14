@@ -9,7 +9,7 @@ export const jobPayloadSchemas = {
     reviewRunId: z.uuid(),
   }),
   crawlDocSource: z.object({
-    slug: z.string().min(1),
+    sourceId: z.string().min(1),
   }),
 }
 
@@ -39,7 +39,7 @@ export const jobs = {
       payload: z.infer<typeof jobPayloadSchemas.crawlDocSource>,
     ) =>
       enqueueJob(executor, "crawl_doc_source", payload, {
-        jobKey: `docs-crawl:${payload.slug}`,
+        jobKey: `docs-crawl:${payload.sourceId}`,
         maxAttempts: 3,
       }),
   },

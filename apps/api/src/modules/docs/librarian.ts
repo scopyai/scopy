@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm"
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm"
 import { Output, ToolLoopAgent, stepCountIs, tool } from "ai"
 import { z } from "zod"
 import { db } from "../../db/client"
@@ -68,18 +68,47 @@ Rules:
 - If the documentation does not answer the question, return found: false and say what is missing. Do not guess.
 - Keep the answer compact and factual; it will be consumed by another automated reviewer.`
 
+const resolveDocSource = async (library: string, workspaceId?: string) => {
+  const normalized = library.trim().toLowerCase()
+  if (!normalized) return null
+
+  if (workspaceId) {
+    const workspaceSources = await db.query.docSource.findMany({
+      where: eq(docSource.workspaceId, workspaceId),
+    })
+    const match = workspaceSources.find(
+      (source) =>
+        source.slug === normalized || source.name.toLowerCase() === normalized
+    )
+    if (match) return match
+  }
+
+  const config = resolveDocSourceConfig(library)
+  if (!config) return null
+  return (
+    (await db.query.docSource.findFirst({
+      where: and(
+        eq(docSource.slug, config.slug),
+        isNull(docSource.workspaceId)
+      ),
+    })) ?? null
+  )
+}
+
 export const queryDocsLibrarian = async (
   {
     library,
     question,
+    workspaceId,
   }: {
     library: string
     question: string
+    workspaceId?: string
   },
   options: LibrarianOptions = {}
 ): Promise<LibrarianResult> => {
-  const config = resolveDocSourceConfig(library)
-  if (!config) {
+  const source = await resolveDocSource(library, workspaceId)
+  if (!source) {
     return {
       library,
       found: false,
@@ -87,15 +116,11 @@ export const queryDocsLibrarian = async (
       citations: [],
     }
   }
-
-  const source = await db.query.docSource.findFirst({
-    where: eq(docSource.slug, config.slug),
-  })
-  if (!source?.activeCrawlId) {
+  if (!source.activeCrawlId) {
     return {
-      library: config.slug,
+      library: source.slug,
       found: false,
-      answer: `Documentation for "${config.name}" is registered but not crawled yet.`,
+      answer: `Documentation for "${source.name}" is registered but not crawled yet.`,
       citations: [],
     }
   }
@@ -255,7 +280,7 @@ export const queryDocsLibrarian = async (
 
   const startedAt = Date.now()
   const generation = await agent.generate({
-    prompt: `Library: ${config.name} (${config.slug})
+    prompt: `Library: ${source.name} (${source.slug})
 
 Documentation table of contents:
 ${toc}
@@ -275,7 +300,7 @@ Question: ${question}`,
   }
 
   return {
-    library: config.slug,
+    library: source.slug,
     ...output,
     usage: generation.totalUsage,
     ...(options.diagnostics

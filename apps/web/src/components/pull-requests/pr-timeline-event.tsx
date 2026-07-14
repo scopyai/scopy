@@ -140,7 +140,7 @@ function CommentEvent({
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-              aria-label="Star on GitHub"
+              aria-label="View on GitHub"
             >
               <ExternalLinkIcon className="size-3" />
             </a>

@@ -31,8 +31,8 @@ export const taskList: TaskList = {
     )
   },
   crawl_doc_source: async (payload, helpers) => {
-    const { slug } = jobPayloadSchemas.crawlDocSource.parse(payload)
-    await crawlDocSource({ slug, logger: helpers.logger })
+    const { sourceId } = jobPayloadSchemas.crawlDocSource.parse(payload)
+    await crawlDocSource({ sourceId, logger: helpers.logger })
   },
   crawl_all_doc_sources: async (_payload, helpers) => {
     await enqueueDueDocSourceCrawls({ logger: helpers.logger })

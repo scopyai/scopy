@@ -5,7 +5,7 @@ import TurndownService from "turndown"
 import { db } from "../../db/client"
 import { docChunk, docPage, docSource } from "../../db/schema"
 import { chunkMarkdown } from "./chunker"
-import { docSourceConfigs, type DocSourceConfig } from "./sources"
+import { checkUrlIsPublic } from "./safe-url"
 
 type Logger = {
   info: (message: string, details?: Record<string, unknown>) => void
@@ -15,10 +15,14 @@ type Logger = {
 const USER_AGENT = "scopy-docs-crawler/1.0 (+https://scopy.dev)"
 const FETCH_TIMEOUT_MS = 15_000
 const FETCH_RETRIES = 4
+const MAX_REDIRECTS = 5
 const PAGE_CONCURRENCY = 4
 const MAX_RAW_BYTES = 2_000_000
 const MAX_MARKDOWN_BYTES = 200_000
 const DB_BATCH_SIZE = 50
+// Custom (workspace-uploaded) llms.txt files get a page budget so a hostile
+// or bloated index can't turn into an unbounded crawl.
+const MAX_CUSTOM_SOURCE_ENTRIES = 2_000
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 
@@ -26,18 +30,40 @@ const approxTokens = (text: string) => Math.ceil(text.length / 4)
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// Follows redirects manually so every hop passes the SSRF check.
+const fetchPublicUrl = async (url: string) => {
+  let currentUrl = url
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const unsafe = await checkUrlIsPublic(currentUrl)
+    if (unsafe) return { blocked: unsafe }
+    const response = await fetch(currentUrl, {
+      headers: {
+        "user-agent": USER_AGENT,
+        accept: "*/*",
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    const location = response.headers.get("location")
+    if (response.status >= 300 && response.status < 400 && location) {
+      await response.body?.cancel()
+      currentUrl = new URL(location, currentUrl).toString()
+      continue
+    }
+    return { response }
+  }
+  return { blocked: "too many redirects" }
+}
+
 const fetchText = async (url: string) => {
   let lastError: unknown
   for (let attempt = 0; attempt <= FETCH_RETRIES; attempt += 1) {
     try {
-      const response = await fetch(url, {
-        headers: {
-          "user-agent": USER_AGENT,
-          accept: "*/*",
-        },
-        redirect: "follow",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      })
+      const result = await fetchPublicUrl(url)
+      if ("blocked" in result) {
+        return { ok: false as const, error: result.blocked }
+      }
+      const response = result.response
       if (response.status === 429 || response.status >= 500) {
         lastError = new Error(`HTTP ${response.status} for ${url}`)
         const retryAfterSeconds = Number(response.headers.get("retry-after"))
@@ -275,41 +301,23 @@ const keepStalePage = async ({
   return updated.length > 0
 }
 
-const upsertSourceFromConfig = async (config: DocSourceConfig) => {
-  const [source] = await db
-    .insert(docSource)
-    .values({
-      id: randomUUID(),
-      slug: config.slug,
-      name: config.name,
-      llmsTxtUrl: config.llmsTxtUrl,
-      status: "crawling",
-    })
-    .onConflictDoUpdate({
-      target: docSource.slug,
-      set: {
-        name: config.name,
-        llmsTxtUrl: config.llmsTxtUrl,
-        status: "crawling",
-        updatedAt: new Date(),
-      },
-    })
-    .returning()
-  if (!source) throw new Error(`Failed to upsert doc source ${config.slug}`)
-  return source
-}
-
 export const crawlDocSource = async ({
-  slug,
+  sourceId,
   logger,
 }: {
-  slug: string
+  sourceId: string
   logger: Logger
 }) => {
-  const config = docSourceConfigs.find((source) => source.slug === slug)
-  if (!config) throw new Error(`Unknown doc source slug: ${slug}`)
+  const source = await db.query.docSource.findFirst({
+    where: eq(docSource.id, sourceId),
+  })
+  if (!source) throw new Error(`Unknown doc source id: ${sourceId}`)
+  const slug = source.slug
 
-  const source = await upsertSourceFromConfig(config)
+  await db
+    .update(docSource)
+    .set({ status: "crawling" })
+    .where(eq(docSource.id, source.id))
   const crawlId = randomUUID()
   logger.info("Docs crawl started", { slug, crawlId })
 
@@ -322,11 +330,11 @@ export const crawlDocSource = async ({
     throw new Error(`Docs crawl failed for ${slug}: ${error}`)
   }
 
-  const indexFetch = await fetchText(config.llmsTxtUrl)
+  const indexFetch = await fetchText(source.llmsTxtUrl)
   if (!indexFetch.ok) {
     return failCrawl(`llms.txt fetch failed: ${indexFetch.error}`)
   }
-  let entries = parseLlmsTxt(indexFetch.text, config.llmsTxtUrl)
+  let entries = parseLlmsTxt(indexFetch.text, source.llmsTxtUrl)
   if (entries.length === 0) {
     if (indexFetch.text.trim().length < 500) {
       return failCrawl("llms.txt contained no parseable links")
@@ -334,8 +342,8 @@ export const crawlDocSource = async ({
     entries = [
       {
         section: null,
-        title: config.name,
-        url: config.llmsTxtUrl,
+        title: source.name,
+        url: source.llmsTxtUrl,
         description: null,
       },
     ]
@@ -343,6 +351,9 @@ export const crawlDocSource = async ({
       slug,
     })
   } else {
+    if (source.workspaceId && entries.length > MAX_CUSTOM_SOURCE_ENTRIES) {
+      entries = entries.slice(0, MAX_CUSTOM_SOURCE_ENTRIES)
+    }
     logger.info("Docs index parsed", { slug, entryCount: entries.length })
   }
 

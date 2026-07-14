@@ -76,6 +76,7 @@ import {
   repairedJsonOutput,
   reviewModels,
 } from "./llm"
+import { refreshRepositoryDocLibraries } from "../docs/service"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"
@@ -347,6 +348,22 @@ export const runReviewAgent = async ({
     installationId,
     changedFiles: filteredFiles.map((file) => file.filename),
   })
+  refreshRepositoryDocLibraries({
+    repositoryId: repository.id,
+    repoDir: runtime.paths.repositoryPath,
+  })
+    .then((detected) =>
+      logger.info("Doc library detection completed", {
+        ...context,
+        detected: detected.map((library) => library.slug),
+      })
+    )
+    .catch((error) =>
+      logger.error("Doc library detection failed", {
+        ...context,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    )
   const parsedDiffFiles = parseUnifiedDiff(unifiedDiff)
   const changedLinesByFile = new Map<string, number[]>()
   for (const diffFile of parsedDiffFiles) {

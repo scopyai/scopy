@@ -48,6 +48,7 @@ const updateWorkspaceMemberSchema = z.object({
 
 const updateRepositorySchema = z.object({
   enabled: z.boolean().optional(),
+  excludedDocLibraries: z.array(z.string().min(1).max(100)).max(200).optional(),
 })
 
 const onboardingRepositoriesSchema = z.object({
