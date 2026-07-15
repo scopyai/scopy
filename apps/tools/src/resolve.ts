@@ -1,5 +1,5 @@
-import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
+import { MAX_REPOSITORY_FILE_BYTES, readRepositoryTextFile, resolveRepositoryFile } from "./repository-file"
 import type {
   CallEdge,
   CallSite,
@@ -29,47 +29,39 @@ type TsconfigPaths = {
   paths: Record<string, string[]>
 }
 
-const supportedExtensions = [
-  ".ts",
-  ".tsx",
-  ".mts",
-  ".cts",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".py",
-  ".go",
-  ".java",
-  ".rs",
-]
+const supportedExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".rs"]
 
 type ResolvedImport = {
   file?: string
   localScope?: string
 }
 
-const exists = async (candidate: string) => {
+const exists = async (repository: string, candidate: string) => {
   try {
-    return (await stat(candidate)).isFile()
+    await resolveRepositoryFile(repository, candidate)
+    return true
   } catch {
     return false
   }
 }
 
-const stripJsonComments = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+const stripJsonComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
 
-const readJson = async (file: string) => {
+const readJson = async (repository: string, file: string) => {
   try {
-    return JSON.parse(stripJsonComments(await readFile(file, "utf8"))) as Record<string, unknown>
+    const { source } = await readRepositoryTextFile({
+      repository,
+      file,
+      maxBytes: MAX_REPOSITORY_FILE_BYTES,
+    })
+    return JSON.parse(stripJsonComments(source)) as Record<string, unknown>
   } catch {
     return undefined
   }
 }
 
 const resolveFile = async (repository: string, rawCandidate: string) => {
-  const candidate = path.resolve(repository, rawCandidate)
+  const candidate = path.normalize(rawCandidate)
   const candidates = [
     candidate,
     ...supportedExtensions.map((extension) => `${candidate}${extension}`),
@@ -77,7 +69,7 @@ const resolveFile = async (repository: string, rawCandidate: string) => {
     ...supportedExtensions.map((extension) => path.join(candidate, `mod${extension}`)),
   ]
   for (const file of candidates) {
-    if (await exists(file)) return path.relative(repository, file)
+    if (await exists(repository, file)) return file
   }
   return undefined
 }
@@ -90,11 +82,7 @@ const resolvePythonModule = async (repository: string, importer: string, source:
   return resolveFile(repository, candidate)
 }
 
-const findNearestManifestDirectory = (
-  importer: string,
-  manifest: string,
-  repositoryFiles: Set<string>,
-) => {
+const findNearestManifestDirectory = (importer: string, manifest: string, repositoryFiles: Set<string>) => {
   let directory = path.dirname(importer)
   while (directory !== ".") {
     if (repositoryFiles.has(path.join(directory, manifest))) return directory
@@ -132,21 +120,27 @@ const resolveRustModule = async ({
   return resolveFile(repository, path.join(base, ...segments))
 }
 
-const resolveJavaClass = async (
-  source: string,
-  repositoryFiles: Set<string>,
-) => {
+const resolveJavaClass = async (source: string, repositoryFiles: Set<string>) => {
   const suffix = `${source.replaceAll(".", "/")}.java`
-  const matches = [...repositoryFiles].filter(
-    (file) => file === suffix || file.endsWith(`/${suffix}`),
-  )
+  const matches = [...repositoryFiles].filter((file) => file === suffix || file.endsWith(`/${suffix}`))
   return matches.length === 1 ? matches[0] : undefined
 }
 
 const findGoModules = async (repository: string, repositoryFiles: string[]) => {
   const modules: Array<{ module: string; root: string }> = []
   for (const file of repositoryFiles.filter((candidate) => path.basename(candidate) === "go.mod")) {
-    const source = await readFile(path.join(repository, file), "utf8")
+    let source: string
+    try {
+      source = (
+        await readRepositoryTextFile({
+          repository,
+          file,
+          maxBytes: MAX_REPOSITORY_FILE_BYTES,
+        })
+      ).source
+    } catch {
+      continue
+    }
     const module = source.match(/^\s*module\s+(\S+)/m)?.[1]
     if (module) modules.push({ module, root: path.dirname(file) })
   }
@@ -158,9 +152,7 @@ const resolveGoPackage = (
   goModules: Awaited<ReturnType<typeof findGoModules>>,
   filesByDirectory: Map<string, ExtractedFile[]>,
 ): ResolvedImport | undefined => {
-  const goModule = goModules.find(
-    ({ module }) => source === module || source.startsWith(`${module}/`),
-  )
+  const goModule = goModules.find(({ module }) => source === module || source.startsWith(`${module}/`))
   if (!goModule) return undefined
   const subpath = source === goModule.module ? "" : source.slice(goModule.module.length + 1)
   const directory = path.join(goModule.root, subpath)
@@ -169,33 +161,24 @@ const resolveGoPackage = (
   return files[0] ? { file: files[0].path, localScope } : undefined
 }
 
-const findTsconfigPaths = async (
-  repository: string,
-  files: string[],
-): Promise<TsconfigPaths[]> => {
+const findTsconfigPaths = async (repository: string, files: string[]): Promise<TsconfigPaths[]> => {
   const configs = files.filter((file) => path.basename(file) === "tsconfig.json")
   const paths: TsconfigPaths[] = []
   for (const file of configs) {
-    const config = await readJson(path.join(repository, file))
+    const config = await readJson(repository, file)
     const compilerOptions = config?.compilerOptions as Record<string, unknown> | undefined
     const aliases = compilerOptions?.paths as Record<string, string[]> | undefined
     if (!aliases) continue
     paths.push({
       root: path.dirname(file),
-      baseUrl:
-        typeof compilerOptions?.baseUrl === "string" ? compilerOptions.baseUrl : ".",
+      baseUrl: typeof compilerOptions?.baseUrl === "string" ? compilerOptions.baseUrl : ".",
       paths: aliases,
     })
   }
   return paths.sort((a, b) => b.root.length - a.root.length)
 }
 
-const resolveAlias = async (
-  repository: string,
-  importer: string,
-  specifier: string,
-  tsconfigs: TsconfigPaths[],
-) => {
+const resolveAlias = async (repository: string, importer: string, specifier: string, tsconfigs: TsconfigPaths[]) => {
   for (const tsconfig of tsconfigs) {
     if (tsconfig.root !== "." && !importer.startsWith(`${tsconfig.root}/`)) continue
     for (const [pattern, replacements] of Object.entries(tsconfig.paths)) {
@@ -209,18 +192,11 @@ const resolveAlias = async (
       const wildcard =
         wildcardIndex === -1
           ? ""
-          : specifier.slice(
-              wildcardIndex,
-              specifier.length - (pattern.length - wildcardIndex - 1),
-            )
+          : specifier.slice(wildcardIndex, specifier.length - (pattern.length - wildcardIndex - 1))
       for (const replacement of replacements) {
         const resolved = await resolveFile(
           repository,
-          path.join(
-            tsconfig.root,
-            tsconfig.baseUrl,
-            replacement.replace("*", wildcard),
-          ),
+          path.join(tsconfig.root, tsconfig.baseUrl, replacement.replace("*", wildcard)),
         )
         if (resolved) return resolved
       }
@@ -229,16 +205,11 @@ const resolveAlias = async (
   return undefined
 }
 
-const findPackages = async (
-  repository: string,
-  files: string[],
-): Promise<PackageEntry[]> => {
-  const manifests = files.filter(
-    (file) => path.basename(file) === "package.json" && !file.includes("node_modules/"),
-  )
+const findPackages = async (repository: string, files: string[]): Promise<PackageEntry[]> => {
+  const manifests = files.filter((file) => path.basename(file) === "package.json" && !file.includes("node_modules/"))
   const packages: PackageEntry[] = []
   for (const manifest of manifests) {
-    const json = await readJson(path.join(repository, manifest))
+    const json = await readJson(repository, manifest)
     if (typeof json?.name !== "string") continue
     const root = path.dirname(manifest)
     const exports = json.exports
@@ -252,35 +223,25 @@ const findPackages = async (
       typeof rootExport === "string"
         ? rootExport
         : typeof rootExport === "object" && rootExport
-          ? ((rootExport as Record<string, unknown>).types ??
-            (rootExport as Record<string, unknown>).default)
+          ? ((rootExport as Record<string, unknown>).types ?? (rootExport as Record<string, unknown>).default)
           : (json.types ?? json.main)
     packages.push({
       name: json.name,
       root,
       entry: typeof entry === "string" ? entry : undefined,
-      exports:
-        typeof exports === "object" && exports
-          ? (exports as Record<string, unknown>)
-          : undefined,
+      exports: typeof exports === "object" && exports ? (exports as Record<string, unknown>) : undefined,
     })
   }
   return packages
 }
 
-const resolvePackage = async (
-  repository: string,
-  specifier: string,
-  packages: PackageEntry[],
-) => {
+const resolvePackage = async (repository: string, specifier: string, packages: PackageEntry[]) => {
   const workspacePackage = packages
     .sort((a, b) => b.name.length - a.name.length)
     .find(({ name }) => specifier === name || specifier.startsWith(`${name}/`))
   if (!workspacePackage) return undefined
   const requestedSubpath =
-    specifier === workspacePackage.name
-      ? "."
-      : `./${specifier.slice(workspacePackage.name.length + 1)}`
+    specifier === workspacePackage.name ? "." : `./${specifier.slice(workspacePackage.name.length + 1)}`
   let subpath = requestedSubpath === "." ? workspacePackage.entry : undefined
   for (const [pattern, target] of Object.entries(workspacePackage.exports ?? {})) {
     const wildcardIndex = pattern.indexOf("*")
@@ -293,25 +254,19 @@ const resolvePackage = async (
     const wildcard =
       wildcardIndex === -1
         ? ""
-        : requestedSubpath.slice(
-            wildcardIndex,
-            requestedSubpath.length - (pattern.length - wildcardIndex - 1),
-          )
+        : requestedSubpath.slice(wildcardIndex, requestedSubpath.length - (pattern.length - wildcardIndex - 1))
     const exportTarget =
       typeof target === "string"
         ? target
         : typeof target === "object" && target
-          ? ((target as Record<string, unknown>).types ??
-            (target as Record<string, unknown>).default)
+          ? ((target as Record<string, unknown>).types ?? (target as Record<string, unknown>).default)
           : undefined
     if (typeof exportTarget === "string") {
       subpath = exportTarget.replace("*", wildcard)
       break
     }
   }
-  return subpath
-    ? resolveFile(repository, path.join(workspacePackage.root, subpath))
-    : undefined
+  return subpath ? resolveFile(repository, path.join(workspacePackage.root, subpath)) : undefined
 }
 
 const resolveImport = async ({
@@ -370,11 +325,9 @@ const cloneCall = (call: CallSite, confidence: CallSite["confidence"]): CallSite
   confidence,
 })
 
-const uniqueSymbol = (symbols: SymbolDefinition[]) =>
-  symbols.length === 1 ? symbols[0] : undefined
+const uniqueSymbol = (symbols: SymbolDefinition[]) => (symbols.length === 1 ? symbols[0] : undefined)
 
-const callableSymbols = (symbols: SymbolDefinition[]) =>
-  symbols.filter((symbol) => symbol.kind !== "value")
+const callableSymbols = (symbols: SymbolDefinition[]) => symbols.filter((symbol) => symbol.kind !== "value")
 
 export const resolveGraphs = async ({
   repository,
@@ -399,10 +352,7 @@ export const resolveGraphs = async ({
     const directory = path.dirname(file.path)
     filesByDirectory.set(directory, [...(filesByDirectory.get(directory) ?? []), file])
     if (!file.localScope) continue
-    symbolsByLocalScope.set(file.localScope, [
-      ...(symbolsByLocalScope.get(file.localScope) ?? []),
-      ...file.symbols,
-    ])
+    symbolsByLocalScope.set(file.localScope, [...(symbolsByLocalScope.get(file.localScope) ?? []), ...file.symbols])
   }
 
   const tsconfigs = await findTsconfigPaths(repository, repositoryFiles)
@@ -458,11 +408,7 @@ export const resolveGraphs = async ({
     }
     return current
   }
-  const resolveExportedSymbols = (
-    file: string,
-    name: string,
-    visited = new Set<string>(),
-  ): SymbolDefinition[] => {
+  const resolveExportedSymbols = (file: string, name: string, visited = new Set<string>()): SymbolDefinition[] => {
     const visitKey = `${file}:${name}`
     if (visited.has(visitKey)) return []
     visited.add(visitKey)
@@ -488,9 +434,7 @@ export const resolveGraphs = async ({
     for (const call of file.calls) {
       const imported = importsByFile
         .get(file.path)
-        ?.flatMap((context) =>
-          context.bindings.map((binding) => ({ context, binding })),
-        )
+        ?.flatMap((context) => context.bindings.map((binding) => ({ context, binding })))
       let candidates: SymbolDefinition[] = []
 
       if (call.kind === "identifier") {
@@ -505,71 +449,47 @@ export const resolveGraphs = async ({
             if (!context.dependency.to) return []
             return binding.kind === "default"
               ? resolveExportedSymbols(context.dependency.to, "default")
-              : resolveExportedSymbols(
-                  context.dependency.to,
-                  binding.imported === "*" ? call.name : binding.imported,
-                )
+              : resolveExportedSymbols(context.dependency.to, binding.imported === "*" ? call.name : binding.imported)
           })
         const localCandidates = (
-          file.localScope
-            ? (symbolsByLocalScope.get(file.localScope) ?? [])
-            : (symbolsByFile.get(file.path) ?? [])
+          file.localScope ? (symbolsByLocalScope.get(file.localScope) ?? []) : (symbolsByFile.get(file.path) ?? [])
         ).filter((symbol) => symbol.name === call.name)
         candidates = callableSymbols([...importCandidates, ...localCandidates])
       } else if (call.kind === "member" && call.receiver) {
         const namespace = imported?.find(
-          ({ binding }) =>
-            binding.kind === "namespace" && binding.local === call.receiver,
+          ({ binding }) => binding.kind === "namespace" && binding.local === call.receiver,
         )
         if (namespace?.context.dependency.toScope) {
-          candidates = callableSymbols(
-            symbolsByLocalScope.get(namespace.context.dependency.toScope) ?? [],
-          ).filter((symbol) => symbol.name === call.name)
-        } else if (namespace?.context.dependency.to) {
-          candidates = callableSymbols(
-            resolveExportedSymbols(namespace.context.dependency.to, call.name),
+          candidates = callableSymbols(symbolsByLocalScope.get(namespace.context.dependency.toScope) ?? []).filter(
+            (symbol) => symbol.name === call.name,
           )
+        } else if (namespace?.context.dependency.to) {
+          candidates = callableSymbols(resolveExportedSymbols(namespace.context.dependency.to, call.name))
         } else if (file.language === "go") {
           const localMethods = (
-            file.localScope
-              ? (symbolsByLocalScope.get(file.localScope) ?? [])
-              : (symbolsByFile.get(file.path) ?? [])
+            file.localScope ? (symbolsByLocalScope.get(file.localScope) ?? []) : (symbolsByFile.get(file.path) ?? [])
           ).filter((symbol) => symbol.kind === "method" && symbol.name === call.name)
           candidates = localMethods.length === 1 ? localMethods : []
         } else if (file.language === "python") {
-          const localMethods = symbols.filter(
-            (symbol) => symbol.kind === "method" && symbol.name === call.name,
-          )
+          const localMethods = symbols.filter((symbol) => symbol.kind === "method" && symbol.name === call.name)
           candidates = localMethods.length === 1 ? localMethods : []
         } else if (file.language === "java") {
           candidates = symbols.filter(
-            (symbol) =>
-              symbol.kind === "method" &&
-              symbol.containerName === call.receiver &&
-              symbol.name === call.name,
+            (symbol) => symbol.kind === "method" && symbol.containerName === call.receiver && symbol.name === call.name,
           )
         }
       } else if (call.kind === "this-method" && call.enclosingSymbolId) {
         const owner = ownerWithContainer(call.enclosingSymbolId)
         const binding = imported?.find(({ binding }) => binding.local === call.name)
-        candidates =
-          binding?.context.dependency.to
-            ? callableSymbols(
-                resolveExportedSymbols(
-                  binding.context.dependency.to,
-                  binding.binding.imported,
-                ),
-              )
-            : (
-                file.localScope
-                  ? (symbolsByLocalScope.get(file.localScope) ?? [])
-                  : (symbolsByFile.get(file.path) ?? [])
-              ).filter(
-                (symbol) =>
-                  symbol.kind === "method" &&
-                  symbol.containerName === owner?.containerName &&
-                  symbol.name === call.name,
-              )
+        candidates = binding?.context.dependency.to
+          ? callableSymbols(resolveExportedSymbols(binding.context.dependency.to, binding.binding.imported))
+          : (file.localScope
+              ? (symbolsByLocalScope.get(file.localScope) ?? [])
+              : (symbolsByFile.get(file.path) ?? [])
+            ).filter(
+              (symbol) =>
+                symbol.kind === "method" && symbol.containerName === owner?.containerName && symbol.name === call.name,
+            )
       }
 
       const target = uniqueSymbol(candidates)

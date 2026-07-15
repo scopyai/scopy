@@ -1,7 +1,7 @@
 import { node } from "@elysia/node"
 import { cors } from "@elysiajs/cors"
 import { Elysia } from "elysia"
-import { env } from "./env"
+import { apiEnv as env } from "./env"
 import { authRoutes } from "./modules/auth"
 import { analyticsRoutes } from "./modules/analytics"
 import { githubRoutes } from "./modules/github"

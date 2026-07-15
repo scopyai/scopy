@@ -12,12 +12,14 @@ export type PreparedRepository = {
 }
 
 const isLocalPath = (repository: string) =>
-  repository.startsWith("/") ||
-  repository.startsWith(".") ||
-  repository.startsWith("~")
+  repository.startsWith("/") || repository.startsWith(".") || repository.startsWith("~")
 
 const normalizeGitHubRepository = (repository: string) => {
-  if (repository.startsWith("git@") || repository.startsWith("http://") || repository.startsWith("https://")) {
+  if (
+    repository.startsWith("git@") ||
+    repository.startsWith("http://") ||
+    repository.startsWith("https://")
+  ) {
     return repository
   }
   if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
@@ -41,11 +43,13 @@ export const prepareRepository = async ({
   const cloneUrl = normalizeGitHubRepository(repository)
   await execFileAsync("git", ["clone", "--quiet", cloneUrl, directory], {
     maxBuffer: 20 * 1024 * 1024,
+    timeout: 10 * 60 * 1000,
   })
   if (ref) {
     await execFileAsync("git", ["checkout", "--quiet", ref], {
       cwd: directory,
       maxBuffer: 20 * 1024 * 1024,
+      timeout: 10 * 60 * 1000,
     })
   }
 

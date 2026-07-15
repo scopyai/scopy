@@ -1,4 +1,4 @@
-import { env } from "../../env"
+import { apiEnv as env } from "../../env"
 import {
   ENTERPRISE_BILLING_PLAN,
   PREMIUM_BILLING_PLAN,
@@ -28,7 +28,7 @@ export type WorkspaceBillingTier =
   | "enterprise"
 
 export const isPaidTier = (
-  tier: WorkspaceBillingTier,
+  tier: WorkspaceBillingTier
 ): tier is PurchasableBillingTier => tier === "premium" || tier === "ultra"
 
 export const getPurchasablePlan = (tier: string) =>
@@ -44,6 +44,6 @@ export const getPlanByProductId = (productId: string) =>
   )
 
 export const getMonthlyAllowance = (tier: WorkspaceBillingTier) =>
-  isPaidTier(tier) ? getPurchasablePlan(tier)?.monthlyCredits ?? 0 : 0
+  isPaidTier(tier) ? (getPurchasablePlan(tier)?.monthlyCredits ?? 0) : 0
 
 export const publicBillingPlans = PUBLIC_BILLING_PLANS

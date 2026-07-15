@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto"
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { db } from "../../db/client"
 import { docSource, repository } from "../../db/schema"
-import { env } from "../../env"
 import { jobs } from "../../jobs/definitions"
 import { detectDocLibraries } from "./detect-libraries"
 import { checkUrlIsPublic } from "./safe-url"
@@ -41,16 +40,18 @@ const upsertGlobalSource = async (config: (typeof docSourceConfigs)[number]) =>
 export const enqueueDueDocSourceCrawls = async ({
   logger,
   force = false,
+  intervalHours,
 }: {
   logger: Logger
   force?: boolean
+  intervalHours: number
 }) => {
   for (const config of docSourceConfigs) {
     await upsertGlobalSource(config)
   }
 
   const staleBefore = new Date(
-    Date.now() - env.DOCS_RECRAWL_INTERVAL_HOURS * 3_600_000
+    Date.now() - intervalHours * 3_600_000
   )
   const sources = await db.query.docSource.findMany({
     columns: { id: true, slug: true, lastCrawledAt: true },
@@ -68,7 +69,7 @@ export const enqueueDueDocSourceCrawls = async ({
   logger.info("Docs recrawl sweep", {
     total: sources.length,
     enqueued,
-    intervalHours: env.DOCS_RECRAWL_INTERVAL_HOURS,
+    intervalHours,
   })
   return enqueued
 }

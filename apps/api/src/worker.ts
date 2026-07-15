@@ -1,5 +1,5 @@
 import { run } from "graphile-worker"
-import { env } from "./env"
+import { workerEnv as env } from "./env"
 import { taskList } from "./jobs/tasks"
 
 const runner = await run({

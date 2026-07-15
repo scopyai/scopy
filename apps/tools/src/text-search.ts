@@ -1,7 +1,6 @@
-import { readFile, realpath, stat } from "node:fs/promises"
-import path from "node:path"
 import type { RepositoryCodeIndex } from "./code-index"
 import { discoverRepositoryFiles } from "./discover"
+import { readRepositoryFileBuffer, resolveRepositoryRoot } from "./repository-file"
 import { reviewIndexDecision } from "./review-file-policy"
 import type { ScopeDefinition } from "./types"
 
@@ -60,12 +59,17 @@ const isBinary = (buffer: Buffer) => {
 }
 
 const safeReadTextFile = async (repository: string, file: string) => {
-  const absolutePath = path.join(repository, file)
-  const fileStats = await stat(absolutePath)
-  if (!fileStats.isFile() || fileStats.size > MAX_FILE_BYTES) return undefined
-  const buffer = await readFile(absolutePath)
-  if (isBinary(buffer)) return undefined
-  return buffer.toString("utf8")
+  try {
+    const { buffer } = await readRepositoryFileBuffer({
+      repository,
+      file,
+      maxBytes: MAX_FILE_BYTES,
+    })
+    if (isBinary(buffer)) return undefined
+    return buffer.toString("utf8")
+  } catch {
+    return undefined
+  }
 }
 
 const filesForSearch = async ({
@@ -91,7 +95,7 @@ const symbolForLine = (
       if (candidate.kind === "top-level") return false
       return candidate.startLine <= line && candidate.endLine >= line
     })
-    .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0]
+    .sort((a, b) => a.endLine - a.startLine - (b.endLine - b.startLine))[0]
 
   return scope
     ? {
@@ -139,12 +143,9 @@ export const searchRepositoryText = async ({
   index,
   maxResults = DEFAULT_MAX_RESULTS,
 }: SearchRepositoryTextInput): Promise<SearchRepositoryTextOutput> => {
-  const repository = await realpath(inputRepository)
+  const repository = await resolveRepositoryRoot(inputRepository)
   const needle = query.toLocaleLowerCase()
-  const resultLimit = Math.min(
-    HARD_MAX_RESULTS,
-    Math.max(1, Math.floor(maxResults)),
-  )
+  const resultLimit = Math.min(HARD_MAX_RESULTS, Math.max(1, Math.floor(maxResults)))
   const matches: TextSearchMatch[] = []
   let filesSearched = 0
   let filesSkipped = 0

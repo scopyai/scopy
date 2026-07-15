@@ -1,6 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { createGateway, type ToolLoopAgentSettings } from "ai"
-import { env } from "../../env"
+import { workerEnv as env } from "../../env"
 import {
   resolveGatewayGenerationCost,
   resolveOpenRouterGenerationCost,
@@ -64,7 +64,8 @@ export const createReviewLlm = () => {
     chatModel,
     providerOptionsFor,
     resolveGenerationCost: openrouter
-      ? resolveOpenRouterGenerationCost
+      ? (generation: unknown) =>
+          resolveOpenRouterGenerationCost(generation, env.OPENROUTER_API_KEY)
       : (generation: unknown, options?: { retryDelaysMs?: number[] }) =>
           resolveGatewayGenerationCost(
             generation,

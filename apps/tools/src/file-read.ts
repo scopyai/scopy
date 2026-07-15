@@ -1,5 +1,4 @@
-import { readFile, realpath, stat } from "node:fs/promises"
-import path from "node:path"
+import { readRepositoryFileBuffer, resolveRepositoryRoot } from "./repository-file"
 
 export type ReadRepositoryFileInput = {
   repository: string
@@ -37,74 +36,35 @@ const isBinary = (buffer: Buffer) => {
   return sample.length > 0 && suspicious / sample.length > 0.3
 }
 
-const resolveInsideRepository = async (repository: string, file: string) => {
-  if (path.isAbsolute(file)) {
-    throw new Error("File path must be relative to the repository")
-  }
-
-  const normalized = path.normalize(file)
-  if (normalized === "." || normalized.startsWith("..") || path.isAbsolute(normalized)) {
-    throw new Error("File path must stay inside the repository")
-  }
-
-  const repositoryPath = await realpath(repository)
-  const requestedPath = path.resolve(repositoryPath, normalized)
-  const relative = path.relative(repositoryPath, requestedPath)
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error("File path must stay inside the repository")
-  }
-
-  const absolutePath = await realpath(requestedPath)
-  const realRelative = path.relative(repositoryPath, absolutePath)
-  if (realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
-    throw new Error("File path must stay inside the repository")
-  }
-
-  return { repositoryPath, absolutePath, normalized: relative }
-}
-
 export const readRepositoryFile = async ({
   repository,
   file,
   startLine = 1,
   maxLines = DEFAULT_MAX_LINES,
 }: ReadRepositoryFileInput): Promise<ReadRepositoryFileOutput> => {
-  const { repositoryPath, absolutePath, normalized } =
-    await resolveInsideRepository(repository, file)
-  const fileStats = await stat(absolutePath)
-  if (!fileStats.isFile()) {
-    throw new Error(`Repository path is not a file: ${normalized}`)
-  }
-  if (fileStats.size > MAX_FILE_BYTES) {
-    throw new Error(
-      `Repository file is too large to read safely: ${normalized} (${fileStats.size} bytes)`,
-    )
-  }
-
-  const buffer = await readFile(absolutePath)
+  const repositoryPath = await resolveRepositoryRoot(repository)
+  const result = await readRepositoryFileBuffer({
+    repository: repositoryPath,
+    file,
+    maxBytes: MAX_FILE_BYTES,
+  })
+  const { buffer } = result
+  const normalized = result.file
   if (isBinary(buffer)) {
     throw new Error(`Repository file appears to be binary: ${normalized}`)
   }
 
   const lines = buffer.toString("utf8").split(/\r?\n/)
   const safeStartLine = Math.max(1, Math.floor(startLine))
-  const safeMaxLines = Math.min(
-    HARD_MAX_LINES,
-    Math.max(1, Math.floor(maxLines)),
-  )
+  const safeMaxLines = Math.min(HARD_MAX_LINES, Math.max(1, Math.floor(maxLines)))
   const selected = lines.slice(safeStartLine - 1, safeStartLine - 1 + safeMaxLines)
-  let content = selected
-    .map((line, index) => `${safeStartLine + index}: ${line}`)
-    .join("\n")
-  let truncated =
-    safeStartLine - 1 + safeMaxLines < lines.length || maxLines > HARD_MAX_LINES
+  let content = selected.map((line, index) => `${safeStartLine + index}: ${line}`).join("\n")
+  let truncated = safeStartLine - 1 + safeMaxLines < lines.length || maxLines > HARD_MAX_LINES
 
   while (Buffer.byteLength(content, "utf8") > MAX_OUTPUT_BYTES && selected.length > 1) {
     selected.pop()
     truncated = true
-    content = selected
-      .map((line, index) => `${safeStartLine + index}: ${line}`)
-      .join("\n")
+    content = selected.map((line, index) => `${safeStartLine + index}: ${line}`).join("\n")
   }
 
   return {

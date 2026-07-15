@@ -3,7 +3,7 @@ import { Output, ToolLoopAgent, stepCountIs, tool } from "ai"
 import { z } from "zod"
 import { db } from "../../db/client"
 import { docChunk, docPage } from "../../db/schema"
-import { env } from "../../env"
+import { workerEnv as env } from "../../env"
 import { createReviewLlm, repairedJsonOutput } from "../reviews/llm"
 import { resolveDocSource, searchDocSourceChunks } from "./search"
 

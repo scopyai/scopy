@@ -4,10 +4,12 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { buildRepositoryCodeIndex, type QdrantInferenceConfig } from "tools"
 import type { pullRequest, repository } from "../../db/schema"
-import { env } from "../../env"
+import { workerEnv as env } from "../../env"
 import { createGitHubInstallationAccessToken } from "../github/service"
 
 const execFileAsync = promisify(execFile)
+const GIT_TIMEOUT_MS = 10 * 60 * 1000
+const GIT_MAX_BUFFER = 20 * 1024 * 1024
 
 type Repository = typeof repository.$inferSelect
 type PullRequest = typeof pullRequest.$inferSelect
@@ -47,7 +49,7 @@ export const getReviewRuntimePaths = ({
     env.REVIEW_WORKDIR,
     safeSegment(repositoryId),
     safeSegment(headSha),
-    safeSegment(reviewRunId)
+    safeSegment(reviewRunId),
   )
 
   return {
@@ -72,18 +74,31 @@ const createAskPassScript = async (runPath: string) => {
       "esac",
       "",
     ].join("\n"),
-    "utf8"
+    "utf8",
   )
   await chmod(scriptPath, 0o700)
   return scriptPath
 }
 
-const gitEnv = ({ askPass, token }: { askPass: string; token: string }) => ({
-  ...process.env,
-  GIT_ASKPASS: askPass,
-  GIT_TERMINAL_PROMPT: "0",
-  REVIEW_GITHUB_TOKEN: token,
-})
+const gitEnv = ({ askPass, token }: { askPass: string; token: string }) => {
+  const { PATH, HOME, TMPDIR, LANG, LC_ALL, SSL_CERT_FILE, SSL_CERT_DIR, HTTPS_PROXY, HTTP_PROXY, NO_PROXY } =
+    process.env
+  return {
+    PATH,
+    HOME,
+    TMPDIR,
+    LANG,
+    LC_ALL,
+    SSL_CERT_FILE,
+    SSL_CERT_DIR,
+    HTTPS_PROXY,
+    HTTP_PROXY,
+    NO_PROXY,
+    GIT_ASKPASS: askPass,
+    GIT_TERMINAL_PROMPT: "0",
+    REVIEW_GITHUB_TOKEN: token,
+  }
+}
 
 const cloneRepository = async ({
   repo,
@@ -100,7 +115,12 @@ const cloneRepository = async ({
   await rm(paths.baseRepositoryPath, { recursive: true, force: true })
   const token = await createGitHubInstallationAccessToken(installationId)
   const askPass = await createAskPassScript(paths.runPath)
-  const env = gitEnv({ askPass, token })
+  const cloneEnv = gitEnv({ askPass, token })
+  const options = {
+    env: cloneEnv,
+    maxBuffer: GIT_MAX_BUFFER,
+    timeout: GIT_TIMEOUT_MS,
+  }
   await execFileAsync(
     "git",
     [
@@ -111,48 +131,33 @@ const cloneRepository = async ({
       `https://github.com/${repo.fullName}.git`,
       paths.repositoryPath,
     ],
-    {
-      env,
-      maxBuffer: 20 * 1024 * 1024,
-    }
+    options,
   )
-  await execFileAsync(
-    "git",
-    ["fetch", "--quiet", "origin", pullRequest.baseRef],
-    {
-      cwd: paths.repositoryPath,
-      env,
-      maxBuffer: 20 * 1024 * 1024,
-    }
-  )
-  await execFileAsync(
-    "git",
-    ["fetch", "--quiet", "origin", `pull/${pullRequest.number}/head`],
-    {
-      cwd: paths.repositoryPath,
-      env,
-      maxBuffer: 20 * 1024 * 1024,
-    }
-  )
+  await execFileAsync("git", ["fetch", "--quiet", "origin", pullRequest.baseRef], {
+    cwd: paths.repositoryPath,
+    ...options,
+  })
+  await execFileAsync("git", ["fetch", "--quiet", "origin", `pull/${pullRequest.number}/head`], {
+    cwd: paths.repositoryPath,
+    ...options,
+  })
   await execFileAsync("git", ["checkout", "--quiet", pullRequest.headSha], {
     cwd: paths.repositoryPath,
-    env,
-    maxBuffer: 20 * 1024 * 1024,
+    ...options,
   })
-  return env
+  return cloneEnv
 }
 
 const revParse = async (repositoryPath: string, ref: string) => {
   const { stdout } = await execFileAsync("git", ["rev-parse", ref], {
     cwd: repositoryPath,
     maxBuffer: 1024 * 1024,
+    timeout: GIT_TIMEOUT_MS,
   })
   return stdout.trim()
 }
 
-const serializeCodeIndex = (
-  index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
-) => ({
+const serializeCodeIndex = (index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>) => ({
   repository: index.repository,
   repositoryFiles: index.repositoryFiles,
   discoveredFiles: index.discoveredFiles,
@@ -200,10 +205,7 @@ export const prepareReviewRuntime = async ({
     paths,
   })
 
-  const baseSha = await revParse(
-    paths.repositoryPath,
-    `origin/${pullRequest.baseRef}`
-  )
+  const baseSha = await revParse(paths.repositoryPath, `origin/${pullRequest.baseRef}`)
   const codeIndex = await buildRepositoryCodeIndex({
     repository: paths.repositoryPath,
     changedFiles,
@@ -211,37 +213,19 @@ export const prepareReviewRuntime = async ({
   let basePromise: ReturnType<PreparedReviewRuntime["loadBase"]> | null = null
   const loadBase: PreparedReviewRuntime["loadBase"] = () =>
     (basePromise ??= (async () => {
-      await execFileAsync(
-        "git",
-        [
-          "worktree",
-          "add",
-          "--quiet",
-          "--detach",
-          paths.baseRepositoryPath,
-          baseSha,
-        ],
-        {
-          cwd: paths.repositoryPath,
-          env: cloneEnv,
-          maxBuffer: 20 * 1024 * 1024,
-        }
-      )
+      await execFileAsync("git", ["worktree", "add", "--quiet", "--detach", paths.baseRepositoryPath, baseSha], {
+        cwd: paths.repositoryPath,
+        env: cloneEnv,
+        maxBuffer: GIT_MAX_BUFFER,
+        timeout: GIT_TIMEOUT_MS,
+      })
       const index = await buildRepositoryCodeIndex({
         repository: paths.baseRepositoryPath,
       })
-      await writeFile(
-        paths.baseIndexPath,
-        JSON.stringify(serializeCodeIndex(index), null, 2),
-        "utf8"
-      )
+      await writeFile(paths.baseIndexPath, JSON.stringify(serializeCodeIndex(index), null, 2), "utf8")
       return { repositoryPath: paths.baseRepositoryPath, index }
     })())
-  await writeFile(
-    paths.indexPath,
-    JSON.stringify(serializeCodeIndex(codeIndex), null, 2),
-    "utf8"
-  )
+  await writeFile(paths.indexPath, JSON.stringify(serializeCodeIndex(codeIndex), null, 2), "utf8")
   await writeFile(
     paths.metadataPath,
     JSON.stringify(
@@ -257,9 +241,9 @@ export const prepareReviewRuntime = async ({
         preparedAt: new Date().toISOString(),
       },
       null,
-      2
+      2,
     ),
-    "utf8"
+    "utf8",
   )
 
   return {

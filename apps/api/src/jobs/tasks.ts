@@ -4,6 +4,7 @@ import { enqueueDueDocSourceCrawls } from "../modules/docs/service"
 import { executeReviewPullRequest } from "../modules/reviews/task"
 import { processGitHubWebhookEvent } from "../modules/webhooks/service"
 import { jobPayloadSchemas } from "./definitions"
+import { workerEnv } from "../env"
 
 export const taskList: TaskList = {
   process_github_webhook: async (payload, helpers) => {
@@ -27,7 +28,7 @@ export const taskList: TaskList = {
         logger: helpers.logger,
         attempt: helpers.job.attempts,
         maxAttempts: helpers.job.max_attempts,
-      },
+      }
     )
   },
   crawl_doc_source: async (payload, helpers) => {
@@ -35,6 +36,9 @@ export const taskList: TaskList = {
     await crawlDocSource({ sourceId, logger: helpers.logger })
   },
   crawl_all_doc_sources: async (_payload, helpers) => {
-    await enqueueDueDocSourceCrawls({ logger: helpers.logger })
+    await enqueueDueDocSourceCrawls({
+      logger: helpers.logger,
+      intervalHours: workerEnv.DOCS_RECRAWL_INTERVAL_HOURS,
+    })
   },
 }

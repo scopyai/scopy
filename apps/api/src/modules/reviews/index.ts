@@ -89,7 +89,7 @@ import {
 } from "../docs/service"
 import { queryDocsLibrarian } from "../docs/librarian"
 import { resolveDocSource, searchDocSourceChunks } from "../docs/search"
-import { env } from "../../env"
+import { workerEnv as env } from "../../env"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"

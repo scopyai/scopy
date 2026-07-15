@@ -2,7 +2,10 @@ export { analyzeRepository } from "./analyze"
 export { buildRepositoryCodeIndex } from "./code-index"
 export type { RepositoryCodeIndex } from "./code-index"
 export { readRepositoryFile } from "./file-read"
-export { reviewIndexDecision, shouldReviewIndexFile } from "./review-file-policy"
+export {
+  reviewIndexDecision,
+  shouldReviewIndexFile,
+} from "./review-file-policy"
 export { buildDiffContext } from "./diff/context"
 export type {
   AffectedSymbol,
@@ -12,10 +15,7 @@ export type {
 export { parseUnifiedDiff } from "./diff/parse"
 export { renderReadableDiffContext } from "./diff/render-readable"
 export { buildReviewDiffContext } from "./review-context"
-export {
-  getSymbolCallers,
-  getSymbolDefinition,
-} from "./review-symbol-context"
+export { getSymbolCallers, getSymbolDefinition } from "./review-symbol-context"
 export {
   chunksForRepositoryIndex,
   getSemanticContext,

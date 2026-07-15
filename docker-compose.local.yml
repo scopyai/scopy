@@ -48,6 +48,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: api-runner
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/app
       BETTER_AUTH_SECRET: local-development-secret-change-me
@@ -66,9 +67,6 @@ services:
       GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
       GITHUB_APP_WEBHOOK_SECRET: ${GITHUB_APP_WEBHOOK_SECRET}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
-      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
       PORT: 3001
     ports:
       - "3001:3001"
@@ -93,27 +91,15 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: worker-runner
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/app
-      BETTER_AUTH_SECRET: local-development-secret-change-me
-      BETTER_AUTH_URL: http://localhost:3001
       FRONTEND_URL: http://localhost:3000
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      CREEM_API_KEY: ${CREEM_API_KEY}
-      CREEM_WEBHOOK_SECRET: ${CREEM_WEBHOOK_SECRET}
-      CREEM_TEST_MODE: ${CREEM_TEST_MODE:-true}
-      CREEM_PREMIUM_PRODUCT_ID: ${CREEM_PREMIUM_PRODUCT_ID}
-      CREEM_ULTRA_PRODUCT_ID: ${CREEM_ULTRA_PRODUCT_ID}
       GITHUB_APP_ID: ${GITHUB_APP_ID}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG}
-      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID}
-      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
-      GITHUB_APP_WEBHOOK_SECRET: ${GITHUB_APP_WEBHOOK_SECRET}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
-      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
     depends_on:
       db:
         condition: service_healthy

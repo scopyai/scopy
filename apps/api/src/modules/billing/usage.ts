@@ -108,12 +108,15 @@ const extractOpenRouterGenerationId = (generation: unknown) => {
     : null
 }
 
-export const resolveOpenRouterCost = async (generation: unknown) => {
+export const resolveOpenRouterCost = async (
+  generation: unknown,
+  apiKey?: string,
+) => {
   const extracted = extractOpenRouterCost(generation)
   if (extracted.costMicrocents !== null) return extracted
 
   const generationId = extractOpenRouterGenerationId(generation)
-  if (!generationId || !env.OPENROUTER_API_KEY) return extracted
+  if (!generationId || !apiKey) return extracted
 
   const response = await fetch(
     `https://openrouter.ai/api/v1/generation?id=${encodeURIComponent(
@@ -121,7 +124,7 @@ export const resolveOpenRouterCost = async (generation: unknown) => {
     )}`,
     {
       headers: {
-        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
     },
   )
@@ -217,9 +220,12 @@ const resolveGenerationCost = async (
   }
 }
 
-export const resolveOpenRouterGenerationCost = (generation: unknown) =>
+export const resolveOpenRouterGenerationCost = (
+  generation: unknown,
+  apiKey?: string,
+) =>
   resolveGenerationCost(generation, async (step) => {
-    const cost = await resolveOpenRouterCost(step)
+    const cost = await resolveOpenRouterCost(step, apiKey)
     return {
       cost: cost.cost,
       costMicrocents: cost.costMicrocents,
