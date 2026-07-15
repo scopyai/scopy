@@ -108,14 +108,6 @@ export const listDocSourcesWithState = async () => {
   })
 }
 
-export const enqueueDocSourceCrawl = async (slug: string) => {
-  const config = docSourceConfigs.find((source) => source.slug === slug)
-  if (!config) return false
-  const source = await upsertGlobalSource(config)
-  await jobs.crawlDocSource.enqueue(db, { sourceId: source.id })
-  return true
-}
-
 export type AvailableDocLibrary = {
   slug: string
   name: string

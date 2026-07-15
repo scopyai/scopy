@@ -5,7 +5,7 @@ import TurndownService from "turndown"
 import { db } from "../../db/client"
 import { docChunk, docPage, docSource } from "../../db/schema"
 import { chunkMarkdown } from "./chunker"
-import { checkUrlIsPublic } from "./safe-url"
+import { checkUrlIsPublic, publicDispatcher } from "./safe-url"
 
 type Logger = {
   info: (message: string, details?: Record<string, unknown>) => void
@@ -20,8 +20,6 @@ const PAGE_CONCURRENCY = 4
 const MAX_RAW_BYTES = 2_000_000
 const MAX_MARKDOWN_BYTES = 200_000
 const DB_BATCH_SIZE = 50
-// Custom (workspace-uploaded) llms.txt files get a page budget so a hostile
-// or bloated index can't turn into an unbounded crawl.
 const MAX_CUSTOM_SOURCE_ENTRIES = 2_000
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
@@ -30,7 +28,33 @@ const approxTokens = (text: string) => Math.ceil(text.length / 4)
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// Follows redirects manually so every hop passes the SSRF check.
+export const readResponseText = async (
+  response: Response,
+  maxBytes = MAX_RAW_BYTES
+) => {
+  if (!response.body) return ""
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const chunks: string[] = []
+  let bytesRead = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      bytesRead += value.byteLength
+      if (bytesRead > maxBytes) {
+        await reader.cancel("response exceeds size cap")
+        throw new Error("response exceeds size cap")
+      }
+      chunks.push(decoder.decode(value, { stream: true }))
+    }
+    chunks.push(decoder.decode())
+    return chunks.join("")
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 const fetchPublicUrl = async (url: string) => {
   let currentUrl = url
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -43,7 +67,8 @@ const fetchPublicUrl = async (url: string) => {
       },
       redirect: "manual",
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    })
+      dispatcher: publicDispatcher,
+    } as RequestInit & { dispatcher: typeof publicDispatcher })
     const location = response.headers.get("location")
     if (response.status >= 300 && response.status < 400 && location) {
       await response.body?.cancel()
@@ -65,6 +90,7 @@ const fetchText = async (url: string) => {
       }
       const response = result.response
       if (response.status === 429 || response.status >= 500) {
+        await response.body?.cancel()
         lastError = new Error(`HTTP ${response.status} for ${url}`)
         const retryAfterSeconds = Number(response.headers.get("retry-after"))
         const backoffMs =
@@ -77,6 +103,7 @@ const fetchText = async (url: string) => {
         continue
       }
       if (!response.ok) {
+        await response.body?.cancel()
         return { ok: false as const, error: `HTTP ${response.status}` }
       }
       const contentType = response.headers.get("content-type") ?? ""
@@ -84,12 +111,15 @@ const fetchText = async (url: string) => {
         contentType &&
         !/text\/|application\/(xhtml|xml|json)/i.test(contentType)
       ) {
+        await response.body?.cancel()
         return { ok: false as const, error: `non-text content: ${contentType}` }
       }
-      const text = await response.text()
-      if (Buffer.byteLength(text, "utf8") > MAX_RAW_BYTES) {
+      const contentLength = Number(response.headers.get("content-length"))
+      if (Number.isFinite(contentLength) && contentLength > MAX_RAW_BYTES) {
+        await response.body?.cancel()
         return { ok: false as const, error: "response exceeds size cap" }
       }
+      const text = await readResponseText(response)
       return { ok: true as const, text, contentType }
     } catch (error) {
       lastError = error
@@ -216,8 +246,6 @@ const upsertPage = async ({
       .update(docPage)
       .set({ lastSeenCrawlId: crawlId })
       .where(eq(docPage.id, existing.id))
-    // Chunks are the only copy of the page text; restore them if a chunker
-    // change (or bug) wiped them, since we have the fetched markdown in hand.
     const [chunk] = await db
       .select({ id: docChunk.id })
       .from(docChunk)

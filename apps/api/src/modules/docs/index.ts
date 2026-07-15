@@ -5,21 +5,13 @@ import {
   requireWorkspaceForUser,
   requireWorkspaceRole,
 } from "../workspaces/service"
-import { queryDocsLibrarian } from "./librarian"
 import {
   createWorkspaceDocSource,
   deleteWorkspaceDocSource,
-  enqueueDocSourceCrawl,
   enqueueWorkspaceDocSourceCrawl,
   listDocSourcesWithState,
   listWorkspaceDocSources,
 } from "./service"
-
-const querySchema = z.object({
-  library: z.string().min(1).max(200),
-  question: z.string().min(1).max(2000),
-  workspaceId: z.string().min(1).optional(),
-})
 
 const createSourceSchema = z.object({
   name: z.string().min(1).max(80),
@@ -31,29 +23,6 @@ const crawlSourceRateLimit = { limit: 6, windowMs: 10 * 60 * 1000 }
 
 export const docsRoutes = protectedRoute("/docs")
   .get("/sources", async () => listDocSourcesWithState())
-  .post("/sources/:slug/crawl", async ({ params, status }) => {
-    const enqueued = await enqueueDocSourceCrawl(params.slug)
-    if (!enqueued) {
-      return status(404, { error: "Unknown doc source" })
-    }
-    return { enqueued: true, slug: params.slug }
-  })
-  .post("/query", async ({ body, user: currentUser, status }) => {
-    const parsed = querySchema.safeParse(body)
-    if (!parsed.success) {
-      return status(400, { error: "Invalid docs query" })
-    }
-    if (parsed.data.workspaceId) {
-      const membership = await requireWorkspaceForUser(
-        parsed.data.workspaceId,
-        currentUser.id
-      ).catch(() => null)
-      if (!membership) {
-        return status(404, { error: "Workspace not found" })
-      }
-    }
-    return queryDocsLibrarian(parsed.data)
-  })
 
 export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .get(
