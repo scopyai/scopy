@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, asc, eq, isNull } from "drizzle-orm"
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { db } from "../../db/client"
 import { docSource, repository } from "../../db/schema"
 import { env } from "../../env"
@@ -114,6 +114,81 @@ export const enqueueDocSourceCrawl = async (slug: string) => {
   const source = await upsertGlobalSource(config)
   await jobs.crawlDocSource.enqueue(db, { sourceId: source.id })
   return true
+}
+
+export type AvailableDocLibrary = {
+  slug: string
+  name: string
+  kind: "detected" | "custom"
+  /** Lowercase strings whose presence in a diff indicates the library is in play. */
+  matchTerms: string[]
+}
+
+export const getAvailableDocLibraries = async ({
+  workspaceId,
+  detected,
+  excludedSlugs,
+}: {
+  workspaceId: string
+  detected: Array<{ slug: string; name: string; dependency: string }>
+  excludedSlugs: string[]
+}): Promise<AvailableDocLibrary[]> => {
+  const excluded = new Set(excludedSlugs)
+  const available: AvailableDocLibrary[] = []
+
+  const detectedSlugs = detected
+    .map((library) => library.slug)
+    .filter((slug) => !excluded.has(slug))
+  if (detectedSlugs.length > 0) {
+    const crawledGlobal = await db.query.docSource.findMany({
+      columns: { slug: true },
+      where: and(
+        isNull(docSource.workspaceId),
+        inArray(docSource.slug, detectedSlugs),
+        isNotNull(docSource.activeCrawlId)
+      ),
+    })
+    const crawledSlugs = new Set(crawledGlobal.map((source) => source.slug))
+    for (const library of detected) {
+      if (!crawledSlugs.has(library.slug) || excluded.has(library.slug)) {
+        continue
+      }
+      const config = docSourceConfigs.find(
+        (entry) => entry.slug === library.slug
+      )
+      available.push({
+        slug: library.slug,
+        name: library.name,
+        kind: "detected",
+        matchTerms: [
+          ...new Set([
+            library.slug,
+            library.name.toLowerCase(),
+            library.dependency.toLowerCase(),
+            ...(config?.aliases ?? []).map((alias) => alias.toLowerCase()),
+          ]),
+        ],
+      })
+    }
+  }
+
+  const customSources = await db.query.docSource.findMany({
+    where: and(
+      eq(docSource.workspaceId, workspaceId),
+      isNotNull(docSource.activeCrawlId)
+    ),
+  })
+  for (const source of customSources) {
+    if (excluded.has(source.slug)) continue
+    available.push({
+      slug: source.slug,
+      name: source.name,
+      kind: "custom",
+      matchTerms: [source.slug, source.name.toLowerCase()],
+    })
+  }
+
+  return available
 }
 
 export const refreshRepositoryDocLibraries = async ({

@@ -1,11 +1,11 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm"
+import { and, asc, eq } from "drizzle-orm"
 import { Output, ToolLoopAgent, stepCountIs, tool } from "ai"
 import { z } from "zod"
 import { db } from "../../db/client"
-import { docChunk, docPage, docSource } from "../../db/schema"
+import { docChunk, docPage } from "../../db/schema"
 import { env } from "../../env"
 import { createReviewLlm, repairedJsonOutput } from "../reviews/llm"
-import { resolveDocSourceConfig } from "./sources"
+import { resolveDocSource, searchDocSourceChunks } from "./search"
 
 const MAX_TOC_ENTRIES = 500
 const MAX_TOOL_BYTES = 20_000
@@ -66,34 +66,8 @@ Rules:
 - Prefer search_docs for exact API names, config keys, or error strings; it returns matching sections with their heading — pass that url and heading to read_doc_page to read the section. Use read_doc_page without heading only when the table of contents already points at the right page.
 - Cite every page you relied on: exact url, page title, and a short verbatim excerpt supporting the answer.
 - If the documentation does not answer the question, return found: false and say what is missing. Do not guess.
+- Distinguish documented absence from absence of documentation. State that something is NOT the case only when a document explicitly says so; when the pages you read simply do not address the question, say "the documentation I read does not address X" - never phrase your own unsuccessful search as a documented "no". The consumer treats these very differently: one refutes a claim, the other merely leaves it unverified.
 - Keep the answer compact and factual; it will be consumed by another automated reviewer.`
-
-const resolveDocSource = async (library: string, workspaceId?: string) => {
-  const normalized = library.trim().toLowerCase()
-  if (!normalized) return null
-
-  if (workspaceId) {
-    const workspaceSources = await db.query.docSource.findMany({
-      where: eq(docSource.workspaceId, workspaceId),
-    })
-    const match = workspaceSources.find(
-      (source) =>
-        source.slug === normalized || source.name.toLowerCase() === normalized
-    )
-    if (match) return match
-  }
-
-  const config = resolveDocSourceConfig(library)
-  if (!config) return null
-  return (
-    (await db.query.docSource.findFirst({
-      where: and(
-        eq(docSource.slug, config.slug),
-        isNull(docSource.workspaceId)
-      ),
-    })) ?? null
-  )
-}
 
 export const queryDocsLibrarian = async (
   {
@@ -187,53 +161,15 @@ export const queryDocsLibrarian = async (
         query: z.string().min(1),
       }),
       execute: async ({ query }) => {
-        const searchChunks = (tsQuery: ReturnType<typeof sql>) =>
-          db
-            .select({
-              url: docPage.url,
-              title: docPage.title,
-              heading: docChunk.heading,
-              snippet: sql<string>`ts_headline('english', ${docChunk.contentMd}, ${tsQuery}, 'MaxFragments=2, MaxWords=40, MinWords=10')`,
-              rank: sql<number>`ts_rank(${docChunk.contentTsv}, ${tsQuery})`,
-            })
-            .from(docChunk)
-            .innerJoin(docPage, eq(docChunk.pageId, docPage.id))
-            .where(
-              and(
-                eq(docChunk.sourceId, source.id),
-                eq(docPage.lastSeenCrawlId, activeCrawlId),
-                sql`${docChunk.contentTsv} @@ ${tsQuery}`
-              )
-            )
-            .orderBy((table) => desc(table.rank))
-            .limit(12)
-
-        let results = await searchChunks(
-          sql`websearch_to_tsquery('english', ${query})`
-        )
-        if (results.length === 0) {
-          const orQuery = query
-            .split(/[^\p{L}\p{N}_.]+/u)
-            .filter((term) => term.length > 1)
-            .map((term) => term.replace(/'/g, ""))
-            .join(" or ")
-          if (orQuery) {
-            results = await searchChunks(
-              sql`websearch_to_tsquery('english', ${orQuery})`
-            )
-          }
-        }
+        const results = await searchDocSourceChunks({
+          sourceId: source.id,
+          activeCrawlId,
+          query,
+        })
         if (results.length === 0) {
           return { results: [], note: "no matches; try different terms" }
         }
-        return {
-          results: results.map(({ url, title, heading, snippet }) => ({
-            url,
-            title,
-            heading,
-            snippet,
-          })),
-        }
+        return { results }
       },
     }),
   }
@@ -303,6 +239,7 @@ Question: ${question}`,
     library: source.slug,
     ...output,
     usage: generation.totalUsage,
+    generation,
     ...(options.diagnostics
       ? {
           diagnostics: {
@@ -315,7 +252,6 @@ Question: ${question}`,
             durationMs: Date.now() - startedAt,
             steps,
           },
-          generation,
         }
       : {}),
   }
