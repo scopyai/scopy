@@ -347,14 +347,18 @@ export const crawlDocSource = async ({
     .set({ status: "crawling" })
     .where(eq(docSource.id, source.id))
   const crawlId = randomUUID()
-  logger.info("Docs crawl started", { slug, crawlId })
+  logger.info(`Docs crawl started [${slug}]`, { slug, crawlId })
 
   const failCrawl = async (error: string) => {
     await db
       .update(docSource)
       .set({ status: "error", lastError: error })
       .where(eq(docSource.id, source.id))
-    logger.error("Docs crawl failed", { slug, crawlId, error })
+    logger.error(`Docs crawl failed [${slug}]: ${error}`, {
+      slug,
+      crawlId,
+      error,
+    })
     throw new CrawlFailedError(`Docs crawl failed for ${slug}: ${error}`)
   }
 
@@ -430,11 +434,10 @@ const runCrawl = async ({
       })
       outcomes[kept ? "kept_stale" : "failed"] += 1
       if (!kept) {
-        logger.info("Docs page fetch failed", {
-          slug,
-          url: entry.url,
-          error: fetched.error,
-        })
+        logger.info(
+          `Docs page fetch failed [${slug}] ${entry.url}: ${fetched.error}`,
+          { slug, url: entry.url, error: fetched.error }
+        )
       }
       return
     }
@@ -494,6 +497,10 @@ const runCrawl = async ({
     })
     .where(eq(docSource.id, source.id))
 
-  logger.info("Docs crawl completed", { slug, crawlId, ...outcomes })
+  logger.info(`Docs crawl completed [${slug}]: ${JSON.stringify(outcomes)}`, {
+    slug,
+    crawlId,
+    ...outcomes,
+  })
   return { crawlId, pageCount, outcomes }
 }
