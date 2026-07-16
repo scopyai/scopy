@@ -1,12 +1,10 @@
 ---
-title: "What Is AI Code Review? A Practical Guide for Engineering Teams"
-description: "AI code review uses large language models to read pull requests and flag bugs, risks and style issues before merge. Here's how it works, where it helps, and where it doesn't."
+title: "What Is AI Code Review? A Practical Guide"
+description: "AI code review uses large language models to read pull requests and flag bugs before merge. How it works, where it helps, and where it doesn't."
 date: "2026-06-09"
 author: "Matt, founder"
 tags: "AI code review, fundamentals"
 ---
-
-# What Is AI Code Review?
 
 **AI code review** means using a large language model to read a change, usually a pull request, and leave feedback on bugs, risky logic and violations of your team's conventions. It runs when the code is pushed, so the author can get a first round of feedback without waiting for somebody else to stop what they are doing.
 

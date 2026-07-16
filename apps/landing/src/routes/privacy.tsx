@@ -4,7 +4,24 @@ import { env, externalLinkProps } from "#/env"
 
 export const Route = createFileRoute("/privacy")({
   head: () => ({
-    meta: [{ title: "Terms of Service & Privacy Policy — Scopy AI" }],
+    meta: [
+      { title: "Terms of Service & Privacy Policy — Scopy AI" },
+      {
+        name: "description",
+        content:
+          "The Terms of Service and Privacy Policy for the Scopy AI hosted service: account terms, data handling, GitHub access, billing, and your privacy rights.",
+      },
+      {
+        property: "og:title",
+        content: "Terms of Service & Privacy Policy — Scopy AI",
+      },
+      {
+        property: "og:description",
+        content:
+          "The Terms of Service and Privacy Policy for the Scopy AI hosted service: account terms, data handling, GitHub access, billing, and your privacy rights.",
+      },
+      { property: "og:url", content: `${env.siteUrl}/privacy` },
+    ],
     links: [{ rel: "canonical", href: `${env.siteUrl}/privacy` }],
   }),
   component: LegalPage,
