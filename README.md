@@ -42,4 +42,4 @@ Prefer to own the deployment? Follow the [self-hosting guide](https://docs.scopy
 
 ## Contributing
 
-Issues and pull requests are welcome. If you have an idea, found a false positive, or want to improve a review adapter, [open an issue](https://github.com/scopyai/scopy/issues) and tell us what you observed.
+Issues and pull requests are welcome. If you have an idea or found a bug, feel free to open an issue.
