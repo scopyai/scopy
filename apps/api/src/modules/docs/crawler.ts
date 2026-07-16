@@ -17,7 +17,7 @@ const FETCH_TIMEOUT_MS = 15_000
 const FETCH_RETRIES = 4
 const MAX_REDIRECTS = 5
 const PAGE_CONCURRENCY = 4
-const MAX_RAW_BYTES = 2_000_000
+const MAX_RAW_BYTES = 8_000_000
 const MAX_MARKDOWN_BYTES = 200_000
 const DB_BATCH_SIZE = 50
 const MAX_CUSTOM_SOURCE_ENTRIES = 2_000
@@ -163,14 +163,17 @@ export const parseLlmsTxt = (
     const link = line.match(LINK_LINE)
     if (!link?.[1] || !link[2]) continue
     let url: string
+    let pageKey: string
     try {
-      url = new URL(link[2], baseUrl).toString()
+      const parsed = new URL(link[2], baseUrl)
+      url = parsed.toString()
+      pageKey = `${parsed.origin}${parsed.pathname}`
     } catch {
       continue
     }
-    if (!/^https?:/.test(url) || seen.has(url)) continue
+    if (!/^https?:/.test(url) || seen.has(pageKey)) continue
     if (isFullDumpUrl(url) || url === new URL(baseUrl).toString()) continue
-    seen.add(url)
+    seen.add(pageKey)
     entries.push({
       section,
       title: link[1].trim(),
