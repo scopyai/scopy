@@ -31,7 +31,7 @@ export function Favicon({
   }
   return (
     <img
-      src={`https://www.google.com/s2/favicons?domain=${host}&sz=64`}
+      src={`https://${host}/favicon.ico`}
       alt=""
       loading="lazy"
       onError={() => setFailed(true)}

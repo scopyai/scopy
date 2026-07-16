@@ -355,9 +355,36 @@ export const crawlDocSource = async ({
       .set({ status: "error", lastError: error })
       .where(eq(docSource.id, source.id))
     logger.error("Docs crawl failed", { slug, crawlId, error })
-    throw new Error(`Docs crawl failed for ${slug}: ${error}`)
+    throw new CrawlFailedError(`Docs crawl failed for ${slug}: ${error}`)
   }
 
+  try {
+    return await runCrawl({ source, slug, crawlId, logger, failCrawl })
+  } catch (error) {
+    if (!(error instanceof CrawlFailedError)) {
+      await failCrawl(
+        error instanceof Error ? error.message : String(error)
+      ).catch(() => {})
+    }
+    throw error
+  }
+}
+
+class CrawlFailedError extends Error {}
+
+const runCrawl = async ({
+  source,
+  slug,
+  crawlId,
+  logger,
+  failCrawl,
+}: {
+  source: typeof docSource.$inferSelect
+  slug: string
+  crawlId: string
+  logger: Logger
+  failCrawl: (error: string) => Promise<never>
+}) => {
   const indexFetch = await fetchText(source.llmsTxtUrl)
   if (!indexFetch.ok) {
     return failCrawl(`llms.txt fetch failed: ${indexFetch.error}`)
@@ -459,7 +486,10 @@ export const crawlDocSource = async ({
       toc: entries,
       pageCount,
       status: "idle",
-      lastError: null,
+      lastError:
+        outcomes.failed > 0
+          ? `${outcomes.failed} of ${entries.length} pages failed to fetch`
+          : null,
       lastCrawledAt: new Date(),
     })
     .where(eq(docSource.id, source.id))

@@ -71,10 +71,12 @@ function SettingsRoute() {
               canEdit={canEdit}
             /> */}
 
-            <WorkspaceDocSources
-              workspaceId={selectedWorkspaceId}
-              canEdit={canEdit}
-            />
+            {canEdit ? (
+              <WorkspaceDocSources
+                workspaceId={selectedWorkspaceId}
+                canEdit={canEdit}
+              />
+            ) : null}
 
             <section className="flex flex-col gap-3 border-t border-border pt-5">
               <p className="text-sm text-muted-foreground">GitHub</p>

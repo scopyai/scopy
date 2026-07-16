@@ -140,9 +140,6 @@ export const checkUrlIsPublic = async (
   if (url.username || url.password) {
     return "urls with credentials are not allowed"
   }
-  if (url.port && url.port !== "80" && url.port !== "443") {
-    return "only default http(s) ports are allowed"
-  }
   const hostname = url.hostname.replace(/^\[|\]$/g, "")
   if (isIP(hostname)) {
     return isPrivateIp(hostname) ? "address is not public" : null

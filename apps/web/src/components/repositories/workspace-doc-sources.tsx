@@ -38,6 +38,20 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debounced
 }
 
+function normalizedDocUrl(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed.length < 4) return null
+  try {
+    const url = new URL(
+      trimmed.includes("://") ? trimmed : `https://${trimmed}`
+    )
+    const host = url.hostname.toLowerCase().replace(/^www\./, "")
+    return `${host}${url.pathname.replace(/\/+$/, "")}`
+  } catch {
+    return null
+  }
+}
+
 function findBuiltInMatch(
   catalog: CatalogEntry[] | undefined,
   name: string,
@@ -45,9 +59,11 @@ function findBuiltInMatch(
 ): CatalogEntry | null {
   if (!catalog) return null
   const trimmedName = name.trim().toLowerCase()
-  const host = url.trim().length >= 4 ? urlHost(url.trim()) : null
+  const normalizedUrl = normalizedDocUrl(url)
   for (const entry of catalog) {
-    if (host && urlHost(entry.llmsTxtUrl) === host) return entry
+    if (normalizedUrl && normalizedDocUrl(entry.llmsTxtUrl) === normalizedUrl) {
+      return entry
+    }
     if (
       trimmedName.length >= 3 &&
       (entry.name.toLowerCase() === trimmedName ||

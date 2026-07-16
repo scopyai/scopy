@@ -1,10 +1,7 @@
 import { z } from "zod"
 import { protectedRoute } from "../auth"
 import { checkRateLimit } from "../../lib/rate-limit"
-import {
-  requireWorkspaceForUser,
-  requireWorkspaceRole,
-} from "../workspaces/service"
+import { requireWorkspaceRole } from "../workspaces/service"
 import {
   createWorkspaceDocSource,
   deleteWorkspaceDocSource,
@@ -28,9 +25,10 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/docs/sources",
     async ({ params, user: currentUser, status }) => {
-      const membership = await requireWorkspaceForUser(
+      const membership = await requireWorkspaceRole(
         params.workspaceId,
-        currentUser.id
+        currentUser.id,
+        ["owner", "admin"]
       ).catch(() => null)
       if (!membership) {
         return status(404, { error: "Workspace not found" })

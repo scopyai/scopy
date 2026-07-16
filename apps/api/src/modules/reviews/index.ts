@@ -764,6 +764,7 @@ export const runReviewAgent = async ({
           }
           docsLookupsUsed += 1
           let output: { found: boolean; answer: string; citations: unknown[] }
+          let lookupFailed = false
           try {
             const result = await queryDocsLibrarian({
               library,
@@ -788,13 +789,14 @@ export const runReviewAgent = async ({
               })),
             }
           } catch (error) {
+            lookupFailed = true
             output = {
               found: false,
               answer: `Documentation lookup failed: ${errorMessage(error)}`,
               citations: [],
             }
           }
-          docsLookupCache.set(cacheKey, output)
+          if (!lookupFailed) docsLookupCache.set(cacheKey, output)
           await recorder.recordToolCall({
             name: `${scope}.lookup_docs`,
             input: { library, question },
