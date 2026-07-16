@@ -1,9 +1,9 @@
-import { readFile, realpath } from "node:fs/promises"
 import path from "node:path"
 import Parser from "tree-sitter"
 import { adaptersByExtension } from "./adapters"
 import { discoverRepositoryFiles } from "./discover"
 import { reviewIndexDecision } from "./review-file-policy"
+import { MAX_REPOSITORY_FILE_BYTES, readRepositoryTextFile, resolveRepositoryRoot } from "./repository-file"
 import { resolveGraphs } from "./resolve"
 import type {
   CallEdge,
@@ -29,6 +29,7 @@ const sourceLikeExtensions = new Set([
   ".swift",
   ".vue",
 ])
+const MAX_REPOSITORY_INDEX_BYTES = 512 * 1024 * 1024
 
 export type RepositoryCodeIndex = {
   repository: string
@@ -69,7 +70,7 @@ export const buildRepositoryCodeIndex = async ({
   repository: string
   changedFiles?: string[]
 }): Promise<RepositoryCodeIndex> => {
-  const repository = await realpath(inputRepository)
+  const repository = await resolveRepositoryRoot(inputRepository)
   const discoveredRepositoryFiles = await discoverRepositoryFiles(repository)
   const changedFileSet = new Set(changedFiles)
   const ignoredFiles: RepositoryCodeIndex["ignoredFiles"] = []
@@ -84,6 +85,7 @@ export const buildRepositoryCodeIndex = async ({
   const detectedLanguages: Record<string, number> = {}
   const sourceByFile = new Map<string, string>()
   const extractedFiles: ExtractedFile[] = []
+  let indexedBytes = 0
 
   for (const file of repositoryFiles) {
     const extension = path.extname(file)
@@ -99,12 +101,28 @@ export const buildRepositoryCodeIndex = async ({
       continue
     }
 
+    const result = await readRepositoryTextFile({
+      repository,
+      file,
+      maxBytes: MAX_REPOSITORY_FILE_BYTES,
+    }).catch((error: unknown) => {
+      diagnostics.push({
+        kind: "parse-error",
+        file,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return null
+    })
+    if (!result) continue
+    if (indexedBytes + result.bytes > MAX_REPOSITORY_INDEX_BYTES) {
+      throw new Error("Repository source is too large to index")
+    }
+    indexedBytes += result.bytes
     detectedLanguages[adapter.id] = (detectedLanguages[adapter.id] ?? 0) + 1
-    const source = await readFile(path.join(repository, file), "utf8")
-    sourceByFile.set(file, source)
+    sourceByFile.set(file, result.source)
     const parser = new Parser()
     parser.setLanguage(adapter.language)
-    const extracted = adapter.extract(file, source, parser.parse(source))
+    const extracted = adapter.extract(file, result.source, parser.parse(result.source))
     extractedFiles.push(extracted)
     diagnostics.push(...extracted.diagnostics)
   }
@@ -121,14 +139,10 @@ export const buildRepositoryCodeIndex = async ({
     repositoryFiles,
     discoveredFiles: discoveredRepositoryFiles.length,
     ignoredFiles,
-    detectedLanguages: Object.fromEntries(
-      Object.entries(detectedLanguages).sort(([a], [b]) => a.localeCompare(b)),
-    ),
+    detectedLanguages: Object.fromEntries(Object.entries(detectedLanguages).sort(([a], [b]) => a.localeCompare(b))),
     files: extractedFiles,
     sourceByFile,
-    scopesById: new Map(
-      extractedFiles.flatMap((file) => file.scopes.map((scope) => [scope.id, scope])),
-    ),
+    scopesById: new Map(extractedFiles.flatMap((file) => file.scopes.map((scope) => [scope.id, scope]))),
     symbolsById: new Map(graph.symbols.map((symbol) => [symbol.id, symbol])),
     graph: {
       dependencies: graph.dependencies,
@@ -142,15 +156,14 @@ export const buildRepositoryCodeIndex = async ({
 }
 
 export const lineSlice = (source: string, startLine: number, endLine: number) =>
-  source.split(/\r?\n/).slice(startLine - 1, endLine).join("\n")
+  source
+    .split(/\r?\n/)
+    .slice(startLine - 1, endLine)
+    .join("\n")
 
-export const lineAt = (source: string, line: number) =>
-  source.split(/\r?\n/)[line - 1] ?? ""
+export const lineAt = (source: string, line: number) => source.split(/\r?\n/)[line - 1] ?? ""
 
-export const scopeForSymbol = (
-  index: RepositoryCodeIndex,
-  symbol: SymbolDefinition,
-) => {
+export const scopeForSymbol = (index: RepositoryCodeIndex, symbol: SymbolDefinition) => {
   const scopes = index.files.find((file) => file.path === symbol.file)?.scopes ?? []
   return scopes
     .filter(
@@ -160,5 +173,5 @@ export const scopeForSymbol = (
         scope.startLine <= symbol.line &&
         scope.endLine >= symbol.line,
     )
-    .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0]
+    .sort((a, b) => a.endLine - a.startLine - (b.endLine - b.startLine))[0]
 }

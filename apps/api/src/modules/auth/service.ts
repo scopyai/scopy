@@ -3,12 +3,8 @@ import { createAuthMiddleware } from "better-auth/api"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { db } from "../../db/client"
 import * as schema from "../../db/schema"
-import { env } from "../../env"
-import {
-	isLoginPath,
-	notifyUserLogin,
-	notifyUserSignup,
-} from "./notifications"
+import { apiEnv as env } from "../../env"
+import { isLoginPath, notifyUserLogin, notifyUserSignup } from "./notifications"
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -34,7 +30,7 @@ export const auth = betterAuth({
               name: user.name,
               email: user.email,
             },
-            ctx?.path,
+            ctx?.path
           )
         },
       },
@@ -57,7 +53,7 @@ export const auth = betterAuth({
           name: newSession.user.name,
           email: newSession.user.email,
         },
-        ctx.path,
+        ctx.path
       )
     }),
   },

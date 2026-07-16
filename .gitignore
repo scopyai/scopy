@@ -35,5 +35,6 @@ npm-debug.log*
 .tmp
 .data
 .runs
+.evals
 
 .wrangler

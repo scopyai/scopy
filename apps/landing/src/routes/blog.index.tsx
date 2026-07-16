@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
-import { env } from "#/env"
+import { env, socialPreview } from "#/env"
 import { formatPostDate, getAllPosts } from "#/lib/blog"
 
 const pageTitle =
@@ -26,9 +26,16 @@ export const Route = createFileRoute("/blog/")({
       { property: "og:title", content: pageTitle },
       { property: "og:description", content: pageDescription },
       { property: "og:url", content: pageUrl },
-      { name: "twitter:card", content: "summary" },
+      { property: "og:image", content: socialPreview.url },
+      { property: "og:image:type", content: "image/png" },
+      { property: "og:image:width", content: String(socialPreview.width) },
+      { property: "og:image:height", content: String(socialPreview.height) },
+      { property: "og:image:alt", content: socialPreview.alt },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: pageTitle },
       { name: "twitter:description", content: pageDescription },
+      { name: "twitter:image", content: socialPreview.url },
+      { name: "twitter:image:alt", content: socialPreview.alt },
     ],
     links: [{ rel: "canonical", href: pageUrl }],
   }),

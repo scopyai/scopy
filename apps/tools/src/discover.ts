@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process"
-import { readdir, stat } from "node:fs/promises"
+import { readdir } from "node:fs/promises"
 import { promisify } from "node:util"
 import path from "node:path"
+import { resolveRepositoryFile, resolveRepositoryRoot } from "./repository-file"
 
 const execFileAsync = promisify(execFile)
 const excludedDirectories = new Set([
@@ -18,15 +19,23 @@ const excludedDirectories = new Set([
   "node_modules",
 ])
 
-const recursivelyListFiles = async (root: string, directory = root) => {
-  const files: string[] = []
+const MAX_REPOSITORY_FILES = 100_000
+
+const recursivelyListFiles = async (
+  root: string,
+  maxFiles: number,
+  directory = root,
+  files: string[] = []
+) => {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue
     const absolutePath = path.join(directory, entry.name)
     if (entry.isDirectory()) {
-      files.push(...(await recursivelyListFiles(root, absolutePath)))
+      await recursivelyListFiles(root, maxFiles, absolutePath, files)
     } else if (entry.isFile()) {
       files.push(path.relative(root, absolutePath))
+      if (files.length > maxFiles)
+        throw new Error("Repository contains too many files")
     }
   }
   return files
@@ -34,36 +43,49 @@ const recursivelyListFiles = async (root: string, directory = root) => {
 
 const existingFiles = async (repository: string, files: string[]) => {
   const existing: string[] = []
-  for (const file of files) {
-    try {
-      const fileStats = await stat(path.join(repository, file))
-      if (fileStats.isFile()) existing.push(file)
-    } catch {
-      // Git can report tracked files deleted in the working tree; skip them.
-    }
+  const concurrency = 128
+  for (let offset = 0; offset < files.length; offset += concurrency) {
+    const batch = files.slice(offset, offset + concurrency)
+    const results = await Promise.all(
+      batch.map(async (file) => {
+        try {
+          await resolveRepositoryFile(repository, file)
+          return file
+        } catch {
+          return undefined
+        }
+      })
+    )
+    existing.push(...results.filter((file): file is string => Boolean(file)))
   }
   return existing
 }
 
-export const discoverRepositoryFiles = async (repository: string) => {
-  const repositoryStats = await stat(repository)
-  if (!repositoryStats.isDirectory()) {
-    throw new Error(`Repository path is not a directory: ${repository}`)
-  }
+export const discoverRepositoryFiles = async (
+  inputRepository: string,
+  maxFiles = MAX_REPOSITORY_FILES
+) => {
+  const repository = await resolveRepositoryRoot(inputRepository)
 
+  let stdout: Buffer
   try {
-    const { stdout } = await execFileAsync(
+    const result = await execFileAsync(
       "git",
       ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-      { cwd: repository, encoding: "buffer", maxBuffer: 20 * 1024 * 1024 },
+      {
+        cwd: repository,
+        encoding: "buffer",
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 2 * 60 * 1000,
+      }
     )
-    const files = stdout
-      .toString("utf8")
-      .split("\0")
-      .filter(Boolean)
-      .sort()
-    return existingFiles(repository, files)
+    stdout = result.stdout
   } catch {
-    return (await recursivelyListFiles(repository)).sort()
+    return (await recursivelyListFiles(repository, maxFiles)).sort()
   }
+
+  const files = stdout.toString("utf8").split("\0").filter(Boolean).sort()
+  if (files.length > maxFiles)
+    throw new Error("Repository contains too many files")
+  return existingFiles(repository, files)
 }

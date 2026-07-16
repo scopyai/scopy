@@ -1,6 +1,5 @@
-import { readFile, realpath } from "node:fs/promises"
-import path from "node:path"
 import { parseRepositoryFile } from "../parser"
+import { resolveRepositoryRoot } from "../repository-file"
 import type { Diagnostic, ScopeDefinition } from "../types"
 import type { ParsedDiffFile, ParsedDiffHunk } from "./parse"
 
@@ -35,7 +34,10 @@ export type DiffContextResult = {
 }
 
 const lineSlice = (source: string, startLine: number, endLine: number) =>
-  source.split(/\r?\n/).slice(startLine - 1, endLine).join("\n")
+  source
+    .split(/\r?\n/)
+    .slice(startLine - 1, endLine)
+    .join("\n")
 
 const renderDiffLine = (line: ParsedDiffHunk["lines"][number]) => {
   if (line.kind === "added") return `+${line.content}`
@@ -43,8 +45,7 @@ const renderDiffLine = (line: ParsedDiffHunk["lines"][number]) => {
   return ` ${line.content}`
 }
 
-const renderHunkPatch = (hunk: ParsedDiffHunk) =>
-  [hunk.header, ...hunk.lines.map(renderDiffLine)].join("\n")
+const renderHunkPatch = (hunk: ParsedDiffHunk) => [hunk.header, ...hunk.lines.map(renderDiffLine)].join("\n")
 
 const renderFilePatch = (diffFile: ParsedDiffFile, file: string) =>
   [
@@ -57,12 +58,9 @@ const renderFilePatch = (diffFile: ParsedDiffFile, file: string) =>
 const smallestScopeContaining = (scopes: ScopeDefinition[], line: number) =>
   scopes
     .filter((scope) => scope.startLine <= line && scope.endLine >= line)
-    .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0]
+    .sort((a, b) => a.endLine - a.startLine - (b.endLine - b.startLine))[0]
 
-const promoteScope = (
-  scopesById: Map<string, ScopeDefinition>,
-  scope: ScopeDefinition,
-) => {
+const promoteScope = (scopesById: Map<string, ScopeDefinition>, scope: ScopeDefinition) => {
   let current = scope
   while (current.parentScopeId) {
     const parent = scopesById.get(current.parentScopeId)
@@ -98,14 +96,12 @@ export const buildDiffContext = async ({
   repository: string
   diffFiles: ParsedDiffFile[]
 }): Promise<DiffContextResult> => {
-  const repository = await realpath(inputRepository)
+  const repository = await resolveRepositoryRoot(inputRepository)
   const diagnostics: Diagnostic[] = []
   const files: DiffContextFile[] = []
 
   for (const diffFile of diffFiles) {
-    const file = diffFile.newPath && diffFile.newPath !== "/dev/null"
-      ? diffFile.newPath
-      : diffFile.oldPath
+    const file = diffFile.newPath && diffFile.newPath !== "/dev/null" ? diffFile.newPath : diffFile.oldPath
     if (!file) continue
     if (diffFile.status === "deleted" || !diffFile.newPath || diffFile.newPath === "/dev/null") {
       diagnostics.push({
@@ -123,10 +119,9 @@ export const buildDiffContext = async ({
       continue
     }
 
-    const source = await readFile(path.join(repository, file), "utf8")
     const parsed = await parseRepositoryFile(repository, file)
     diagnostics.push(...parsed.diagnostics)
-    if (!parsed.extracted) {
+    if (!parsed.extracted || parsed.source === undefined) {
       files.push({
         file,
         status: diffFile.status,
@@ -136,13 +131,13 @@ export const buildDiffContext = async ({
       })
       continue
     }
+    const source = parsed.source
 
     const scopesById = new Map(parsed.extracted.scopes.map((scope) => [scope.id, scope]))
     const affected = new Map<string, { scope: ScopeDefinition; touchedLines: Set<number> }>()
     const topLevelChangedLines = new Set<number>()
     for (const hunk of diffFile.hunks) {
-      const touchedLines =
-        hunk.touchedNewLines.length > 0 ? hunk.touchedNewLines : hunk.anchorNewLines.slice(0, 1)
+      const touchedLines = hunk.touchedNewLines.length > 0 ? hunk.touchedNewLines : hunk.anchorNewLines.slice(0, 1)
       if (hunk.touchedNewLines.length === 0) {
         diagnostics.push({
           kind: "unresolved-call",
@@ -163,7 +158,10 @@ export const buildDiffContext = async ({
         if (existing) {
           existing.touchedLines.add(line)
         } else {
-          affected.set(selected.id, { scope: selected, touchedLines: new Set([line]) })
+          affected.set(selected.id, {
+            scope: selected,
+            touchedLines: new Set([line]),
+          })
         }
       }
     }

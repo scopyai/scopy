@@ -1,6 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { createGateway, type ToolLoopAgentSettings } from "ai"
-import { env } from "../../env"
+import { workerEnv as env } from "../../env"
 import {
   resolveGatewayGenerationCost,
   resolveOpenRouterGenerationCost,
@@ -64,9 +64,14 @@ export const createReviewLlm = () => {
     chatModel,
     providerOptionsFor,
     resolveGenerationCost: openrouter
-      ? resolveOpenRouterGenerationCost
-      : (generation: unknown) =>
-          resolveGatewayGenerationCost(generation, gateway!.getGenerationInfo),
+      ? (generation: unknown) =>
+          resolveOpenRouterGenerationCost(generation, env.OPENROUTER_API_KEY)
+      : (generation: unknown, options?: { retryDelaysMs?: number[] }) =>
+          resolveGatewayGenerationCost(
+            generation,
+            gateway!.getGenerationInfo,
+            options
+          ),
   }
 }
 
@@ -120,7 +125,11 @@ export const recordLlmBilling = async (
   modelId: string,
   generation: unknown,
   provider: "openrouter" | "gateway",
-  resolveGenerationCost: typeof resolveOpenRouterGenerationCost
+  resolveGenerationCost: (
+    generation: unknown,
+    options?: { retryDelaysMs?: number[] }
+  ) => ReturnType<typeof resolveOpenRouterGenerationCost>,
+  options?: { retryDelaysMs?: number[] }
 ) => {
   const usage =
     typeof generation === "object" &&
@@ -197,7 +206,7 @@ export const recordLlmBilling = async (
   }
   let cost: Awaited<ReturnType<typeof resolveOpenRouterGenerationCost>>
   try {
-    cost = await resolveGenerationCost(generation)
+    cost = await resolveGenerationCost(generation, options)
   } catch (error) {
     appendEntry({
       modelId,

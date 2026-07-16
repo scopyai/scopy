@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import { LandingFooter, LandingNav } from "#/components/landing-chrome"
-import { env, externalLinkProps } from "#/env"
+import { env, externalLinkProps, socialPreview } from "#/env"
 import { formatPostDate, getPost } from "#/lib/blog"
 
 export const Route = createFileRoute("/blog/$slug")({
@@ -18,11 +18,15 @@ export const Route = createFileRoute("/blog/$slug")({
   head: ({ loaderData }) => {
     if (!loaderData) return {}
     const url = `${env.siteUrl}/blog/${loaderData.slug}`
-    const imageUrl = loaderData.cover
+    const coverImageUrl = loaderData.cover
       ? loaderData.cover.startsWith("http")
         ? loaderData.cover
         : `${env.siteUrl}${loaderData.cover}`
       : undefined
+    const imageUrl = coverImageUrl ?? socialPreview.url
+    const imageAlt = coverImageUrl
+      ? (loaderData.coverAlt ?? "")
+      : socialPreview.alt
     const jsonLd = {
       "@context": "https://schema.org",
       "@type": "BlogPosting",
@@ -30,7 +34,7 @@ export const Route = createFileRoute("/blog/$slug")({
       description: loaderData.description,
       datePublished: loaderData.date,
       dateModified: loaderData.date,
-      ...(imageUrl ? { image: imageUrl } : {}),
+      image: imageUrl,
       author: { "@type": "Organization", name: loaderData.author },
       publisher: {
         "@type": "Organization",
@@ -49,25 +53,27 @@ export const Route = createFileRoute("/blog/$slug")({
         { property: "og:title", content: loaderData.title },
         { property: "og:description", content: loaderData.description },
         { property: "og:url", content: url },
-        ...(imageUrl
+        { property: "og:image", content: imageUrl },
+        { property: "og:image:alt", content: imageAlt },
+        ...(!coverImageUrl
           ? [
-              { property: "og:image", content: imageUrl },
-              { property: "og:image:alt", content: loaderData.coverAlt ?? "" },
+              { property: "og:image:type", content: "image/png" },
+              {
+                property: "og:image:width",
+                content: String(socialPreview.width),
+              },
+              {
+                property: "og:image:height",
+                content: String(socialPreview.height),
+              },
             ]
           : []),
         { property: "article:published_time", content: loaderData.date },
-        {
-          name: "twitter:card",
-          content: imageUrl ? "summary_large_image" : "summary",
-        },
+        { name: "twitter:card", content: "summary_large_image" },
         { name: "twitter:title", content: loaderData.title },
         { name: "twitter:description", content: loaderData.description },
-        ...(imageUrl
-          ? [
-              { name: "twitter:image", content: imageUrl },
-              { name: "twitter:image:alt", content: loaderData.coverAlt ?? "" },
-            ]
-          : []),
+        { name: "twitter:image", content: imageUrl },
+        { name: "twitter:image:alt", content: imageAlt },
       ],
       links: [{ rel: "canonical", href: url }],
       scripts: [
@@ -150,8 +156,8 @@ function BlogPost() {
               Try Scopy AI on your next pull request
             </h2>
             <p className="l-post-foot-sub">
-              Open-source AI code review that reads your whole repository.
-              Self-host it or start in the cloud.
+              Accurate, open-source code review that reads your whole
+              repository. Self-host it or start in the cloud.
             </p>
             <div className="l-post-foot-ctas">
               <a
@@ -159,7 +165,7 @@ function BlogPost() {
                 className="l-btn l-btn-ghost l-btn-lg"
                 {...externalLinkProps(env.githubUrl)}
               >
-                View on GitHub
+                Star on GitHub
               </a>
               <a
                 href={env.appUrl}
@@ -177,7 +183,6 @@ function BlogPost() {
     </>
   )
 }
-
 function PostNotFound() {
   return (
     <>

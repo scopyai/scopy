@@ -3,14 +3,16 @@ import { and, eq, ne } from "drizzle-orm"
 import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
 import { user, workspace, workspaceMember } from "../../db/schema"
-import { env } from "../../env"
+import { apiEnv as env } from "../../env"
+import {
+  getGitHubInstallation,
+  listGitHubInstallationRepositories,
+} from "./service"
 import {
   getGitHubInstallUrl,
-  getGitHubInstallation,
   getGitHubUserAuthorizationUrl,
-  listGitHubInstallationRepositories,
   verifyGitHubInstallationForUser,
-} from "./service"
+} from "./user-auth"
 import {
   PersonalGitHubWorkspaceAlreadyConnectedError,
   syncWorkspaceRepositories,

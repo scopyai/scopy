@@ -1,4 +1,4 @@
-import { Output, ToolLoopAgent, stepCountIs, tool } from "ai"
+import { Output, ToolLoopAgent, stepCountIs, tool, type ToolSet } from "ai"
 import {
   buildDiffContext,
   chunksForRepositoryIndex,
@@ -30,7 +30,10 @@ import {
   reviewFailedBody,
   updateReviewComment,
 } from "./github"
-import { validateReviewReportEvidence } from "./evidence"
+import {
+  buildFindingAnchorCheck,
+  validateReviewReportEvidence,
+} from "./evidence"
 import {
   buildMainReviewPrompt,
   buildNaturalLanguageLinterPrompt,
@@ -38,6 +41,7 @@ import {
   buildReportSummaryPrompt,
   buildReviewVerifierPrompt,
   mainReviewAgentInstructions,
+  reviewMainDocsInstructions,
   mainReviewReportSchema,
   naturalLanguageLinterInstructions,
   naturalLanguageLinterOutputSchema,
@@ -51,8 +55,10 @@ import {
   reportSummaryInstructions,
   reportSummaryOutputSchema,
   reviewDecisionSchema,
+  reviewSubagentDocsInstructions,
   reviewSubagentInstructions,
   reviewSubagentOutputSchema,
+  reviewVerifierDocsInstructions,
   reviewVerifierInstructions,
   reviewVerifierOutputSchema,
   safePathSegment,
@@ -76,6 +82,14 @@ import {
   repairedJsonOutput,
   reviewModels,
 } from "./llm"
+import {
+  getAvailableDocLibraries,
+  refreshRepositoryDocLibraries,
+  type AvailableDocLibrary,
+} from "../docs/service"
+import { queryDocsLibrarian } from "../docs/librarian"
+import { resolveDocSource, searchDocSourceChunks } from "../docs/search"
+import { workerEnv as env } from "../../env"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"
@@ -190,7 +204,10 @@ const mapConcurrent = async <T, R>(
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error)
 
-type QueueItem = CandidateFinding & { queuedBy: "severity" | "verifier" }
+type QueueItem = CandidateFinding & {
+  queuedBy: "severity" | "verifier"
+  verifierNote?: string
+}
 
 type FindingDecision = {
   id: string
@@ -325,20 +342,27 @@ export const runReviewAgent = async ({
     },
   }
   const llmBilling: Record<string, unknown> = {}
-  const recordBilling = (stage: string, modelId: string, generation: unknown) =>
+  const recordBilling = (
+    stage: string,
+    modelId: string,
+    generation: unknown,
+    options?: { retryDelaysMs?: number[] }
+  ) =>
     recordLlmBilling(
       llmBilling,
       stage,
       modelId,
       generation,
       llm.provider,
-      llm.resolveGenerationCost
+      llm.resolveGenerationCost,
+      options
     )
   const usages: Record<string, unknown[]> = {
     subagents: [],
     verification: [],
     naturalLanguageLinter: [],
     reportComposer: [],
+    docsLookups: [],
   }
   const runtime = await prepareReviewRuntime({
     reviewRunId,
@@ -347,7 +371,30 @@ export const runReviewAgent = async ({
     installationId,
     changedFiles: filteredFiles.map((file) => file.filename),
   })
+  let availableDocLibraries: AvailableDocLibrary[] = []
+  try {
+    const detected = await refreshRepositoryDocLibraries({
+      repositoryId: repository.id,
+      repoDir: runtime.paths.repositoryPath,
+    })
+    availableDocLibraries = await getAvailableDocLibraries({
+      workspaceId: repository.workspaceId,
+      detected,
+      excludedSlugs: repository.excludedDocLibraries ?? [],
+    })
+    logger.info("Doc library detection completed", {
+      ...context,
+      detected: detected.map((library) => library.slug),
+      available: availableDocLibraries.map((library) => library.slug),
+    })
+  } catch (error) {
+    logger.error("Doc library detection failed", {
+      ...context,
+      error: errorMessage(error),
+    })
+  }
   const parsedDiffFiles = parseUnifiedDiff(unifiedDiff)
+  const findingIsAnchorable = buildFindingAnchorCheck(parsedDiffFiles)
   const changedLinesByFile = new Map<string, number[]>()
   for (const diffFile of parsedDiffFiles) {
     const file =
@@ -618,6 +665,156 @@ export const runReviewAgent = async ({
     }
   }
 
+  const lowerUnifiedDiff = unifiedDiff.toLowerCase()
+  const diffDocLibraries = availableDocLibraries.filter((library) =>
+    library.matchTerms.some((term) => lowerUnifiedDiff.includes(term))
+  )
+  const docSourceCache = new Map<
+    string,
+    { id: string; activeCrawlId: string } | null
+  >()
+  const resolveDocSourceCached = async (library: string) => {
+    if (docSourceCache.has(library)) return docSourceCache.get(library)!
+    const source = await resolveDocSource(
+      library,
+      repository.workspaceId
+    ).catch(() => null)
+    const resolved =
+      source?.activeCrawlId != null
+        ? { id: source.id, activeCrawlId: source.activeCrawlId }
+        : null
+    docSourceCache.set(library, resolved)
+    return resolved
+  }
+
+  const librarySlugEnum = (libraries: AvailableDocLibrary[]) =>
+    z.enum(libraries.map((library) => library.slug) as [string, ...string[]])
+
+  const createDocsSearchTool = (scope: string): ToolSet => {
+    if (diffDocLibraries.length === 0) return {}
+    return {
+      search_docs: tool({
+        description: `Full-text search across the indexed documentation of libraries this pull request uses (${diffDocLibraries.map((library) => library.name).join(", ")}). Returns matching sections (url, heading, snippet). Best for documented behavior: API names, defaults, error handling, return shapes.`,
+        inputSchema: z.object({
+          library: librarySlugEnum(diffDocLibraries),
+          query: z.string().min(1).max(200),
+        }),
+        execute: async ({ library, query }) => {
+          let output: { results: unknown[]; note?: string }
+          try {
+            const source = await resolveDocSourceCached(library)
+            if (!source) {
+              output = { results: [], note: "documentation unavailable" }
+            } else {
+              const results = await searchDocSourceChunks({
+                sourceId: source.id,
+                activeCrawlId: source.activeCrawlId,
+                query,
+                limit: 6,
+                maxFragments: 1,
+                maxWords: 50,
+              })
+              output =
+                results.length > 0
+                  ? { results }
+                  : { results: [], note: "no matches; try different terms" }
+            }
+          } catch {
+            output = { results: [], note: "documentation search failed" }
+          }
+          await recorder.recordToolCall({
+            name: `${scope}.search_docs`,
+            input: { library, query },
+            output,
+          })
+          return output
+        },
+      }),
+    }
+  }
+
+  const DOCS_LOOKUP_BUDGET = 4
+  const docsLibrarianModelId =
+    env.DOCS_LIBRARIAN_MODEL ?? env.REVIEW_VERIFIER_MODEL
+  let docsLookupsUsed = 0
+  const docsLookupCache = new Map<
+    string,
+    { found: boolean; answer: string; citations: unknown[] }
+  >()
+  const createDocsLookupTool = (scope: string): ToolSet => {
+    if (availableDocLibraries.length === 0) return {}
+    return {
+      lookup_docs: tool({
+        description: `Answer one focused question about the documented behavior of a library this repository uses (${availableDocLibraries.map((library) => library.name).join(", ")}), with citations. Slow and budgeted per review - ask one specific question about API behavior, defaults, or semantics that decides a verdict.`,
+        inputSchema: z.object({
+          library: librarySlugEnum(availableDocLibraries),
+          question: z.string().min(1).max(500),
+        }),
+        execute: async ({ library, question }) => {
+          const cacheKey = `${library}::${question.trim().toLowerCase()}`
+          const cached = docsLookupCache.get(cacheKey)
+          if (cached) return cached
+          if (docsLookupsUsed >= DOCS_LOOKUP_BUDGET) {
+            return {
+              found: false,
+              answer:
+                "Documentation lookup budget for this review is exhausted. Decide from repository evidence.",
+              citations: [],
+            }
+          }
+          docsLookupsUsed += 1
+          let output: { found: boolean; answer: string; citations: unknown[] }
+          let lookupFailed = false
+          try {
+            const result = await queryDocsLibrarian({
+              library,
+              question,
+              workspaceId: repository.workspaceId,
+            })
+            if (result.usage) {
+              usages.docsLookups!.push(result.usage)
+              await recordBilling(
+                "docs_lookup",
+                docsLibrarianModelId,
+                result.generation ?? { totalUsage: result.usage }
+              )
+            }
+            output = {
+              found: result.found,
+              answer: result.answer,
+              citations: result.citations.map(({ url, title, excerpt }) => ({
+                url,
+                title,
+                excerpt,
+              })),
+            }
+          } catch (error) {
+            lookupFailed = true
+            output = {
+              found: false,
+              answer: `Documentation lookup failed: ${errorMessage(error)}`,
+              citations: [],
+            }
+          }
+          if (!lookupFailed) docsLookupCache.set(cacheKey, output)
+          await recorder.recordToolCall({
+            name: `${scope}.lookup_docs`,
+            input: { library, question },
+            output,
+          })
+          await recorder.appendEvent("docs.lookup", {
+            scope,
+            library,
+            found: output.found,
+            used: docsLookupsUsed,
+            budget: DOCS_LOOKUP_BUDGET,
+          })
+          return output
+        },
+      }),
+    }
+  }
+
   const allCandidateIds = new Set<string>()
   let routedCandidates: CandidateFinding[] = []
   const approvedCandidates: CandidateFinding[] = []
@@ -690,10 +887,14 @@ export const runReviewAgent = async ({
       try {
         const agent = new ToolLoopAgent({
           model: agentLayers.verifier.model,
-          instructions: reviewVerifierInstructions,
-          tools: createRepositoryTools(
-            `verifier.${batch}.${chunkId}.${attempt}`
-          ),
+          instructions:
+            availableDocLibraries.length > 0
+              ? `${reviewVerifierInstructions}${reviewVerifierDocsInstructions}`
+              : reviewVerifierInstructions,
+          tools: {
+            ...createRepositoryTools(`verifier.${batch}.${chunkId}.${attempt}`),
+            ...createDocsLookupTool(`verifier.${batch}.${chunkId}.${attempt}`),
+          },
           providerOptions: agentLayers.verifier.providerOptions,
           output: repairedJsonOutput(
             Output.object({
@@ -836,11 +1037,19 @@ ${task.objective}`
           try {
             const agent = new ToolLoopAgent({
               model: agentLayers.subagent.model,
-              instructions: reviewSubagentInstructions,
-              tools: createRepositoryTools(
-                `subagent.${batch}.${safeId}.${attempt}`,
-                (file) => taskReadFiles.add(file)
-              ),
+              instructions:
+                diffDocLibraries.length > 0
+                  ? `${reviewSubagentInstructions}${reviewSubagentDocsInstructions}`
+                  : reviewSubagentInstructions,
+              tools: {
+                ...createRepositoryTools(
+                  `subagent.${batch}.${safeId}.${attempt}`,
+                  (file) => taskReadFiles.add(file)
+                ),
+                ...createDocsSearchTool(
+                  `subagent.${batch}.${safeId}.${attempt}`
+                ),
+              },
               providerOptions: agentLayers.subagent.providerOptions,
               output: repairedJsonOutput(
                 Output.object({
@@ -948,7 +1157,10 @@ ${task.objective}`
           freshCandidates.push(candidate)
         }
       }
-      const { merged, duplicates } = mergeOverlappingCandidates(freshCandidates)
+      const { merged, duplicates } = mergeOverlappingCandidates(
+        freshCandidates,
+        { isAnchorable: findingIsAnchorable }
+      )
       for (const duplicate of duplicates) {
         findingDecisions.push({
           id: duplicate.id,
@@ -963,23 +1175,28 @@ ${task.objective}`
       const batchQueue: QueueItem[] = []
       const queueCandidate = (
         candidate: CandidateFinding,
-        queuedBy: QueueItem["queuedBy"]
+        queuedBy: QueueItem["queuedBy"],
+        verifierNote?: string
       ) => {
-        const item = { ...candidate, queuedBy }
+        const item = {
+          ...candidate,
+          queuedBy,
+          ...(verifierNote ? { verifierNote } : {}),
+        }
         batchQueue.push(item)
         mainQueue.push(item)
         mainQueueIds.add(candidate.id)
       }
+      const severityRouted = new Set<string>()
       const toVerify: CandidateFinding[] = []
       for (const candidate of merged) {
         if (
           candidate.severity === "critical" ||
           candidate.severity === "high"
         ) {
-          queueCandidate(candidate, "severity")
-        } else {
-          toVerify.push(candidate)
+          severityRouted.add(candidate.id)
         }
+        toVerify.push(candidate)
       }
 
       const batchApproved: CandidateFinding[] = []
@@ -1012,11 +1229,20 @@ ${task.objective}`
           reason: verdict.reason,
           confidence: verdict.confidence,
         })
-        if (verdict.verdict === "approve") {
+        if (severityRouted.has(verdict.id)) {
+          const failedOpen = "failedOpen" in verdict && verdict.failedOpen
+          queueCandidate(
+            candidate,
+            "severity",
+            failedOpen
+              ? undefined
+              : `Verifier verdict (advisory): ${verdict.verdict}. ${verdict.reason}`
+          )
+        } else if (verdict.verdict === "approve") {
           approvedCandidates.push(candidate)
           batchApproved.push(candidate)
         } else if (verdict.verdict === "escalate") {
-          queueCandidate(candidate, "verifier")
+          queueCandidate(candidate, "verifier", verdict.reason)
         } else {
           rejectedCount += 1
           routedCandidates = routedCandidates.filter(
@@ -1258,7 +1484,12 @@ ${task.objective}`
         await recordBilling(
           "report_composer",
           agentLayers.composer.modelId,
-          generation
+          generation,
+          {
+            retryDelaysMs: [
+              250, 500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000,
+            ],
+          }
         )
         const output = reportComposerOutputSchema.parse(generation.output)
         await recorder.writeJson(
@@ -1451,11 +1682,15 @@ ${task.objective}`
     })
   const mainAgent = new ToolLoopAgent({
     model: agentLayers.main.model,
-    instructions: mainReviewAgentInstructions,
+    instructions:
+      availableDocLibraries.length > 0
+        ? `${mainReviewAgentInstructions}${reviewMainDocsInstructions}`
+        : mainReviewAgentInstructions,
     tools: {
       ...createRepositoryTools("main"),
       read_patch: readPatch,
       spawn_review_agents: spawnReviewAgents,
+      ...createDocsLookupTool("main"),
     },
     providerOptions: agentLayers.main.providerOptions,
     output: repairedJsonOutput(
@@ -1591,6 +1826,7 @@ ${task.objective}`
       supportingTaskIds: _s,
       evidence: _e,
       queuedBy: _q,
+      verifierNote: _v,
       ...finding
     }) => ({
       ...finding,
@@ -1650,9 +1886,47 @@ ${task.objective}`
   const validatedLinterFindings = validatedFindings.filter(
     (finding) => finding.source === "natural_language_linter"
   )
+  const anchorSubstitutes: typeof validatedBugFindings = []
+  for (const dropped of invalidEvidenceFindings) {
+    if (dropped.source === "natural_language_linter") continue
+    const substitutePool = [...routedCandidates, ...mainQueue]
+    const substitute = substitutePool.find(
+      (candidate) =>
+        findingIsAnchorable(candidate) &&
+        resemblesSameIssue(dropped, candidate) &&
+        ![...validatedBugFindings, ...anchorSubstitutes].some((kept) =>
+          resemblesSameIssue(kept, candidate)
+        )
+    )
+    if (!substitute) continue
+    anchorSubstitutes.push({
+      severity: substitute.severity,
+      file: substitute.file,
+      startLine: substitute.startLine,
+      endLine: substitute.endLine,
+      title: substitute.title,
+      body: substitute.body,
+      confidence: substitute.confidence,
+      source: "review" as const,
+    })
+    findingDecisions.push({
+      id: substitute.id,
+      stage: "main",
+      decision: "accept",
+      reason: `Substituted for "${dropped.title}", whose evidence range could not be anchored to the diff; this candidate reports the same issue at an anchorable range.`,
+    })
+    await recorder.appendEvent("evidence.anchor_substituted", {
+      droppedTitle: dropped.title,
+      substituteId: substitute.id,
+    })
+  }
   const finalFindings = [
     ...validatedBugFindings,
-    ...dropFindingsCoveredBy(validatedLinterFindings, validatedBugFindings),
+    ...anchorSubstitutes,
+    ...dropFindingsCoveredBy(validatedLinterFindings, [
+      ...validatedBugFindings,
+      ...anchorSubstitutes,
+    ]),
   ]
   const finalReport: ReviewReport = {
     ...candidateReport,

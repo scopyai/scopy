@@ -7,6 +7,7 @@ import {
 import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { PageHeader } from "@/components/page-header"
+import { WorkspaceDocSources } from "@/components/repositories/workspace-doc-sources"
 import { WorkspaceReviewSettings } from "@/components/repositories/workspace-review-settings"
 // import { ByokSettings } from "@/components/billing/byok-settings"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
@@ -69,6 +70,13 @@ function SettingsRoute() {
               workspaceId={selectedWorkspaceId}
               canEdit={canEdit}
             /> */}
+
+            {canEdit ? (
+              <WorkspaceDocSources
+                workspaceId={selectedWorkspaceId}
+                canEdit={canEdit}
+              />
+            ) : null}
 
             <section className="flex flex-col gap-3 border-t border-border pt-5">
               <p className="text-sm text-muted-foreground">GitHub</p>

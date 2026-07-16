@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router"
 import {
-  CodeIcon,
-  ZapIcon,
-  FilterIcon,
+  BadgeCheckIcon,
   ArrowRight,
+  GitBranchIcon,
   GitPullRequestIcon,
-  MessageSquareIcon,
+  ListChecksIcon,
   PlugIcon,
+  ShuffleIcon,
+  SlidersHorizontalIcon,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { GitHubIcon } from "#/components/github-icon"
@@ -69,7 +70,7 @@ function Hero() {
               {...externalLinkProps(env.githubUrl)}
             >
               <GitHubIcon size={16} className="l-icon" />
-              View on GitHub
+              Star on GitHub
             </a>
             <a
               href={env.appUrl}
@@ -93,7 +94,7 @@ function Hero() {
 const STEP_ICONS = [
   <PlugIcon size={22} />,
   <GitPullRequestIcon size={22} />,
-  <MessageSquareIcon size={22} />,
+  <BadgeCheckIcon size={22} />,
 ]
 
 function HowItWorks() {
@@ -103,8 +104,8 @@ function HowItWorks() {
         <div className="l-how-header">
           <h2 className="l-how-title">How code review works with Scopy AI</h2>
           <p className="l-how-sub">
-            From connecting a repository to your first reviewed pull request in
-            three steps — no change to how your team already works.
+            Connect GitHub, open a pull request and get focused, verified
+            feedback without changing how your team already works.
           </p>
         </div>
 
@@ -129,10 +130,10 @@ function HowItWorks() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FEATURE_ICONS = [
-  <CodeIcon size={22} />,
-  <ZapIcon size={22} />,
-  <GitHubIcon size={22} className="l-icon" />,
-  <FilterIcon size={22} />,
+  <GitBranchIcon size={22} />,
+  <ShuffleIcon size={22} />,
+  <ListChecksIcon size={22} />,
+  <SlidersHorizontalIcon size={22} />,
 ]
 
 function Features() {
@@ -140,10 +141,10 @@ function Features() {
     <section className="l-feat l-section">
       <div className="l-wrap">
         <div className="l-feat-header">
-          <h2 className="l-feat-title">For devs who care about code quality</h2>
+          <h2 className="l-feat-title">Accuracy comes from the process</h2>
           <p className="l-feat-sub">
-            Automated pull request reviews that understand your whole codebase —
-            not just the diff.
+            More context for finding real bugs. More scrutiny before reporting
+            them.
           </p>
         </div>
 
@@ -171,11 +172,11 @@ const SELF_HOST_ITEMS = [
   "MIT licensed, full source code",
   "Connect any LLM provider",
   "Your data stays in your environment",
-  "Community support on GitHub",
+  "Community support",
 ] as const
 
 const CLOUD_ITEMS = [
-  "Sign in with GitHub in seconds",
+  "Connect repositories in seconds",
   "Review credits included in plan",
   "Unlimited repositories",
   "Team workspace management",
@@ -265,8 +266,8 @@ function OpenSource() {
         <div className="l-oss-top">
           <h2 className="l-oss-title">Built in the open</h2>
           <p className="l-oss-sub">
-            Full source lives on GitHub. Submit an issue, fork the repo or run
-            Scopy on your own infrastructure.
+            Inspect every line, fork the project or run Scopy on your own
+            infrastructure.
           </p>
         </div>
 
@@ -290,7 +291,7 @@ function OpenSource() {
               {...externalLinkProps(env.githubUrl)}
             >
               <GitHubIcon size={14} className="l-icon" />
-              View on GitHub
+              Star on GitHub
             </a>
           </div>
 
@@ -482,7 +483,7 @@ function FinalCTA() {
               {...externalLinkProps(env.githubUrl)}
             >
               <GitHubIcon size={16} className="l-icon" />
-              View on GitHub
+              Star on GitHub
             </a>
             <a
               href={env.appUrl}

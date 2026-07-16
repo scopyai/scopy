@@ -13,26 +13,26 @@ export const steps: NamedItem[] = [
   },
   {
     name: "Open a pull request",
-    desc: "Scopy reviews new pull requests automatically, building context from the diff, the affected symbols and the wider repository before it comments.",
+    desc: "Scopy reviews new pull requests automatically, building repository-wide context around the diff before deciding what to flag.",
   },
   {
-    name: "Get actionable feedback",
-    desc: "Comments land on the exact lines that matter, flagging bugs, risky changes and rule violations so your team can fix them before merge.",
+    name: "Get verified feedback",
+    desc: "An independent pass challenges each candidate issue before focused comments land on the exact lines that matter.",
   },
 ]
 
 export const features: NamedItem[] = [
   {
-    name: "Full-context analysis",
-    desc: "Scopy reads the full pull request to understand intent, surface area and downstream risk before it writes a word.",
+    name: "Repository-wide reasoning",
+    desc: "Scopy traces changes through surrounding code to understand intent, surface area and downstream risks before it writes a word.",
   },
   {
     name: "Model-agnostic",
     desc: "Bring your own key on hosted platform, or self-host with any compatible API. No model lock-in.",
   },
   {
-    name: "Right in your PR",
-    desc: "Inline comments on the exact lines that matter, posted straight to your GitHub pull request.",
+    name: "Rules that match your team",
+    desc: "Turn your engineering standards into plain-language checks that run consistently on every change.",
   },
   {
     name: "Configurable",
@@ -45,7 +45,7 @@ export type Faq = { q: string; a: string }
 export const faqs: Faq[] = [
   {
     q: "How does Scopy AI work?",
-    a: "Scopy runs reviews where your team already works. It builds context from the pull request diff, affected symbols and repository files in general, then returns actionable findings back to you.",
+    a: "Scopy builds context from the change, affected symbols and the wider repository, then investigates potential bugs and independently verifies candidate findings before returning focused feedback.",
   },
   {
     q: "When does Scopy AI run a review?",

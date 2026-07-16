@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { parseWebhookEvent } from "@creem_io/webhook-types"
 import { Creem } from "creem"
-import { env } from "../../env"
+import { apiEnv as env } from "../../env"
 
 export const creem = new Creem({
   apiKey: env.CREEM_API_KEY,

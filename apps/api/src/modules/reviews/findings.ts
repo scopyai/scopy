@@ -76,7 +76,10 @@ const preferredCandidate = (
   second.evidence.length - first.evidence.length
 
 export const mergeOverlappingCandidates = (
-  candidates: CandidateFinding[]
+  candidates: CandidateFinding[],
+  options: {
+    isAnchorable?: (candidate: CandidateFinding) => boolean
+  } = {}
 ): { merged: CandidateFinding[]; duplicates: CandidateFinding[] } => {
   const groups: Array<
     Array<{ candidate: CandidateFinding; tokens: Set<string> }>
@@ -94,10 +97,17 @@ export const mergeOverlappingCandidates = (
 
   const merged: CandidateFinding[] = []
   const duplicates: CandidateFinding[] = []
+  const { isAnchorable } = options
   for (const group of groups) {
     const [representative, ...rest] = group
       .map((item) => item.candidate)
-      .sort(preferredCandidate)
+      .sort(
+        isAnchorable
+          ? (first, second) =>
+              Number(isAnchorable(second)) - Number(isAnchorable(first)) ||
+              preferredCandidate(first, second)
+          : preferredCandidate
+      )
     merged.push({
       ...representative!,
       supportingTaskIds: [

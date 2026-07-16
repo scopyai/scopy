@@ -1,6 +1,6 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router"
 
-import { env } from "#/env"
+import { env, socialPreview } from "#/env"
 import appCss from "../styles.css?url"
 
 const siteTitle =
@@ -47,7 +47,6 @@ const jsonLd = {
     },
   ],
 }
-
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -65,11 +64,16 @@ export const Route = createRootRoute({
       { property: "og:title", content: siteTitle },
       { property: "og:description", content: siteDescription },
       { property: "og:url", content: siteUrl },
-      { property: "og:image", content: `${siteUrl}/logo-og.png` },
-      { name: "twitter:card", content: "summary" },
+      { property: "og:image", content: socialPreview.url },
+      { property: "og:image:type", content: "image/png" },
+      { property: "og:image:width", content: String(socialPreview.width) },
+      { property: "og:image:height", content: String(socialPreview.height) },
+      { property: "og:image:alt", content: socialPreview.alt },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: siteTitle },
       { name: "twitter:description", content: siteDescription },
-      { name: "twitter:image", content: `${siteUrl}/logo-og.png` },
+      { name: "twitter:image", content: socialPreview.url },
+      { name: "twitter:image:alt", content: socialPreview.alt },
     ],
     links: [
       // NOTE: canonical is intentionally set per-route (see index/privacy/blog
@@ -77,9 +81,23 @@ export const Route = createRootRoute({
       // point them all at the homepage.
       { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
-      { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32x32.png" },
-      { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16x16.png" },
-      { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" },
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "32x32",
+        href: "/favicon-32x32.png",
+      },
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "16x16",
+        href: "/favicon-16x16.png",
+      },
+      {
+        rel: "apple-touch-icon",
+        sizes: "180x180",
+        href: "/apple-touch-icon.png",
+      },
       { rel: "manifest", href: "/manifest.json" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com" },

@@ -109,7 +109,9 @@ function NavSection({
               params={{ workspaceSlug }}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent/50 hover:text-foreground",
-                isActive ? "bg-accent text-foreground" : "text-muted-foreground"
+                isActive
+                  ? "bg-primary/10 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+                  : "text-muted-foreground"
               )}
             >
               <Icon className="size-4 shrink-0" />

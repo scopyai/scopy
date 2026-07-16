@@ -2,6 +2,7 @@ import { useCallback } from "react"
 import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import { RepositoryDocLibraries } from "@/components/repositories/repository-doc-libraries"
 import { ReviewSettingsFields } from "@/components/repositories/review-settings-fields"
 import type {
   ReviewConfigKey,
@@ -110,6 +111,12 @@ export function RepositoryReviewSettings({
           onChange={(key, value) => updateField(key, value)}
           repositoryEnabled={repositoryEnabled}
           onRepositoryEnabledChange={updateEnabled}
+        />
+
+        <RepositoryDocLibraries
+          workspaceId={workspaceId}
+          repositoryId={repositoryId}
+          canEdit={canEdit}
         />
 
         {/* <RepositoryBillingMode

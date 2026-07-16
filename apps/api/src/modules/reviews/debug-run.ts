@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { pullRequest, repository } from "../../db/schema"
-import { env } from "../../env"
+import { workerEnv as env } from "../../env"
 
 type Repository = typeof repository.$inferSelect
 type PullRequest = typeof pullRequest.$inferSelect
@@ -25,7 +25,7 @@ const runsDir = () => env.REVIEW_RUNS_DIR ?? ".runs"
 const byteLength = (value: unknown) =>
   Buffer.byteLength(
     JSON.stringify(value, createJsonReplacer()) ?? "undefined",
-    "utf8",
+    "utf8"
   )
 
 const recordKeys = (value: unknown) =>
@@ -75,7 +75,7 @@ export const getReviewDebugRunPath = ({
     runsDir(),
     safeSegment(repo.id),
     `pr-${pullRequest.number}-${safeSegment(pullRequest.headSha.slice(0, 12))}`,
-    safeSegment(reviewRunId),
+    safeSegment(reviewRunId)
   )
 
 export const createReviewRunRecorder = async (input: RecorderInput) => {
@@ -93,7 +93,7 @@ export const createReviewRunRecorder = async (input: RecorderInput) => {
     await writeFile(
       path.join(runPath, relativePath),
       `${JSON.stringify(value, createJsonReplacer())}\n`,
-      { encoding: "utf8", flag: "a" },
+      { encoding: "utf8", flag: "a" }
     )
   }
 
@@ -181,10 +181,7 @@ export const createReviewRunRecorder = async (input: RecorderInput) => {
     },
     recordStep: async (step: unknown) => {
       stepCount += 1
-      await writeJson(
-        `steps/${String(stepCount).padStart(3, "0")}.json`,
-        step,
-      )
+      await writeJson(`steps/${String(stepCount).padStart(3, "0")}.json`, step)
       const stepRecord =
         step && typeof step === "object"
           ? (step as Record<string, unknown>)

@@ -202,7 +202,7 @@ function ReviewEvent({
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-            aria-label="View on GitHub"
+            aria-label="Star on GitHub"
           >
             <ExternalLinkIcon className="size-3" />
           </a>
@@ -250,7 +250,7 @@ function ReviewCommentEvent({
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-              aria-label="View on GitHub"
+              aria-label="Star on GitHub"
             >
               <ExternalLinkIcon className="size-3" />
             </a>
