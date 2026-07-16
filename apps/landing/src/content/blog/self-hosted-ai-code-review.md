@@ -1,12 +1,10 @@
 ---
-title: "Self-Hosted AI Code Review: Keep Your Code on Your Own Infrastructure"
+title: "Self-Hosted AI Code Review on Your Own Infrastructure"
 description: "Why teams choose self-hosted AI code review, what it protects you from, and what to look for in an open-source, self-hostable code review tool."
 date: "2026-06-17"
 author: "Matt, founder"
 tags: "self-hosted, open source, AI code review, privacy"
 ---
-
-# Self-Hosted AI Code Review
 
 Most AI code review tools are hosted services. You connect a repository, the service fetches your code and some part of it is eventually sent to a model provider. That is acceptable for many teams. For companies with strict data-residency rules, sensitive source code or contracts that limit third-party processing, it may not be.
 

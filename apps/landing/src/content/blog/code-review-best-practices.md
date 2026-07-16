@@ -6,8 +6,6 @@ author: "Matt, founder"
 tags: "code review, best practices, pull requests"
 ---
 
-# Code Review Best Practices for Fast-Moving Teams
-
 Code review is where many teams quietly lose time. A pull request waits for two days, the author moves on to something else and the eventual reviewer skims because the diff is 900 lines. By then even a small comment creates another round of context switching.
 
 The following practices are the ones I find useful whether the first review is done by a person, an [AI code reviewer](/blog/what-is-ai-code-review), or both.

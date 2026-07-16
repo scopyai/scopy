@@ -3,8 +3,7 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router"
 import { env, socialPreview } from "#/env"
 import appCss from "../styles.css?url"
 
-const siteTitle =
-  "Scopy AI | Open-Source AI Code Reviewer | Catch bugs and improve code quality"
+const siteTitle = "Scopy AI | Accurate Open-Source AI Code Reviewer"
 const siteDescription =
   "Scopy AI is an open-source AI code reviewer. Self-host it or use hosted Scopy AI to catch bugs, enforce review rules and improve code quality."
 const siteUrl = env.siteUrl
@@ -17,7 +16,7 @@ const jsonLd = {
       name: "Scopy AI",
       url: siteUrl,
       logo: `${siteUrl}/logo-og.png`,
-      sameAs: [env.githubUrl],
+      sameAs: [env.githubUrl, "https://github.com/scopyai"],
     },
     {
       "@type": "WebSite",
@@ -35,14 +34,27 @@ const jsonLd = {
       operatingSystem: "Web",
       description: siteDescription,
       url: siteUrl,
-      codeRepository: env.githubUrl,
+      sameAs: env.githubUrl,
       license: "https://opensource.org/license/mit",
       offers: {
         "@type": "Offer",
+        name: "Self-hosted edition",
+        description:
+          "Free MIT-licensed self-hosted edition. Hosted plans are priced separately.",
         price: "0",
         priceCurrency: "USD",
         url: siteUrl,
       },
+      publisher: { "@id": `${siteUrl}/#organization` },
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": `${siteUrl}/#sourcecode`,
+      name: "Scopy AI source code",
+      codeRepository: env.githubUrl,
+      license: "https://opensource.org/license/mit",
+      programmingLanguage: "TypeScript",
+      targetProduct: { "@id": `${siteUrl}/#software` },
       publisher: { "@id": `${siteUrl}/#organization` },
     },
   ],

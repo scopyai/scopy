@@ -26,6 +26,7 @@ export const Route = createRootRoute({
         title: siteTitle,
       },
       { name: "description", content: siteDescription },
+      { name: "robots", content: "noindex" },
       {
         name: "theme-color",
         content: "#1c1c26",

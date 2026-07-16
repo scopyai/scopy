@@ -35,7 +35,12 @@ export const Route = createFileRoute("/blog/$slug")({
       datePublished: loaderData.date,
       dateModified: loaderData.date,
       image: imageUrl,
-      author: { "@type": "Organization", name: loaderData.author },
+      author: {
+        "@type": "Person",
+        name: loaderData.author.split(",")[0].trim(),
+        jobTitle: "Founder",
+        worksFor: { "@type": "Organization", name: "Scopy AI" },
+      },
       publisher: {
         "@type": "Organization",
         name: "Scopy AI",
@@ -43,6 +48,20 @@ export const Route = createFileRoute("/blog/$slug")({
       },
       mainEntityOfPage: { "@type": "WebPage", "@id": url },
       url,
+    }
+    const breadcrumbJsonLd = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: env.siteUrl },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: "Blog",
+          item: `${env.siteUrl}/blog`,
+        },
+        { "@type": "ListItem", position: 3, name: loaderData.title, item: url },
+      ],
     }
 
     return {
@@ -80,6 +99,10 @@ export const Route = createFileRoute("/blog/$slug")({
         {
           type: "application/ld+json",
           children: JSON.stringify(jsonLd),
+        },
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(breadcrumbJsonLd),
         },
       ],
     }
