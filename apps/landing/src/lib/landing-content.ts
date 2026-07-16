@@ -35,8 +35,8 @@ export const features: NamedItem[] = [
     desc: "Turn your engineering standards into plain-language checks that run consistently on every change.",
   },
   {
-    name: "Configurable",
-    desc: "Set custom linting rules and review criteria to fit your team's needs.",
+    name: "Documentation-aware",
+    desc: "Scopy detects the libraries your code uses and checks findings against their official documentation, citing sources instead of guessing API behavior.",
   },
 ]
 
@@ -66,6 +66,10 @@ export const faqs: Faq[] = [
   {
     q: "Can we self-host Scopy?",
     a: "Yes. Scopy AI is MIT licensed and the source code is available on GitHub. Self-hosting lets you run Scopy AI on your own infrastructure and connect your preferred model provider.",
+  },
+  {
+    q: "Does Scopy understand the libraries my code uses?",
+    a: "Yes. Scopy detects libraries from your dependency manifests and keeps an indexed copy of their official documentation. During review it can search those docs and answer focused questions with citations, so verdicts about API behavior rest on documented facts rather than model memory. Teams can also add custom documentation sources for internal SDKs or custom libraries.",
   },
   {
     q: "Are reviews customizable?",
