@@ -1,18 +1,6 @@
 name: Backend deploy
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/api/**"
-      - "apps/tools/**"
-      - "packages/billing/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".dockerignore"
-      - ".github/workflows/backend-deploy.yml"
   workflow_dispatch:
 
 permissions:
