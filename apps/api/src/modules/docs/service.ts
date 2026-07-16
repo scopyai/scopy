@@ -50,9 +50,7 @@ export const enqueueDueDocSourceCrawls = async ({
     await upsertGlobalSource(config)
   }
 
-  const staleBefore = new Date(
-    Date.now() - intervalHours * 3_600_000
-  )
+  const staleBefore = new Date(Date.now() - intervalHours * 3_600_000)
   const sources = await db.query.docSource.findMany({
     columns: { id: true, slug: true, lastCrawledAt: true },
   })
@@ -66,11 +64,10 @@ export const enqueueDueDocSourceCrawls = async ({
     enqueued.push(source.slug)
   }
 
-  logger.info("Docs recrawl sweep", {
-    total: sources.length,
-    enqueued,
-    intervalHours,
-  })
+  logger.info(
+    `Docs recrawl sweep: ${enqueued.length} of ${sources.length} sources enqueued`,
+    { total: sources.length, enqueued, intervalHours }
+  )
   return enqueued
 }
 
@@ -242,7 +239,8 @@ export const createWorkspaceDocSource = async ({
   | { ok: false; error: string }
 > => {
   const builtIn = docSourceConfigs.find(
-    (config) => normalizeDocUrl(config.llmsTxtUrl) === normalizeDocUrl(llmsTxtUrl)
+    (config) =>
+      normalizeDocUrl(config.llmsTxtUrl) === normalizeDocUrl(llmsTxtUrl)
   )
   if (builtIn) {
     return {
@@ -272,7 +270,8 @@ export const createWorkspaceDocSource = async ({
   }
   if (
     existing.some(
-      (source) => normalizeDocUrl(source.llmsTxtUrl) === normalizeDocUrl(llmsTxtUrl)
+      (source) =>
+        normalizeDocUrl(source.llmsTxtUrl) === normalizeDocUrl(llmsTxtUrl)
     )
   ) {
     return { ok: false, error: "A doc source with this URL already exists" }

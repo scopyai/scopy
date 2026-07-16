@@ -24,9 +24,7 @@ const ipv4ToNumber = (ip: string) => {
   const parts = ip.split(".").map(Number)
   if (
     parts.length !== 4 ||
-    parts.some(
-      (part) => !Number.isInteger(part) || part < 0 || part > 255
-    )
+    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
   ) {
     return null
   }
@@ -35,7 +33,7 @@ const ipv4ToNumber = (ip: string) => {
 
 const isIpv4InCidr = (ip: number, network: number, prefix: number) => {
   const shift = 32 - prefix
-  return (ip >>> shift) === (network >>> shift)
+  return ip >>> shift === network >>> shift
 }
 
 const isPrivateIpv4 = (ip: string) => {
@@ -74,7 +72,7 @@ const ipv6ToBigInt = (ip: string) => {
 }
 
 const ipv6InCidr = (ip: bigint, network: bigint, prefix: number) =>
-  (ip >> BigInt(128 - prefix)) === (network >> BigInt(128 - prefix))
+  ip >> BigInt(128 - prefix) === network >> BigInt(128 - prefix)
 
 const ipv6Network = (ip: string) => ipv6ToBigInt(ip)!
 
@@ -116,7 +114,7 @@ const publicOnlyLookup: LookupFunction = (hostname, options, callback) => {
         resolved
       )
     }
-    const first = resolved[0]!
+    const first = resolved.find((entry) => entry.family === 4) ?? resolved[0]!
     return callback(null, first.address, first.family)
   })
 }
