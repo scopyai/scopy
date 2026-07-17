@@ -19,6 +19,9 @@
 - [How to Write Natural-Language Code Review Rules](https://scopy.dev/blog/natural-language-code-review-rules)
 - [Why Diff-Only Code Review Misses Bugs](https://scopy.dev/blog/why-diff-only-code-review-misses-bugs)
 - [Reviewing AI-Generated Code: A Practical Checklist](https://scopy.dev/blog/code-review-checklist-ai-generated-code)
+- [Open-Source AI Code Review Tools in 2026: An Honest Comparison](https://scopy.dev/blog/open-source-ai-code-review-tools)
+- [Why AI Code Reviewers Are So Noisy (and How to Fix It)](https://scopy.dev/blog/ai-code-review-false-positives)
+- [Open-Source CodeRabbit Alternatives (2026)](https://scopy.dev/blog/coderabbit-open-source-alternatives)
 
 ## Documentation
 
