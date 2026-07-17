@@ -58,7 +58,7 @@ function CreditTopUp({
           <div className="flex flex-col gap-0.5">
             <h2 className="text-base font-semibold">Buy additional credits</h2>
             <p className="text-sm text-muted-foreground">
-              Top up when you run low —{" "}
+              Top up when you run low –{" "}
               {formatPlanPriceAmount(unitPriceCents, currency)} per credit on
               your current plan.
             </p>

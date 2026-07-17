@@ -132,7 +132,7 @@ function BuiltInCatalog({ catalog }: { catalog: CatalogEntry[] | undefined }) {
           <DialogHeader>
             <DialogTitle>Built-in documentation</DialogTitle>
             <DialogDescription>
-              These libraries are indexed by default — reviews reference them
+              These libraries are indexed by default – reviews reference them
               automatically.
             </DialogDescription>
           </DialogHeader>
@@ -155,7 +155,7 @@ function BuiltInCatalog({ catalog }: { catalog: CatalogEntry[] | undefined }) {
             ))}
             {filtered.length === 0 ? (
               <p className="col-span-full px-1.5 py-1.5 text-xs text-muted-foreground">
-                No matches — add it as a custom source instead.
+                No matches – add it as a custom source instead.
               </p>
             ) : null}
           </div>
@@ -364,7 +364,7 @@ export function WorkspaceDocSources({
                 <span className="font-medium text-foreground">
                   {builtInMatch.name}
                 </span>{" "}
-                documentation is already included by default — Scopy uses it
+                documentation is already included by default – Scopy uses it
                 automatically.
               </p>
               <CheckCircle2Icon className="ml-auto size-3.5 shrink-0 text-primary/70" />

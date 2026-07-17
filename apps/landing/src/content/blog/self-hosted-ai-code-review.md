@@ -12,7 +12,7 @@ Most AI code review tools are hosted services. You connect a repository, the ser
 
 ## What "self-hosted" really means
 
-Self-hosting means the code review application runs in _your_ environment — your cloud account, your VPC, your on-prem servers — instead of a vendor's. When a pull request opens, the diff and repository context are processed by software you deployed, and you decide where the model inference happens.
+Self-hosting means the code review application runs in _your_ environment – your cloud account, your VPC, your on-prem servers – instead of a vendor's. When a pull request opens, the diff and repository context are processed by software you deployed, and you decide where the model inference happens.
 
 That last part matters. Running the application in your VPC does not keep code private if it still sends every prompt to an external model API. A useful self-hosted reviewer should let you choose that model path, including a model inside your own network when required.
 
@@ -24,7 +24,7 @@ The main reason is simple: you choose every system that receives the source code
 
 ### Compliance and data residency
 
-Regulations like GDPR, HIPAA, SOC 2 commitments, and government data-residency rules often constrain where data can be processed and stored. Self-hosting lets you keep everything in a specific region or network segment and produce a clean answer to "where does our code go during review?" — namely, _nowhere we don't control_.
+Regulations like GDPR, HIPAA, SOC 2 commitments, and government data-residency rules often constrain where data can be processed and stored. Self-hosting lets you keep everything in a specific region or network segment and produce a clean answer to "where does our code go during review?" – namely, _nowhere we don't control_.
 
 ### No vendor lock-in
 
@@ -32,7 +32,7 @@ Open-source, self-hosted tools don't disappear when a startup pivots or gets acq
 
 ### Cost control at scale
 
-SaaS review tools usually price per seat or per repository. If you're a large org, running the software yourself and supplying your own model capacity can be substantially cheaper — and you can choose cheaper models for routine reviews and reserve expensive ones for critical paths.
+SaaS review tools usually price per seat or per repository. If you're a large org, running the software yourself and supplying your own model capacity can be substantially cheaper – and you can choose cheaper models for routine reviews and reserve expensive ones for critical paths.
 
 ## The trade-offs to weigh
 
@@ -48,15 +48,15 @@ For some teams the control is worth the operational work. For others, a hosted s
 
 If you're evaluating options, check for:
 
-- **Model-agnostic design** — bring your own provider, including local models, with no lock-in.
-- **Straightforward deployment** — containerized, documented, runnable without reverse-engineering.
-- **Repository-aware reviews** — full pull-request context, not just the raw diff. (We cover why this matters in [what is AI code review](/blog/what-is-ai-code-review).)
+- **Model-agnostic design** – bring your own provider, including local models, with no lock-in.
+- **Straightforward deployment** – containerized, documented, runnable without reverse-engineering.
+- **Repository-aware reviews** – full pull-request context, not just the raw diff. (We cover why this matters in [what is AI code review](/blog/what-is-ai-code-review).)
 - **Configurable**, so the reviewer enforces _your_ standards, applied consistently.
 
 ## Where Scopy AI fits
 
 Scopy AI is an [open-source AI code reviewer](/) that can run either way. The source is available on GitHub and you can connect a commercial API, a compatible provider or a local model. If you do not want to operate it yourself, the cloud version provides the same review workflow as a managed service.
 
-That means you can start in the cloud today and self-host later, or self-host from day one and keep your code entirely on your own machines. Either way you get repository-aware reviews and your own custom review rules — without surrendering control of your source.
+That means you can start in the cloud today and self-host later, or self-host from day one and keep your code entirely on your own machines. Either way you get repository-aware reviews and your own custom review rules – without surrendering control of your source.
 
 Ready to dig in? Start with [what AI code review is and how it works](/blog/what-is-ai-code-review), or [view Scopy on GitHub](https://github.com/scopyai/scopy) to self-host it yourself.

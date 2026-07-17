@@ -48,7 +48,7 @@ export function RepositoryDocLibraries({
     >
       {detected.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No libraries detected yet — detection runs with the next review of
+          No libraries detected yet – detection runs with the next review of
           this repository.
         </p>
       ) : (

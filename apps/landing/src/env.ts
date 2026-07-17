@@ -16,7 +16,7 @@ export const socialPreview = {
   url: `${env.siteUrl}/social-preview.png`,
   width: 3024,
   height: 1964,
-  alt: "Scopy — open-source AI code reviewer",
+  alt: "Scopy – open-source AI code reviewer",
 } as const
 
 export function isExternalUrl(url: string): boolean {

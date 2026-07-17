@@ -21,14 +21,14 @@ Small PRs are easier to reason about, faster to approve, safer to revert, and fa
 A diff shows _what_ changed. It can't show _why_. A good PR description gives the reviewer the intent, the approach, and what to look at carefully:
 
 - **What** this change does, in one or two sentences.
-- **Why** it's needed — the bug, the feature, the constraint.
+- **Why** it's needed – the bug, the feature, the constraint.
 - **How** to verify it, and anything you're unsure about.
 
-A reviewer who understands intent catches _design_ problems — and an AI reviewer with the same context produces far better feedback too.
+A reviewer who understands intent catches _design_ problems – and an AI reviewer with the same context produces far better feedback too.
 
 ## 3. Set a review SLA
 
-The biggest source of wasted time in review is _latency_. A PR that waits a day forces the author to context-switch away and back. Agree on a team norm — for example, "open PRs get a first response within four working hours" — and treat review as interrupt-priority work that blocks other engineers, not something you get to eventually.
+The biggest source of wasted time in review is _latency_. A PR that waits a day forces the author to context-switch away and back. Agree on a team norm – for example, "open PRs get a first response within four working hours" – and treat review as interrupt-priority work that blocks other engineers, not something you get to eventually.
 
 You won't always hit it, but having the number changes behavior.
 
@@ -36,11 +36,11 @@ You won't always hit it, but having the number changes behavior.
 
 Not all feedback is equal. Spend reviewer attention on, in rough priority order:
 
-1. **Correctness** — does it do what it claims? Edge cases, error handling, race conditions.
-2. **Security** — input validation, authorization, secrets, injection.
-3. **Design** — does it fit the architecture, or add debt?
-4. **Readability** — will the next person understand it?
-5. **Style** — naming, formatting, conventions.
+1. **Correctness** – does it do what it claims? Edge cases, error handling, race conditions.
+2. **Security** – input validation, authorization, secrets, injection.
+3. **Design** – does it fit the architecture, or add debt?
+4. **Readability** – will the next person understand it?
+5. **Style** – naming, formatting, conventions.
 
 Automate the bottom of that list so people can focus on the top. Formatting and simple style rules should be handled by tooling instead of reviewers leaving the same `nit:` comment for the hundredth time.
 
@@ -63,16 +63,16 @@ An [AI code reviewer](/blog/what-is-ai-code-review) reads every pull request the
 
 That does two things: it shortens review latency (practice #3), and it frees your reviewers to spend their limited attention on correctness and design (practice #4) instead of catching the same class of mistakes by hand on every PR.
 
-The thing is to keep it tuned for **signal over volume**. A reviewer — human or AI — that comments on everything trains people to ignore it. Configure your rules so the feedback is rare, accurate, and worth reading.
+The thing is to keep it tuned for **signal over volume**. A reviewer – human or AI – that comments on everything trains people to ignore it. Configure your rules so the feedback is rare, accurate, and worth reading.
 
 ## 8. Make conventions executable
 
-Every team accumulates rules: "always use the typed client", "never log request bodies", "new endpoints need a rate limit". If those rules live only in people's heads, they're enforced unevenly and lost when someone leaves. Write them down — and better, make them executable, either as lint rules or as custom rules your [code review tool](/) applies to every PR automatically.
+Every team accumulates rules: "always use the typed client", "never log request bodies", "new endpoints need a rate limit". If those rules live only in people's heads, they're enforced unevenly and lost when someone leaves. Write them down – and better, make them executable, either as lint rules or as custom rules your [code review tool](/) applies to every PR automatically.
 
 ## Putting it together
 
 Good review is not about asking people to concentrate harder. It mostly comes from small PRs, clear intent, a reasonable response time and tooling that handles the repetitive parts.
 
-Scopy AI is an [open-source AI code reviewer](/) that handles the first pass for you — full-context analysis of every pull request, your custom rules applied consistently, inline on GitHub. Pair it with the human practices above and review stops being the bottleneck.
+Scopy AI is an [open-source AI code reviewer](/) that handles the first pass for you – full-context analysis of every pull request, your custom rules applied consistently, inline on GitHub. Pair it with the human practices above and review stops being the bottleneck.
 
 Next: learn [what AI code review actually is](/blog/what-is-ai-code-review) under the hood, or how to keep your code private with [self-hosted AI code review](/blog/self-hosted-ai-code-review).

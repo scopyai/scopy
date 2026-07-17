@@ -1,6 +1,6 @@
 ---
 title: "Self-Hosted vs Cloud AI Code Review: How to Choose"
-description: "Compare self-hosted and cloud AI code review across privacy, security, model choice, operations, cost and deployment—and choose the right approach for your team."
+description: "Compare self-hosted and cloud AI code review across privacy, security, model choice, operations, cost and deployment – and choose the right approach for your team."
 date: "2026-06-21"
 author: "Matt, founder"
 tags: "self-hosted AI code review, cloud AI code review, privacy, developer tools"
@@ -22,18 +22,18 @@ Choose a tool that supports **both** when requirements may change or different r
 
 ## Side-by-side comparison
 
-| Decision area | Cloud | Self-hosted |
-|---|---|---|
-| Setup | Usually minutes | Deployment and integration required |
-| Operations | Vendor manages service | Your team manages service |
-| Data path | Vendor and configured model provider | Infrastructure and model path you choose |
-| Model choice | Vendor-selected or supported providers | Potentially commercial, private or local models |
-| Upgrades | Automatic | Scheduled and tested by your team |
-| Scaling | Vendor responsibility | Your responsibility |
-| Customization | Product configuration | Source, deployment and network can be modified |
-| Audit scope | Vendor controls plus your configuration | Your application, infrastructure and model controls |
-| Cost shape | Subscription, seats, PRs or usage | Infrastructure, model usage and engineering time |
-| Best fit | Teams prioritizing speed and convenience | Teams prioritizing control and isolation |
+| Decision area | Cloud                                    | Self-hosted                                         |
+| ------------- | ---------------------------------------- | --------------------------------------------------- |
+| Setup         | Usually minutes                          | Deployment and integration required                 |
+| Operations    | Vendor manages service                   | Your team manages service                           |
+| Data path     | Vendor and configured model provider     | Infrastructure and model path you choose            |
+| Model choice  | Vendor-selected or supported providers   | Potentially commercial, private or local models     |
+| Upgrades      | Automatic                                | Scheduled and tested by your team                   |
+| Scaling       | Vendor responsibility                    | Your responsibility                                 |
+| Customization | Product configuration                    | Source, deployment and network can be modified      |
+| Audit scope   | Vendor controls plus your configuration  | Your application, infrastructure and model controls |
+| Cost shape    | Subscription, seats, PRs or usage        | Infrastructure, model usage and engineering time    |
+| Best fit      | Teams prioritizing speed and convenience | Teams prioritizing control and isolation            |
 
 ## Start by mapping the data flow
 

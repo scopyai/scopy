@@ -179,8 +179,8 @@ function BlogPost() {
               Try Scopy AI on your next pull request
             </h2>
             <p className="l-post-foot-sub">
-              Accurate, open-source code review that reads your whole
-              repository. Self-host it or start in the cloud.
+              Accurate, open-source AI code reviewer that understands your
+              project. Self-host it or start in the cloud.
             </p>
             <div className="l-post-foot-ctas">
               <a

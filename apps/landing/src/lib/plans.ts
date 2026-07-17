@@ -36,7 +36,7 @@ export function getLandingPlans(): LandingPlan[] {
       priceLabel: "Free",
       period: "",
       computeLabel: `Self-hosted version with any LLM provider`,
-      desc: "Start free, then add a paid plan for managed cloud reviews — or self-host without limits.",
+      desc: "Start free, then add a paid plan for managed cloud reviews – or self-host without limits.",
       features: [
         "Bring-your-own-key support",
         "Self-host with your own model keys",

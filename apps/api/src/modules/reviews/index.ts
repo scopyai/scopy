@@ -990,7 +990,7 @@ export const runReviewAgent = async ({
         routedCandidates.length > 0
           ? `
 
-Already reported findings (do not re-report these or restate their root causes — but the files they live in are proven bug-dense, so look for different defects in those same files as well as everywhere else):
+Already reported findings (do not re-report these or restate their root causes – but the files they live in are proven bug-dense, so look for different defects in those same files as well as everywhere else):
 ${routedCandidates
   .map(
     (candidate) =>

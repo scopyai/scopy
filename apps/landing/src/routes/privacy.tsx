@@ -5,7 +5,7 @@ import { env, externalLinkProps } from "#/env"
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "Terms of Service & Privacy Policy — Scopy AI" },
+      { title: "Terms of Service & Privacy Policy – Scopy AI" },
       {
         name: "description",
         content:
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/privacy")({
       },
       {
         property: "og:title",
-        content: "Terms of Service & Privacy Policy — Scopy AI",
+        content: "Terms of Service & Privacy Policy – Scopy AI",
       },
       {
         property: "og:description",
@@ -58,17 +58,17 @@ function LegalPage() {
               <nav aria-label="Table of contents">
                 <ol className="l-legal-toc">
                   <li>
-                    <a href="#terms">Part I — Terms of Service</a>
+                    <a href="#terms">Part I – Terms of Service</a>
                   </li>
                   <li>
-                    <a href="#privacy">Part II — Privacy Policy</a>
+                    <a href="#privacy">Part II – Privacy Policy</a>
                   </li>
                 </ol>
               </nav>
             </section>
 
             <div id="terms" className="l-legal-part">
-              <h2 className="l-legal-part-title">Part I — Terms of Service</h2>
+              <h2 className="l-legal-part-title">Part I – Terms of Service</h2>
 
               <section>
                 <h2>1. Acceptance of these Terms</h2>
@@ -444,7 +444,7 @@ function LegalPage() {
             </div>
 
             <div id="privacy" className="l-legal-part">
-              <h2 className="l-legal-part-title">Part II — Privacy Policy</h2>
+              <h2 className="l-legal-part-title">Part II – Privacy Policy</h2>
 
               <section>
                 <h2>1. Scope and roles</h2>

@@ -20,7 +20,7 @@ function formatMergeTime(
   hours: number | null,
   days: number | null,
 ): string {
-  if (hours === null) return "—"
+  if (hours === null) return "–"
   if (days !== null && days >= 1) {
     return `${days.toFixed(1)}d`
   }

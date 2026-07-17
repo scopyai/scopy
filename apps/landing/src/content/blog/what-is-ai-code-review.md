@@ -14,12 +14,12 @@ I do not think it replaces human judgment, and it is not a more expensive linter
 
 At a high level, an AI code reviewer runs through four steps every time a pull request opens:
 
-1. **Gather context.** The tool collects the diff, the files that changed, and — in better tools — the surrounding code those changes touch: the functions being called, the types being used, related modules. A diff alone is rarely enough to judge whether a change is correct.
+1. **Gather context.** The tool collects the diff, the files that changed, and – in better tools – the surrounding code those changes touch: the functions being called, the types being used, related modules. A diff alone is rarely enough to judge whether a change is correct.
 2. **Build a prompt.** That context is assembled into a structured request for the language model, often alongside your team's review rules ("don't use raw fetch requests", "all endpoints must check authorization").
-3. **Generate findings.** The model produces a set of observations — potential bugs, edge cases, naming issues, missing tests — usually with a location and a severity.
+3. **Generate findings.** The model produces a set of observations – potential bugs, edge cases, naming issues, missing tests – usually with a location and a severity.
 4. **Post feedback.** The findings are filtered and posted back as inline comments on the pull request, where the author already works.
 
-The quality of an AI review is dominated by step one. A tool that only sees the raw diff will miss anything that depends on code it can't see — which is most real bugs. This is why repository-aware context matters so much, and it's the part Scopy AI invests in most heavily. You can see the shape of this flow in [how Scopy AI runs a review](/#how-it-works).
+The quality of an AI review is dominated by step one. A tool that only sees the raw diff will miss anything that depends on code it can't see – which is most real bugs. This is why repository-aware context matters so much, and it's the part Scopy AI invests in most heavily. You can see the shape of this flow in [how Scopy AI runs a review](/#how-it-works).
 
 ## What AI code review is good at
 
@@ -35,7 +35,7 @@ Architecture and product judgment should still belong to engineers. A model can 
 
 ## AI code review vs. linters and static analysis
 
-Teams often ask how this differs from tools they already run. Linters and static analyzers are rule-based: fast, deterministic, and excellent at the patterns they're programmed to find. But they can't reason about _intent_ or about code they weren't explicitly taught. An AI reviewer reasons in natural language about the actual change, which lets it catch issues no one wrote a rule for — at the cost of being probabilistic rather than deterministic.
+Teams often ask how this differs from tools they already run. Linters and static analyzers are rule-based: fast, deterministic, and excellent at the patterns they're programmed to find. But they can't reason about _intent_ or about code they weren't explicitly taught. An AI reviewer reasons in natural language about the actual change, which lets it catch issues no one wrote a rule for – at the cost of being probabilistic rather than deterministic.
 
 They're complementary. Keep your linter for the rules it enforces perfectly, and add AI review for the judgment-shaped feedback a linter can't express.
 
@@ -45,6 +45,6 @@ Start with one or two active repositories and treat the comments as advisory. If
 
 ## Getting started
 
-AI code review is most useful when it's repository-aware, configurable, and honest about its limits. Scopy is an [open-source AI code reviewer](/) that reads full pull-request context, applies your team's rules, and posts inline comments on GitHub — and you can run it in the cloud or self-host it on your own infrastructure.
+AI code review is most useful when it's repository-aware, configurable, and honest about its limits. Scopy is an [open-source AI code reviewer](/) that reads full pull-request context, applies your team's rules, and posts inline comments on GitHub – and you can run it in the cloud or self-host it on your own infrastructure.
 
 If you want to go deeper, read about [code review best practices for fast-moving teams](/blog/code-review-best-practices) or how [self-hosted AI code review](/blog/self-hosted-ai-code-review) keeps your code private.

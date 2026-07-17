@@ -300,7 +300,7 @@ function OpenSource() {
             <h3 className="l-oss-col-title">Use Scopy AI in cloud</h3>
             {/*<p className="l-oss-col-body">
               Connect GitHub in seconds, pick a plan, and start getting reviews
-              immediately. Compute included — no API keys required.
+              immediately. Compute included – no API keys required.
             </p>*/}
             <ul className="l-oss-list">
               {CLOUD_ITEMS.map((item) => (
@@ -335,7 +335,7 @@ function Pricing() {
         <div className="l-price-header">
           <h2 className="l-price-title">Simple, credit-based pricing</h2>
           <p className="l-price-sub">
-            Reviews use credits based on how much a pull request changes — no
+            Reviews use credits based on how much a pull request changes – no
             per-seat pricing.
           </p>
         </div>

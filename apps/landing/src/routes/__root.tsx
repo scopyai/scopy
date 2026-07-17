@@ -88,9 +88,6 @@ export const Route = createRootRoute({
       { name: "twitter:image:alt", content: socialPreview.alt },
     ],
     links: [
-      // NOTE: canonical is intentionally set per-route (see index/privacy/blog
-      // routes), not here — a root canonical would append to every page and
-      // point them all at the homepage.
       { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       {

@@ -41,7 +41,7 @@ export const Route = createRootRoute({
       { property: "og:image:height", content: "1964" },
       {
         property: "og:image:alt",
-        content: "Scopy — open-source AI code reviewer dashboard preview",
+        content: "Scopy – open-source AI code reviewer dashboard preview",
       },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: siteTitle },
@@ -49,7 +49,7 @@ export const Route = createRootRoute({
       { name: "twitter:image", content: socialPreviewUrl },
       {
         name: "twitter:image:alt",
-        content: "Scopy — open-source AI code reviewer dashboard preview",
+        content: "Scopy – open-source AI code reviewer dashboard preview",
       },
     ],
     links: [

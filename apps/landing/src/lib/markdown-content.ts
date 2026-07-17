@@ -7,7 +7,7 @@ function homeMarkdown(): string {
   const plans = getLandingPlans()
 
   const lines: string[] = [
-    `# Scopy AI — ${hero.title}`,
+    `# Scopy AI – ${hero.title}`,
     "",
     `> ${hero.subtitle}`,
     "",
@@ -19,15 +19,15 @@ function homeMarkdown(): string {
     "",
     "## How code review works with Scopy",
     "",
-    ...steps.map((step, i) => `${i + 1}. **${step.name}** — ${step.desc}`),
+    ...steps.map((step, i) => `${i + 1}. **${step.name}** – ${step.desc}`),
     "",
     "## Features",
     "",
-    ...features.map((f) => `- **${f.name}** — ${f.desc}`),
+    ...features.map((f) => `- **${f.name}** – ${f.desc}`),
     "",
     "## Pricing",
     "",
-    "Reviews use credits based on reviewable changed lines. Pick a monthly plan when you need managed cloud reviews — no per-seat pricing.",
+    "Reviews use credits based on reviewable changed lines. Pick a monthly plan when you need managed cloud reviews – no per-seat pricing.",
     "",
   ]
 
@@ -35,7 +35,7 @@ function homeMarkdown(): string {
     const price = plan.period
       ? `${plan.priceLabel}${plan.period}`
       : plan.priceLabel
-    lines.push(`### ${plan.name} — ${price}`)
+    lines.push(`### ${plan.name} – ${price}`)
     lines.push("")
     lines.push(`${plan.computeLabel}. ${plan.desc}`)
     lines.push("")

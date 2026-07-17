@@ -42,7 +42,7 @@ Pay special attention to code that includes a confident explanatory comment. Con
 
 ## 3. Compare it with the rest of the repository
 
-Generated code is usually optimized for the prompt it received. Your codebase is optimized — or at least slowly negotiated — for conventions the prompt may not contain. As AI does not understand what the pain is, it usually is not able to make architectural decisions oriented far into the future.
+Generated code is usually optimized for the prompt it received. Your codebase is optimized – or at least slowly negotiated – for conventions the prompt may not contain. As AI does not understand what the pain is, it usually is not able to make architectural decisions oriented far into the future.
 
 To spot this, search for a similar implementation elsewhere in the repository. See how neighboring routes authenticate users, where validation normally happens, how transactions and errors are handled, and which testing helpers the project already uses. These patterns often contain constraints that were never included in the agent’s prompt and which it could interpret incorrectly when copying is not an option.
 

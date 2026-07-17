@@ -54,7 +54,7 @@ export function useCreateWorkspaceDocSource(workspaceId: string) {
       queryClient.invalidateQueries({
         queryKey: docSourceKeys.all(workspaceId),
       })
-      toast.success("Documentation source added — crawling started")
+      toast.success("Documentation source added – crawling started")
     },
     onError: (err: { value?: { error?: string } }) => {
       toast.error(err?.value?.error ?? "Failed to add documentation source")
