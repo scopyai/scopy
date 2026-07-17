@@ -1,14 +1,12 @@
 import { useEffect, useRef } from "react"
 import {
-  type Pop,
-  type Rect,
-  type Vec,
   POP_DURATION,
   drawDot,
   drawPop,
   inAnyRect,
   rand,
 } from "#/components/radar-draw"
+import type { Pop, Rect, Vec } from "#/components/radar-draw"
 
 type Dot = {
   angle: number

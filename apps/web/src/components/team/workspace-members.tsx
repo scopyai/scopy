@@ -103,17 +103,7 @@ export function WorkspaceMembers({
     }
   }
 
-  const canChangeRole = (
-    targetRole: MemberRole,
-    targetUserId: string
-  ): boolean => {
-    if (targetUserId === currentUserId) return false
-    if (targetRole === "owner") return false
-    if (currentUserRole === "admin" && targetRole !== "member") return false
-    return true
-  }
-
-  const canRemove = (targetRole: MemberRole, targetUserId: string): boolean => {
+  const canManageMember = (targetRole: MemberRole, targetUserId: string) => {
     if (targetUserId === currentUserId) return false
     if (targetRole === "owner") return false
     if (currentUserRole === "admin" && targetRole !== "member") return false
@@ -216,10 +206,8 @@ export function WorkspaceMembers({
             {members.map((member) => {
               const memberRole = member.role as MemberRole
               const memberStatus = member.status as MemberStatus
-              const showRoleSelect =
-                canManage && canChangeRole(memberRole, member.user.id)
-              const showRemove =
-                canManage && canRemove(memberRole, member.user.id)
+              const showMemberActions =
+                canManage && canManageMember(memberRole, member.user.id)
 
               return (
                 <div
@@ -244,7 +232,7 @@ export function WorkspaceMembers({
                     </span>
                   </div>
                   <div className="flex h-6 items-center">
-                    {showRoleSelect ? (
+                    {showMemberActions ? (
                       <Select
                         value={memberRole}
                         onValueChange={(v) =>
@@ -284,7 +272,7 @@ export function WorkspaceMembers({
                   </div>
                   {canManage && (
                     <div className="flex h-6 items-center justify-end">
-                      {showRemove ? (
+                      {showMemberActions ? (
                         <Button
                           variant="outline"
                           size="xs"

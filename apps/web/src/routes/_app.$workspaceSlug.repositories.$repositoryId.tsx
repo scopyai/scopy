@@ -66,10 +66,10 @@ function RepositoryPage() {
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = (event: MouseEvent) => {
       if (!isResizing.current || !containerRef.current) return
       const containerLeft = containerRef.current.getBoundingClientRect().left
-      const newWidth = e.clientX - containerLeft
+      const newWidth = event.clientX - containerLeft
       setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, newWidth)))
     }
 

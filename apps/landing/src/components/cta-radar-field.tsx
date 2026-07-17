@@ -1,7 +1,5 @@
 import { useEffect, useRef } from "react"
 import {
-  type Pop,
-  type Vec,
   WAVE_SPEED,
   POP_DURATION,
   dist,
@@ -10,6 +8,7 @@ import {
   drawRing,
   rand,
 } from "#/components/radar-draw"
+import type { Pop, Vec } from "#/components/radar-draw"
 
 type Dot = {
   pos: Vec
@@ -142,7 +141,7 @@ export function CtaRadarField() {
         seeded = true
       }
 
-      let ate = false
+      const previousDotCount = dots.length
       for (const wave of waves) {
         if (wave.phase === "expand") {
           wave.radius += WAVE_SPEED * dt
@@ -152,7 +151,6 @@ export function CtaRadarField() {
           dots = dots.filter((dot) => {
             if (dist(wave.origin, dot.pos) <= wave.radius) {
               pops.push({ pos: dot.pos, t: 0 })
-              ate = true
               return false
             }
             return true
@@ -169,7 +167,7 @@ export function CtaRadarField() {
           drawRing(ctx, wave.origin, wave.radius, 0.58 * Math.max(0, k))
         }
       }
-      if (ate) growAt = elapsed + REGROW_DELAY
+      if (dots.length < previousDotCount) growAt = elapsed + REGROW_DELAY
       waves = waves.filter(
         (w) => w.phase === "expand" || w.fadeT < FADE_DURATION
       )

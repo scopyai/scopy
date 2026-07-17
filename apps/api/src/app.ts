@@ -10,7 +10,6 @@ import { meRoutes } from "./modules/me"
 import { webhookRoutes } from "./modules/webhooks"
 import { workspaceRoutes } from "./modules/workspaces"
 import { billingRoutes } from "./modules/billing"
-// import { providerKeyRoutes } from './modules/provider-keys'
 import { feedbackRoutes } from "./modules/feedback"
 import { docsRoutes, workspaceDocsRoutes } from "./modules/docs"
 
@@ -33,7 +32,6 @@ export const app = new Elysia({
   .use(githubRoutes)
   .use(workspaceRoutes)
   .use(billingRoutes)
-  // .use(providerKeyRoutes)
   .use(feedbackRoutes)
   .use(docsRoutes)
   .use(workspaceDocsRoutes)

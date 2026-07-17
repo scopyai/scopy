@@ -13,8 +13,8 @@ import {
   changeWorkspacePlan,
 } from "./service";
 import {
-  requireWorkspaceForUser,
-  requireWorkspaceRole,
+  getWorkspaceForUser,
+  getWorkspaceForUserWithRole,
 } from "../workspaces/service";
 
 const checkoutSchema = z.object({
@@ -48,10 +48,10 @@ const asBillingError = (error: unknown) => {
 };
 
 const requireMember = (workspaceId: string, userId: string) =>
-  requireWorkspaceForUser(workspaceId, userId).catch(() => null);
+  getWorkspaceForUser(workspaceId, userId);
 
 const requireOwner = (workspaceId: string, userId: string) =>
-  requireWorkspaceRole(workspaceId, userId, ["owner"]).catch(() => null);
+  getWorkspaceForUserWithRole(workspaceId, userId, ["owner"]);
 
 export const billingRoutes = protectedRoute("/workspaces")
   .get("/:workspaceId/billing", async ({ params, user, status }) => {

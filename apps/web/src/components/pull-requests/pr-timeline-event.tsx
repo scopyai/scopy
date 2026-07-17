@@ -319,10 +319,10 @@ export function PullRequestTimelineEvent({
         ) : (
           <Avatar size="sm">
             {author?.avatarUrl && (
-              <AvatarImage src={author.avatarUrl} alt={author?.login ?? ""} />
+              <AvatarImage src={author.avatarUrl} alt={author.login} />
             )}
             <AvatarFallback>
-              {author?.login?.[0]?.toUpperCase()}
+              {author?.login[0]?.toUpperCase()}
             </AvatarFallback>
           </Avatar>
         )}

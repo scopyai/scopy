@@ -151,7 +151,7 @@ export function BillingPage() {
     return <BillingLoadingSkeleton />
   }
 
-  if (isError || !billing) {
+  if (isError) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">
@@ -169,7 +169,7 @@ export function BillingPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-10">
-      <AccountSummary account={billing.account} isOwner={isOwner ?? false} />
+      <AccountSummary account={billing.account} isOwner={isOwner} />
 
       <section className="relative flex flex-col gap-6 overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 -top-8 h-48 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/8 via-transparent to-transparent" />
@@ -188,7 +188,7 @@ export function BillingPage() {
           accountTier={billing.account.tier}
           pendingTier={billing.account.pendingTier}
           planChangesDisabled={billing.account.cancelAtPeriodEnd}
-          isOwner={isOwner ?? false}
+          isOwner={isOwner}
           workspaceId={selectedWorkspaceId}
         />
       </section>
@@ -196,8 +196,7 @@ export function BillingPage() {
       {isOwner &&
         isPaid &&
         activePlan?.topUpCreditUnitPriceCents !== null &&
-        activePlan?.topUpCreditUnitPriceCents !== undefined &&
-        activePlan.currency && (
+        activePlan?.topUpCreditUnitPriceCents !== undefined && (
           <CreditTopUp
             workspaceId={selectedWorkspaceId}
             unitPriceCents={activePlan.topUpCreditUnitPriceCents}

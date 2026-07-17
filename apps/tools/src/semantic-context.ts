@@ -1,13 +1,7 @@
 import { createHash } from "node:crypto"
 import { QdrantClient } from "@qdrant/js-client-rest"
-import {
-  buildRepositoryCodeIndex,
-  type RepositoryCodeIndex,
-} from "./code-index"
-import { buildDiffContext, type DiffContextResult } from "./diff/context"
-import { parseUnifiedDiff } from "./diff/parse"
-import { prepareRepository } from "./repository"
-import type { Diagnostic, ScopeDefinition } from "./types"
+import type { RepositoryCodeIndex } from "./code-index"
+import type { ScopeDefinition } from "./types"
 
 export type CodeChunk = {
   id: string
@@ -35,8 +29,6 @@ export type ReviewCodeChunk = CodeChunk & {
   reviewRunId: string
 }
 
-export type EmbedTexts = (texts: string[]) => Promise<number[][]>
-
 export type QdrantConfig = {
   client?: QdrantClient
   url?: string
@@ -47,50 +39,6 @@ export type QdrantConfig = {
 
 export type QdrantInferenceConfig = QdrantConfig & {
   model: string
-}
-
-export type IndexCodebaseInput = {
-  repository: string
-  repositoryKey: string
-  ref?: string
-  qdrant: QdrantConfig
-  embed: EmbedTexts
-  keepTemporaryRepository?: boolean
-}
-
-export type IndexCodebaseOutput = {
-  repositoryPath: string
-  repositoryKey: string
-  collection: string
-  chunks: number
-  files: number
-  diagnostics: Diagnostic[]
-}
-
-export type GetSemanticContextInput = {
-  repository: string
-  repositoryKey: string
-  ref?: string
-  diff: string
-  qdrant: QdrantConfig
-  embed: EmbedTexts
-  limit?: number
-  keepTemporaryRepository?: boolean
-}
-
-export type SemanticContextResult = {
-  repositoryPath: string
-  repositoryKey: string
-  collection: string
-  diffContext: DiffContextResult
-  chunks: Array<CodeChunk & { score: number }>
-  markdown: string
-  stats: {
-    affectedSymbols: number
-    chunks: number
-    diagnostics: number
-    bytes: number
-  }
 }
 
 export type IndexReviewCodebaseInput = {
@@ -177,10 +125,7 @@ const pointId = (chunk: Omit<CodeChunk, "id">) => {
   ].join("-")
 }
 
-const logicalVectorBytes = (
-  chunk: ReviewCodeChunk,
-  vectorSize: number,
-) =>
+const logicalVectorBytes = (chunk: ReviewCodeChunk, vectorSize: number) =>
   Buffer.byteLength(chunk.content, "utf8") +
   Buffer.byteLength(JSON.stringify(chunk), "utf8") +
   vectorSize * 4
@@ -216,7 +161,7 @@ const fileChunkFor = ({
 const boundedLineSlice = (
   source: string,
   startLine: number,
-  endLine: number,
+  endLine: number
 ) => {
   const lines = source.split(/\r?\n/)
   const selected = lines.slice(startLine - 1, endLine)
@@ -282,7 +227,7 @@ const scopeChunksFor = ({
   while (startLine <= scope.endLine) {
     const requestedEndLine = Math.min(
       scope.endLine,
-      startLine + SCOPE_WINDOW_LINES - 1,
+      startLine + SCOPE_WINDOW_LINES - 1
     )
     const window = boundedLineSlice(source, startLine, requestedEndLine)
     if (!window) break
@@ -382,48 +327,6 @@ const filterByRun = ({
   ],
 })
 
-const chunksForRepository = async ({
-  repository,
-  repositoryKey,
-}: {
-  repository: string
-  repositoryKey: string
-}) => {
-  const index = await buildRepositoryCodeIndex({ repository })
-  const chunks: CodeChunk[] = []
-
-  for (const file of index.files) {
-    const source = index.sourceByFile.get(file.path)
-    if (!source) continue
-    const scopedChunks: CodeChunk[] = []
-
-    for (const scope of file.scopes) {
-      scopedChunks.push(
-        ...scopeChunksFor({
-          repositoryKey,
-          file: file.path,
-          language: file.language,
-          source,
-          scope,
-        }),
-      )
-    }
-    if (scopedChunks.length > 0) {
-      chunks.push(...scopedChunks)
-    } else {
-      const fileChunk = fileChunkFor({
-        repositoryKey,
-        file: file.path,
-        language: file.language,
-        source,
-      })
-      if (fileChunk) chunks.push(fileChunk)
-    }
-  }
-
-  return { index, chunks }
-}
-
 export const chunksForRepositoryIndex = ({
   index,
   repositoryKey,
@@ -431,38 +334,27 @@ export const chunksForRepositoryIndex = ({
   index: RepositoryCodeIndex
   repositoryKey: string
 }) => {
-  const chunks: CodeChunk[] = []
-
-  for (const file of index.files) {
+  return index.files.flatMap((file) => {
     const source = index.sourceByFile.get(file.path)
-    if (!source) continue
-    const scopedChunks: CodeChunk[] = []
-
-    for (const scope of file.scopes) {
-      scopedChunks.push(
-        ...scopeChunksFor({
-          repositoryKey,
-          file: file.path,
-          language: file.language,
-          source,
-          scope,
-        }),
-      )
-    }
-    if (scopedChunks.length > 0) {
-      chunks.push(...scopedChunks)
-    } else {
-      const fileChunk = fileChunkFor({
+    if (!source) return []
+    const scopedChunks = file.scopes.flatMap((scope) =>
+      scopeChunksFor({
         repositoryKey,
         file: file.path,
         language: file.language,
         source,
+        scope,
       })
-      if (fileChunk) chunks.push(fileChunk)
-    }
-  }
-
-  return chunks
+    )
+    if (scopedChunks.length) return scopedChunks
+    const chunk = fileChunkFor({
+      repositoryKey,
+      file: file.path,
+      language: file.language,
+      source,
+    })
+    return chunk ? [chunk] : []
+  })
 }
 
 const chunkText = (chunk: CodeChunk) =>
@@ -479,125 +371,9 @@ const chunkText = (chunk: CodeChunk) =>
     `file ${chunk.file}`,
     `language ${chunk.language}`,
     chunk.content,
-  ].filter(Boolean).join("\n")
-
-export const indexCodebase = async ({
-  repository,
-  repositoryKey,
-  ref,
-  qdrant,
-  embed,
-  keepTemporaryRepository = false,
-}: IndexCodebaseInput): Promise<IndexCodebaseOutput> => {
-  const prepared = await prepareRepository({ repository, ref })
-  try {
-    const client = qdrantClient(qdrant)
-    await ensureCollection(client, qdrant)
-    await client.delete(qdrant.collection, {
-      wait: true,
-      filter: {
-        must: [{ key: "repositoryKey", match: { value: repositoryKey } }],
-      },
-    })
-
-    const { index, chunks } = await chunksForRepository({
-      repository: prepared.path,
-      repositoryKey,
-    })
-    const vectors = await embed(chunks.map(chunkText))
-    await client.upsert(qdrant.collection, {
-      wait: true,
-      points: chunks.map((chunk, index) => ({
-        id: chunk.id,
-        vector: vectors[index]!,
-        payload: chunk,
-      })),
-    })
-
-    return {
-      repositoryPath: prepared.path,
-      repositoryKey,
-      collection: qdrant.collection,
-      chunks: chunks.length,
-      files: index.files.length,
-      diagnostics: index.diagnostics,
-    }
-  } finally {
-    if (!keepTemporaryRepository) await prepared.cleanup()
-  }
-}
-
-const queriesForDiff = (diffContext: DiffContextResult) =>
-  diffContext.files.flatMap((file) =>
-    file.affectedSymbols.length > 0
-      ? file.affectedSymbols.map((symbol) => ({
-          file: file.file,
-          text: [
-            `${symbol.kind} ${symbol.name}`,
-            symbol.signature ? `signature ${symbol.signature}` : "",
-            symbol.parameters?.length
-              ? `parameters ${symbol.parameters.join(", ")}`
-              : "",
-            symbol.returnType ? `returns ${symbol.returnType}` : "",
-            `file ${file.file}`,
-            symbol.source,
-            file.patch,
-          ].join("\n"),
-        }))
-      : [
-          {
-            file: file.file,
-            text: [`file ${file.file}`, file.patch].join("\n"),
-          },
-        ]
-  )
-
-const affectedKeys = (diffContext: DiffContextResult) =>
-  new Set(
-    diffContext.files.flatMap((file) => [
-      `${file.file}:file`,
-      ...file.affectedSymbols.map(
-        (symbol) => `${symbol.file}:${symbol.startLine}:${symbol.endLine}`
-      ),
-    ])
-  )
-
-const renderSemanticMarkdown = ({
-  repositoryKey,
-  collection,
-  chunks,
-}: {
-  repositoryKey: string
-  collection: string
-  chunks: Array<CodeChunk & { score: number }>
-}) =>
-  [
-    "# Semantic Context",
-    "",
-    `Repository key: ${repositoryKey}`,
-    `Collection: ${collection}`,
-    `Chunks: ${chunks.length}`,
-    "",
-    ...chunks.flatMap((chunk) => [
-      `## ${chunk.kind} ${chunk.name}`,
-      "",
-      chunk.signature ? `Definition: ${chunk.signature}` : "",
-      chunk.parameters?.length
-        ? `Parameters: ${chunk.parameters.join(", ")}`
-        : "",
-      chunk.returnType ? `Returns: ${chunk.returnType}` : "",
-      `Score: ${chunk.score.toFixed(4)}`,
-      `Location: ${chunk.file}:${chunk.startLine}-${chunk.endLine}`,
-      chunk.parentName
-        ? `Parent: ${chunk.parentKind} ${chunk.parentName} ${chunk.parentStartLine}-${chunk.parentEndLine}`
-        : "",
-      "",
-      "```text",
-      chunk.content,
-      "```",
-      "",
-    ]),
-  ].join("\n")
+  ]
+    .filter(Boolean)
+    .join("\n")
 
 const MAX_SEARCH_RESULT_PREVIEW_LINES = 40
 const MAX_SEARCH_RESULT_PREVIEW_BYTES = 8 * 1024
@@ -665,16 +441,18 @@ const renderSearchMarkdown = (
   return markdown
 }
 
-const isCodeChunk = (payload: unknown): payload is CodeChunk => {
-  if (!payload || typeof payload !== "object") return false
-  const chunk = payload as Partial<CodeChunk>
-  return Boolean(chunk.id && chunk.repositoryKey && chunk.file && chunk.content)
-}
-
 const isReviewCodeChunk = (payload: unknown): payload is ReviewCodeChunk => {
-  if (!isCodeChunk(payload)) return false
+  if (!payload || typeof payload !== "object") return false
   const chunk = payload as Partial<ReviewCodeChunk>
-  return Boolean(chunk.repositoryId && chunk.headSha && chunk.reviewRunId)
+  return Boolean(
+    chunk.id &&
+    chunk.repositoryKey &&
+    chunk.file &&
+    chunk.content &&
+    chunk.repositoryId &&
+    chunk.headSha &&
+    chunk.reviewRunId
+  )
 }
 
 export const indexReviewCodebase = async ({
@@ -772,78 +550,5 @@ export const searchReviewCode = async ({
       returnedBytes,
       queryUnits: 1,
     },
-  }
-}
-
-export const getSemanticContext = async ({
-  repository,
-  repositoryKey,
-  ref,
-  diff,
-  qdrant,
-  embed,
-  limit = 5,
-  keepTemporaryRepository = false,
-}: GetSemanticContextInput): Promise<SemanticContextResult> => {
-  const prepared = await prepareRepository({ repository, ref })
-  try {
-    const client = qdrantClient(qdrant)
-    const diffContext = await buildDiffContext({
-      repository: prepared.path,
-      diffFiles: parseUnifiedDiff(diff),
-    })
-    const skip = affectedKeys(diffContext)
-    const chunks = new Map<string, CodeChunk & { score: number }>()
-
-    for (const query of queriesForDiff(diffContext)) {
-      const [vector] = await embed([query.text])
-      const points = await client.search(qdrant.collection, {
-        vector: vector!,
-        limit,
-        with_payload: true,
-        filter: {
-          must: [{ key: "repositoryKey", match: { value: repositoryKey } }],
-        },
-      })
-
-      for (const point of points) {
-        if (!isCodeChunk(point.payload)) continue
-        const chunk = point.payload
-        if (skip.has(`${chunk.file}:file`)) continue
-        if (skip.has(`${chunk.file}:${chunk.startLine}:${chunk.endLine}`))
-          continue
-        if (!chunks.has(chunk.id))
-          chunks.set(chunk.id, { ...chunk, score: point.score })
-        if (chunks.size >= limit) break
-      }
-      if (chunks.size >= limit) break
-    }
-
-    const resultChunks = [...chunks.values()]
-    const markdown = renderSemanticMarkdown({
-      repositoryKey,
-      collection: qdrant.collection,
-      chunks: resultChunks,
-    })
-
-    return {
-      repositoryPath: prepared.path,
-      repositoryKey,
-      collection: qdrant.collection,
-      diffContext,
-      chunks: resultChunks,
-      markdown,
-      stats: {
-        affectedSymbols: diffContext.files.reduce(
-          (total, file) => total + file.affectedSymbols.length,
-          0
-        ),
-        chunks: resultChunks.length,
-        diagnostics: diffContext.diagnostics.length,
-        bytes: Buffer.byteLength(markdown, "utf8"),
-      },
-    }
-  } finally {
-    if (!keepTemporaryRepository) await prepared.cleanup()
   }
 }

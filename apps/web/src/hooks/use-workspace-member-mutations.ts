@@ -24,7 +24,7 @@ export function useInviteWorkspaceMember(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) })
     },
     onError: (err: { value?: { error?: string }; status?: number }) => {
-      const message = err?.value?.error
+      const message = err.value?.error
       if (message === "User not found") {
         toast.error("No account found with that email address")
       } else if (message === "User is already a workspace member") {
@@ -58,7 +58,7 @@ export function useUpdateWorkspaceMember(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) })
     },
     onError: (err: { value?: { error?: string } }) => {
-      const message = err?.value?.error
+      const message = err.value?.error
       toast.error(message ?? "Failed to update member role")
     },
   })
@@ -80,7 +80,7 @@ export function useRemoveWorkspaceMember(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) })
     },
     onError: (err: { value?: { error?: string } }) => {
-      const message = err?.value?.error
+      const message = err.value?.error
       toast.error(message ?? "Failed to remove member")
     },
   })

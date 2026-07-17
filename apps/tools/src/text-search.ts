@@ -1,6 +1,10 @@
 import type { RepositoryCodeIndex } from "./code-index"
 import { discoverRepositoryFiles } from "./discover"
-import { readRepositoryFileBuffer, resolveRepositoryRoot } from "./repository-file"
+import {
+  isBinaryBuffer,
+  readRepositoryFileBuffer,
+  resolveRepositoryRoot,
+} from "./repository-file"
 import { reviewIndexDecision } from "./review-file-policy"
 import type { ScopeDefinition } from "./types"
 
@@ -45,19 +49,6 @@ const MAX_FILE_BYTES = 1024 * 1024
 const DEFAULT_MAX_RESULTS = 50
 const HARD_MAX_RESULTS = 100
 
-const isBinary = (buffer: Buffer) => {
-  if (buffer.includes(0)) return true
-  const sample = buffer.subarray(0, Math.min(buffer.length, 8_000))
-  let suspicious = 0
-  for (const byte of sample) {
-    if (byte === 9 || byte === 10 || byte === 13) continue
-    if (byte >= 32 && byte <= 126) continue
-    if (byte >= 128) continue
-    suspicious += 1
-  }
-  return sample.length > 0 && suspicious / sample.length > 0.3
-}
-
 const safeReadTextFile = async (repository: string, file: string) => {
   try {
     const { buffer } = await readRepositoryFileBuffer({
@@ -65,7 +56,7 @@ const safeReadTextFile = async (repository: string, file: string) => {
       file,
       maxBytes: MAX_FILE_BYTES,
     })
-    if (isBinary(buffer)) return undefined
+    if (isBinaryBuffer(buffer)) return undefined
     return buffer.toString("utf8")
   } catch {
     return undefined
@@ -87,7 +78,7 @@ const filesForSearch = async ({
 const symbolForLine = (
   index: RepositoryCodeIndex | undefined,
   file: string,
-  line: number,
+  line: number
 ): TextSearchSymbol | undefined => {
   const scope = index?.files
     .find((candidate) => candidate.path === file)
@@ -109,15 +100,14 @@ const symbolForLine = (
     : undefined
 }
 
-const renderMatch = (match: TextSearchMatch) => [
+const renderMatch = (match: TextSearchMatch) =>
   `- ${match.file}:${match.line}:${match.column}${
     match.symbol
       ? ` in ${match.symbol.kind} ${
           match.symbol.signature ?? match.symbol.name
         } ${match.symbol.startLine}-${match.symbol.endLine}`
       : ""
-  }`,
-]
+  }`
 
 const renderMarkdown = ({
   query,
@@ -134,7 +124,7 @@ const renderMarkdown = ({
     `Query: ${query}`,
     `Matches: ${matches.length}${truncated ? " (truncated)" : ""}`,
     "",
-    ...matches.flatMap(renderMatch),
+    ...matches.map(renderMatch),
   ].join("\n")
 
 export const searchRepositoryText = async ({
@@ -145,7 +135,10 @@ export const searchRepositoryText = async ({
 }: SearchRepositoryTextInput): Promise<SearchRepositoryTextOutput> => {
   const repository = await resolveRepositoryRoot(inputRepository)
   const needle = query.toLocaleLowerCase()
-  const resultLimit = Math.min(HARD_MAX_RESULTS, Math.max(1, Math.floor(maxResults)))
+  const resultLimit = Math.min(
+    HARD_MAX_RESULTS,
+    Math.max(1, Math.floor(maxResults))
+  )
   const matches: TextSearchMatch[] = []
   let filesSearched = 0
   let filesSkipped = 0

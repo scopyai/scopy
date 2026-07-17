@@ -21,7 +21,6 @@ type EventRecord = {
 }
 
 const safeSegment = (value: string) => value.replace(/[^A-Za-z0-9_.-]/g, "_")
-const runsDir = () => env.REVIEW_RUNS_DIR ?? ".runs"
 const byteLength = (value: unknown) =>
   Buffer.byteLength(
     JSON.stringify(value, createJsonReplacer()) ?? "undefined",
@@ -66,20 +65,13 @@ const createJsonReplacer = () => {
 const stringifyJson = (value: unknown) =>
   `${JSON.stringify(value, createJsonReplacer(), 2)}\n`
 
-export const getReviewDebugRunPath = ({
-  reviewRunId,
-  repo,
-  pullRequest,
-}: Pick<RecorderInput, "reviewRunId" | "repo" | "pullRequest">) =>
-  path.resolve(
-    runsDir(),
-    safeSegment(repo.id),
-    `pr-${pullRequest.number}-${safeSegment(pullRequest.headSha.slice(0, 12))}`,
-    safeSegment(reviewRunId)
-  )
-
 export const createReviewRunRecorder = async (input: RecorderInput) => {
-  const runPath = getReviewDebugRunPath(input)
+  const runPath = path.resolve(
+    env.REVIEW_RUNS_DIR,
+    safeSegment(input.repo.id),
+    `pr-${input.pullRequest.number}-${safeSegment(input.pullRequest.headSha.slice(0, 12))}`,
+    safeSegment(input.reviewRunId)
+  )
   const toolsPath = path.join(runPath, "tools")
   const stepsPath = path.join(runPath, "steps")
   let toolCallCount = 0

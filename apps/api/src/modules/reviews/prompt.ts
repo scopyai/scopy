@@ -561,59 +561,6 @@ const splitFindings = (findings: ReviewFinding[]) => ({
   ),
 })
 
-const renderFindingDetails = (finding: ReviewFinding) =>
-  [
-    `### [${findingLabel(finding)}] ${finding.title}`,
-    "",
-    `Location: \`${finding.file}:${finding.startLine}-${finding.endLine}\``,
-    `Confidence: ${Math.round(finding.confidence * 100)}%`,
-    "",
-    finding.body,
-    "",
-  ].join("\n")
-
-export const renderReviewReport = (report: ReviewReport) => {
-  const sections = [
-    "## Review summary",
-    "",
-    report.summary,
-    "",
-    "## Merge safety",
-    "",
-    `**${scoreLabel(report.mergeSafetyScore)}**`,
-    "",
-    report.mergeSafetyReason,
-    "",
-    "## Findings",
-    "",
-  ]
-
-  if (report.findings.length === 0) {
-    sections.push("No actionable findings.")
-  } else {
-    const { bugFindings, lintFindings } = splitFindings(report.findings)
-    if (bugFindings.length > 0) {
-      sections.push("Bug findings are listed first, ordered by severity.", "")
-      for (const finding of bugFindings) {
-        sections.push(renderFindingDetails(finding))
-      }
-    }
-    if (lintFindings.length > 0) {
-      sections.push(
-        "## Linting rule violations",
-        "",
-        "The findings below come from configured natural-language linting rules.",
-        ""
-      )
-      for (const finding of lintFindings) {
-        sections.push(renderFindingDetails(finding))
-      }
-    }
-  }
-
-  return sections.join("\n").trim()
-}
-
 type InlineReviewPublishStatus =
   | { kind: "not_needed" }
   | { kind: "failed"; error: string }

@@ -34,7 +34,10 @@ function escapeHtml(value: string): string {
 const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"])
 
 function isSafeUrl(url: string): boolean {
-  const cleaned = url.replace(/[\u0000-\u0020]/g, "").toLowerCase()
+  const cleaned = Array.from(url)
+    .filter((character) => character.charCodeAt(0) > 32)
+    .join("")
+    .toLowerCase()
   const scheme = /^([a-z][a-z0-9+.-]*):/.exec(cleaned)
   if (!scheme) return true
   return SAFE_URL_SCHEMES.has(scheme[1])
@@ -68,7 +71,7 @@ const rawPosts = import.meta.glob("../content/blog/*.md", {
   query: "?raw",
   import: "default",
   eager: true,
-}) as Record<string, string>
+})
 
 marked.setOptions({ gfm: true, breaks: false })
 marked.use({

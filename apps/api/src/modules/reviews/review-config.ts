@@ -35,14 +35,8 @@ export const workspaceReviewConfigUpdateSchema = z.object({
   maxReviewChangedLines: maxReviewChangedLinesSchema.optional(),
 })
 
-export const repositoryReviewConfigUpdateSchema = z.object({
-  reviewDrafts: z.boolean().optional(),
-  baseBranchPatterns: z.array(patternSchema).min(1).optional(),
-  pathIncludePatterns: z.array(patternSchema).optional(),
-  pathExcludePatterns: z.array(patternSchema).optional(),
-  naturalLanguageRules: z.array(naturalLanguageRuleSchema).optional(),
-  maxReviewChangedLines: maxReviewChangedLinesSchema.optional(),
-})
+export const repositoryReviewConfigUpdateSchema =
+  workspaceReviewConfigUpdateSchema
 
 export const resolveReviewConfig = (
   workspaceDefaults: ReviewConfigValues | null | undefined,
@@ -66,9 +60,6 @@ export const resolveReviewConfig = (
       defaults.maxReviewChangedLines,
   }
 }
-
-export const hasReviewConfigOverrides = (overrides: ReviewConfigOverrides) =>
-  Object.values(overrides).some((value) => value !== null)
 
 const valuesEqual = <TValue>(left: TValue, right: TValue) =>
   Array.isArray(left) && Array.isArray(right)

@@ -8,8 +8,10 @@ import type {
   ReviewConfigKey,
   ReviewConfigValues,
 } from "@/components/repositories/review-settings-fields"
-import { useWorkspaceReviewConfig } from "@/hooks/use-workspace-review-config"
-import { useUpdateWorkspaceReviewConfig } from "@/hooks/use-update-workspace-review-config"
+import {
+  useWorkspaceReviewConfig,
+  useUpdateWorkspaceReviewConfig,
+} from "@/hooks/use-workspace-review-config"
 
 export function WorkspaceReviewSettings({
   workspaceId,

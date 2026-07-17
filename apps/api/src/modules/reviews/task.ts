@@ -12,7 +12,6 @@ import { calculateReviewCredits } from "@workspace/billing/plans"
 import {
   annotatePullRequestFilesForReview,
   countPullRequestChangedLines,
-  filterPullRequestFiles,
   getDiffSkipReason,
   serializePullRequestFiles,
   serializePullRequestFilesAsUnifiedDiff,
@@ -172,16 +171,12 @@ const buildReviewPreflight = async ({
     installationId: run.pullRequest.repository.workspace.providerInstallationId,
     pullRequestNumber: run.pullRequest.number,
   })
-  const filteredFiles = filterPullRequestFiles(
-    files,
-    effectiveReviewConfig.pathIncludePatterns,
-    effectiveReviewConfig.pathExcludePatterns
-  )
   const visibleFiles = annotatePullRequestFilesForReview(
     files,
     effectiveReviewConfig.pathIncludePatterns,
     effectiveReviewConfig.pathExcludePatterns
   )
+  const filteredFiles = visibleFiles.filter((file) => !file.omittedReason)
   const omittedFiles = visibleFiles.filter((file) => file.omittedReason)
   const diff = serializePullRequestFiles(visibleFiles)
   const unifiedDiff = serializePullRequestFilesAsUnifiedDiff(filteredFiles)

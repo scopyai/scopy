@@ -65,7 +65,7 @@ function getPlanAction(
   if (plan.slug === pendingTier) return "pending"
   if (plan.contactSales) return "contact"
   if (planChangesDisabled) return "none"
-  if (accountTier === "free" && !plan.contactSales) return "subscribe"
+  if (accountTier === "free") return "subscribe"
   if (accountTier === "premium" && plan.slug === "ultra") return "upgrade"
   if (accountTier === "ultra" && plan.slug === "premium") return "downgrade"
   return "none"

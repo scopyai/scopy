@@ -13,7 +13,7 @@ export function useCheckoutBilling(workspaceId: string) {
       return data
     },
     onSuccess: (data) => {
-      if (data?.url) {
+      if (data.url) {
         window.location.href = data.url
       }
     },
@@ -36,7 +36,7 @@ export function useCheckoutCredits(workspaceId: string) {
       return data
     },
     onSuccess: (data) => {
-      if (data?.url) {
+      if (data.url) {
         window.location.href = data.url
       }
     },
@@ -56,7 +56,7 @@ export function usePortalBilling(workspaceId: string) {
       return data
     },
     onSuccess: (data) => {
-      if (data?.url) {
+      if (data.url) {
         window.location.href = data.url
       }
     },
@@ -78,7 +78,7 @@ export function useCancelBilling(workspaceId: string) {
       return data
     },
     onSuccess: async (data) => {
-      toast.success(data?.message ?? "Subscription cancellation scheduled")
+      toast.success(data.message)
       await queryClient.refetchQueries({
         queryKey: billingKeys.all(workspaceId),
       })

@@ -62,7 +62,6 @@ const resourceItems = [
     label: "Docs",
     icon: BookOpenIcon,
     href: "https://docs.scopy.dev",
-    external: true as const,
   },
 ]
 
@@ -124,8 +123,7 @@ function NavSection({
   )
 }
 
-function ResourceSection({ currentPath }: { currentPath: string }) {
-  void currentPath
+function ResourceSection() {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="px-3 py-2 text-sm font-medium text-muted-foreground">
@@ -144,9 +142,7 @@ function ResourceSection({ currentPath }: { currentPath: string }) {
             >
               <Icon className="size-4 shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {"external" in item && item.external && (
-                <ArrowUpRight className="size-4 shrink-0 opacity-60" />
-              )}
+              <ArrowUpRight className="size-4 shrink-0 opacity-60" />
             </a>
           )
         })}
@@ -175,7 +171,7 @@ export function SidebarNav() {
         currentPath={currentPath}
         workspaceSlug={workspaceSlug}
       />
-      <ResourceSection currentPath={currentPath} />
+      <ResourceSection />
     </div>
   )
 }

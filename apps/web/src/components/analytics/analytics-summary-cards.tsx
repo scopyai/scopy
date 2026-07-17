@@ -65,7 +65,7 @@ export function AnalyticsSummaryCards({ summary }: { summary: Summary }) {
         icon={GitPullRequestIcon}
         title="PR Reviews"
         value={summary.totalPrReviews.toLocaleString()}
-        subtitle={`${summary.reviewedPrCount ?? 0} distinct PRs`}
+        subtitle={`${summary.reviewedPrCount} distinct PRs`}
       />
       <SummaryCard
         icon={BugIcon}

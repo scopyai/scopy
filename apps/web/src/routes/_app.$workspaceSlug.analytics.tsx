@@ -8,8 +8,8 @@ import { useRepositories } from "@/hooks/use-repositories"
 import {
   useWorkspaceAnalytics,
   workspaceAnalyticsRanges,
-  type WorkspaceAnalyticsRange,
 } from "@/hooks/use-workspace-analytics"
+import type { WorkspaceAnalyticsRange } from "@/hooks/use-workspace-analytics"
 import { AnalyticsFilters } from "@/components/analytics/analytics-filters"
 import {
   AnalyticsSummaryCards,

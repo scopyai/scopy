@@ -9,7 +9,6 @@ import { Button } from "@workspace/ui/components/button"
 import { PageHeader } from "@/components/page-header"
 import { WorkspaceDocSources } from "@/components/repositories/workspace-doc-sources"
 import { WorkspaceReviewSettings } from "@/components/repositories/workspace-review-settings"
-// import { ByokSettings } from "@/components/billing/byok-settings"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
@@ -65,11 +64,6 @@ function SettingsRoute() {
               workspaceId={selectedWorkspaceId}
               canEdit={canEdit}
             />
-
-            {/* <ByokSettings
-              workspaceId={selectedWorkspaceId}
-              canEdit={canEdit}
-            /> */}
 
             {canEdit ? (
               <WorkspaceDocSources

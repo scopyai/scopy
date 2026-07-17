@@ -275,11 +275,6 @@ function OpenSource() {
           <div className="l-oss-col l-oss-col-self">
             <span className="l-oss-scan" aria-hidden="true" />
             <h3 className="l-oss-col-title">Self-host</h3>
-            {/*<p className="l-oss-col-body">
-              Full source code, MIT licensed. No data leaves your environment.
-              Connect any LLM provider, configure review rules, own the whole
-              stack.
-            </p>*/}
             <ul className="l-oss-list">
               {SELF_HOST_ITEMS.map((item) => (
                 <li key={item}>{item}</li>
@@ -298,10 +293,6 @@ function OpenSource() {
           <div className="l-oss-col l-oss-col-cloud">
             <span className="l-oss-scan" aria-hidden="true" />
             <h3 className="l-oss-col-title">Use Scopy AI in cloud</h3>
-            {/*<p className="l-oss-col-body">
-              Connect GitHub in seconds, pick a plan, and start getting reviews
-              immediately. Compute included – no API keys required.
-            </p>*/}
             <ul className="l-oss-list">
               {CLOUD_ITEMS.map((item) => (
                 <li key={item}>{item}</li>

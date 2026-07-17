@@ -53,7 +53,7 @@ const hasPart = (file: string, parts: Set<string>) =>
 
 export const reviewIndexDecision = (
   file: string,
-  changedFiles = new Set<string>(),
+  changedFiles = new Set<string>()
 ): ReviewIndexDecision => {
   if (
     hasPart(file, hardIgnoredPathParts) ||
@@ -68,8 +68,3 @@ export const reviewIndexDecision = (
 
   return { index: true }
 }
-
-export const shouldReviewIndexFile = (
-  file: string,
-  changedFiles = new Set<string>(),
-) => reviewIndexDecision(file, changedFiles).index
