@@ -10,26 +10,26 @@ AI code review and static analysis are often presented as competing ways to find
 
 Static analysis applies known rules and program analysis to code without running it. AI code review uses a language model to reason about a change, its intent, and the surrounding repository context when the tool provides it.
 
-Static analysis is strongest when a problem can be defined precisely. AI review becomes useful when the problem depends on intent or repository context. I would use both and avoid asking either tool to do work the other handles more reliably.
+Static analysis is strongest when a problem can be defined precisely. AI review becomes useful when the problem depends on intent or repository context. I'd use both and avoid asking either tool to do work the other handles more reliably.
 
 ## The short comparison
 
-| | Static analysis | AI code review |
-|---|---|---|
-| Core approach | Deterministic rules and program analysis | Probabilistic reasoning with a language model |
-| Best at | Known bug patterns, types, data flow, style, security rules | Intent, cross-file context, edge cases, design and repository conventions |
-| Output consistency | Usually highly repeatable | Can vary by model and context |
-| False positives | Often controllable rule by rule | Depends heavily on context, prompting and filtering |
-| Customization | Code, queries or tool-specific configuration | Often natural-language rules and examples |
-| Speed and cost | Usually fast and inexpensive | Slower and incurs model-compute cost |
-| Explainability | Can identify the exact rule and trace | Can explain reasoning, but the explanation is generated |
-| Main limitation | Cannot detect patterns no rule or analysis models | Can be confidently wrong or miss deterministic issues |
+|                    | Static analysis                                             | AI code review                                                            |
+| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Core approach      | Deterministic rules and program analysis                    | Probabilistic reasoning with a language model                             |
+| Best at            | Known bug patterns, types, data flow, style, security rules | Intent, cross-file context, edge cases, design and repository conventions |
+| Output consistency | Usually highly repeatable                                   | Can vary by model and context                                             |
+| False positives    | Often controllable rule by rule                             | Depends heavily on context, prompting and filtering                       |
+| Customization      | Code, queries or tool-specific configuration                | Often natural-language rules and examples                                 |
+| Speed and cost     | Usually fast and inexpensive                                | Slower and incurs model-compute cost                                      |
+| Explainability     | Can identify the exact rule and trace                       | Can explain reasoning, but the explanation is generated                   |
+| Main limitation    | Cannot detect patterns no rule or analysis models           | Can be confidently wrong or miss deterministic issues                     |
 
 ## What counts as static analysis?
 
 Static analysis is a broad category. It includes compilers, type checkers, linters, security scanners and deeper data-flow or taint analysis. Some tools enforce simple repository policies while others can follow untrusted input through several functions to a dangerous sink.
 
-Not every static analyzer is a glorified formatting tool. Advanced analyzers can follow data across functions, model framework behavior and find complex security vulnerabilities. What defines them is not simplicity. It is that their conclusions come from explicit analysis rather than a model's generated reasoning.
+Not every static analyzer is a glorified formatting tool. Advanced analyzers can follow data across functions, model framework behavior and find complex security vulnerabilities. What defines them isn't simplicity – it's that their conclusions come from explicit analysis rather than a model's generated reasoning.
 
 ## What counts as AI code review?
 
@@ -87,13 +87,13 @@ if (account.plan === "free" || account.plan === "trial") {
 }
 ```
 
-The code is syntactically and structurally valid. Whether it is a bug depends on product behavior. AI review can flag the surprising relationship for a human to verify.
+The code is syntactically and structurally valid. Whether it's a bug depends on product behavior. AI review can flag the surprising relationship for a human to verify.
 
 ## Where both can find the same issue
 
 The overlap is real. Both tools may notice missing validation, injection risks, null handling, dead code or a misused library API.
 
-When both can cover a rule reliably, prefer the deterministic tool as the permanent enforcement mechanism. It is faster and does not change its mind after a model update.
+When both can cover a rule reliably, prefer the deterministic tool as the permanent enforcement mechanism. It's faster and doesn't change its mind after a model update.
 
 AI review can still help discover patterns worth converting into static checks. If reviewers repeatedly flag the same mistake, that is a signal to automate it more precisely.
 
@@ -142,6 +142,6 @@ A recurring AI finding is a candidate for deterministic automation. A rare, cont
 
 Static analysis gives engineering teams speed, consistency and proof for known classes of problems. AI code review covers the messier ground between the explicit rules: intent, local architecture, missing cases and surprising behavior.
 
-Do not turn off a reliable analyzer because a model can sometimes spot the same bug. And do not expect a linter to understand every product rule just because it reads your code closely.
+Don't turn off a reliable analyzer just because a model can sometimes spot the same bug, and don't expect a linter to understand every product rule because it happens to read your code closely.
 
 Use the cheapest reliable tool for each problem, and save human attention for the decisions that really need an owner. Next, see how to encode team conventions as [natural-language code review rules](/blog/natural-language-code-review-rules) or apply the [AI-generated code review checklist](/blog/code-review-checklist-ai-generated-code).

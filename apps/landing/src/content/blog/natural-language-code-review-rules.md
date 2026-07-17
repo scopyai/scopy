@@ -6,11 +6,11 @@ author: "Matt, founder"
 tags: "code review rules, AI code review, coding standards, pull requests"
 ---
 
-Every engineering team has rules that are real but not quite formal enough for a linter. Background jobs must be safe to retry, tenant-owned records need workspace scope, and authentication routes should not log request bodies. Usually these rules are enforced by whoever happens to remember them during review.
+Every engineering team has rules that are real but not quite formal enough for a linter. Background jobs must be safe to retry, tenant-owned records need workspace scope, and authentication routes shouldn't log request bodies. Usually these rules are enforced by whoever happens to remember them during review.
 
 These rules often live in review comments, onboarding conversations and the memory of one senior engineer who is, inconveniently, on holiday. Natural-language code review rules let an AI reviewer apply them consistently to every pull request.
 
-Writing a useful rule is not the same as writing a slogan. “Ensure best practices” sounds responsible and tells the reviewer almost nothing. A strong rule describes where it applies, what to detect, why it matters and what exceptions are legitimate.
+Writing a useful rule isn't the same as writing a slogan. “Ensure best practices” sounds responsible and tells the reviewer almost nothing. A strong rule describes where it applies, what to detect, why it matters and what exceptions are legitimate.
 
 ## The anatomy of a good review rule
 
@@ -22,7 +22,7 @@ For example:
 
 > When a database query reads or modifies a workspace-owned record, require the query to be scoped by the current workspace ID, because IDs alone do not enforce tenant isolation. Global administration jobs may omit workspace scope when they use the dedicated admin database client.
 
-The rule now says where it applies, what behavior is expected, why it matters and which exception is legitimate. That is enough context for a useful finding and also enough for an engineer to disagree with it when the exception applies.
+The rule now says where it applies, what behavior is expected, why it matters and which exception is legitimate. That's enough context for a useful finding, and enough for an engineer to disagree with it when the exception applies.
 
 Without an exception, a broadly correct rule can generate confidently irrelevant comments.
 
@@ -82,7 +82,7 @@ That may be too broad for a webhook troubleshooting service whose payloads conta
 
 > Do not log raw request bodies for authentication, billing or user-content endpoints because they may contain credentials or personal data. For signed provider webhooks, log only explicitly allowlisted diagnostic fields.
 
-An exception should be narrow and checkable. “Unless necessary” is not a real exception, because nobody can tell when it applies.
+An exception should be narrow and checkable. “Unless necessary” isn't a real exception, because nobody can tell when it applies.
 
 ## Rule 5: Provide positive and negative examples
 
@@ -180,7 +180,7 @@ Severity guidance stops style preferences from looking as urgent as correctness 
 
 ## Test rules like code
 
-A review rule is not finished when it sounds good. Run it against examples from the repository.
+A review rule isn't finished when it sounds good. Run it against examples from the repository.
 
 Use a few changes the rule should flag, a few similar changes it should leave alone and at least one real exception. For every result, check whether the finding is correct, points to useful evidence and gives the author enough information to act. Ambiguous cases should be allowed to remain human decisions.
 
@@ -188,7 +188,7 @@ Revise the rule when false positives share a pattern. Add scope or an exception 
 
 ## Know when to write a static rule instead
 
-Natural language is not the best tool for every convention. If a violation can be detected exactly and occurs often, enforce it with types, tests, linting or static analysis.
+Natural language isn't the best tool for every convention. If a violation can be detected exactly and occurs often, enforce it with types, tests, linting or static analysis.
 
 Good candidates for deterministic enforcement include:
 

@@ -6,7 +6,7 @@ author: "Matt, founder"
 tags: "self-hosted AI code review, cloud AI code review, privacy, developer tools"
 ---
 
-Choosing between self-hosted and cloud AI code review is not a contest between “secure” and “easy”. Both can be run securely, and both can become awkward when chosen for the wrong reason.
+Choosing between self-hosted and cloud AI code review isn't a contest between “secure” and “easy”. Both can be run securely, and both can become awkward when chosen for the wrong reason.
 
 The actual decision is about control. Who operates the review service? Where is repository data processed? Which model providers can receive it? Who handles upgrades, scaling, logs, encryption and incident response?
 
@@ -37,7 +37,7 @@ Choose a tool that supports **both** when requirements may change or different r
 
 ## Start by mapping the data flow
 
-“Self-hosted” does not automatically mean “no code leaves our network.” The application may run in your VPC while sending prompts to an external model API. Conversely, a cloud service may have enterprise controls and model-provider agreements that meet your requirements.
+“Self-hosted” doesn't automatically mean “no code leaves our network.” The application may run in your VPC while sending prompts to an external model API. Conversely, a cloud service may have enterprise controls and model-provider agreements that meet your requirements.
 
 Draw the complete path for repository data:
 
@@ -78,7 +78,7 @@ Self-hosting can simplify the architecture presented to auditors because infrast
 
 Cloud can be easier when the vendor already provides the agreements, certifications, regions and audit materials your program requires.
 
-Do not choose based on the word “compliant.” Map each concrete requirement to a control and an owner.
+Don't choose based on the word “compliant.” Map each concrete requirement to a control and an owner.
 
 ## Model flexibility
 
@@ -92,7 +92,7 @@ Model freedom matters for more than privacy. It affects review quality, latency,
 
 Cloud review usually requires installing a GitHub App, selecting repositories and configuring rules. The vendor handles queues, scaling, database maintenance, model failover, upgrades and monitoring.
 
-With self-hosting, somebody must own deployment, the database and queue, backups, secret rotation, monitoring and upgrades. Model failures and bursts of pull requests also become your capacity problem. The workload may be small, but it is never zero, so assign an owner before deployment.
+With self-hosting, somebody must own deployment, the database and queue, backups, secret rotation, monitoring and upgrades. Model failures and bursts of pull requests also become your capacity problem. The workload may be small, but it's never zero, so assign an owner before deployment.
 
 ## Cost: include engineering time
 
@@ -100,9 +100,7 @@ Cloud pricing may be per seat, repository, pull request, changed line or model u
 
 The self-hosted bill includes more than compute. Add model usage or inference hardware, storage, observability, backups and the engineering time spent maintaining them. Security review, compliance evidence and delayed upgrades are costs too, even when they never appear on a cloud invoice.
 
-At scale, self-hosting can provide cost control and eliminate per-seat pricing. At smaller scale, one afternoon of infrastructure work may exceed months of subscription fees.
-
-The cheapest invoice is not necessarily the lowest total cost.
+At scale, self-hosting can provide cost control and eliminate per-seat pricing. At smaller scale, one afternoon of infrastructure work may exceed months of subscription fees, so the cheapest invoice isn't always the lowest total cost.
 
 ## Reliability and support
 
@@ -110,7 +108,7 @@ In cloud deployments, the vendor owns service availability and upgrades. Examine
 
 In self-hosted deployments, you control maintenance windows and can keep a known version, but recovery is your responsibility. Before choosing a project, check its releases and migration notes, health checks, backup documentation and rollback process. Reproducible images and some form of support become important the first time an upgrade goes wrong.
 
-Open source gives you the right to fix a problem. It does not guarantee that someone is awake to fix it at 3 a.m.
+Open source gives you the right to fix a problem. It doesn't guarantee someone's awake to fix it at 3 a.m.
 
 ## A decision framework
 
@@ -118,13 +116,13 @@ Score each statement from 0 (“not important”) to 3 (“mandatory”).
 
 ### Signals favoring cloud
 
-Cloud is usually the better fit when you need to start quickly, do not want another production service to operate and are already allowed to use the relevant SaaS and model providers. It also makes sense when vendor support and automatic model evaluation matter more than infrastructure control.
+Cloud is usually the better fit when you need to start quickly, don't want another production service to operate and are already allowed to use the relevant SaaS and model providers. It also makes sense when vendor support and automatic model evaluation matter more than infrastructure control.
 
 ### Signals favoring self-hosting
 
 Self-hosting becomes attractive when repository data must stay in a particular environment, you need a private model or network egress has to be controlled. It is easier to justify when your team already operates the required platform and needs source-level customization, auditability or a fixed version for long periods.
 
-Any mandatory requirement should outweigh a pile of minor conveniences. If code cannot leave a particular network, the scoring exercise is already over.
+Any mandatory requirement should outweigh a pile of minor conveniences. If code can't leave a particular network, the scoring exercise is already over.
 
 ## Questions to ask every vendor or project
 

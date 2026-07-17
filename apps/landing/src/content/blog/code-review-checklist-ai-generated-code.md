@@ -6,17 +6,17 @@ author: "Matt, founder"
 tags: "AI-generated code, code review checklist, pull requests, AI coding"
 ---
 
-AI-generated code deserves the same review standards as human-written code, but it does not always fail in the same way. A person might leave a half-finished function and a TODO comment while an AI assistant is more likely to produce something polished, documented and completely wrong about one important aspect of design.
+AI-generated code deserves the same review standards as human-written code, but it doesn't always fail in the same way. A person might leave a half-finished function and a TODO comment while an AI assistant is more likely to produce something polished, documented and completely wrong about one important aspect of design.
 
 That polish changes the reviewer's job from only looking for broken syntax or untidy code to checking whether convincing code actually matches the system around it.
 
 This checklist is designed for pull requests written partly or entirely with coding agents: Codex, Claude Code, Cursor, GitHub Copilot or anything else. Use it as a template, a prompt for an internal AI reviewer or a final self-review before asking a teammate for their time.
 
-## The five-pass review
+## The core of it
 
-You can review most AI-generated changes in five passes. First, confirm that the code solves the problem that was actually requested. Then verify its assumptions against real APIs and the conventions already present in the repository. Follow the data through the system, inspect security and failure boundaries and finally make the tests prove the behavior.
+Most AI-generated changes come down to a few passes: confirm the code solves the problem that was actually requested, verify its assumptions against real APIs and the conventions already in the repository, follow the data through the system, inspect the security and failure boundaries, and make the tests prove the behavior.
 
-There is one rule beneath all five: somebody on the team must be able to explain the implementation and its trade-offs without asking the generating tool. If nobody can, the team does not really own the change yet and cannot hold responsibility for it.
+One rule sits beneath all of them: somebody on the team must be able to explain the implementation and its trade-offs without asking the generating tool. If nobody can, the team doesn't really own the change yet and can't hold responsibility for it.
 
 ## 1. Start with intent instead of syntax
 
@@ -38,15 +38,15 @@ Language models are very good at producing code that resembles a library’s API
 
 Treat every newly introduced API, command-line flag, environment variable, framework option and cloud permission as a claim that needs verification. Open the documentation or source for the version installed in the repository. Confirm argument order, return types and error behavior because a method that exists in the latest documentation may not exist in the version your project actually uses.
 
-Pay special attention to code that includes a confident explanatory comment. Confidence is not a type check, especially for LLMs.
+Pay special attention to code that includes a confident explanatory comment. Confidence isn't a type check, especially for LLMs.
 
 ## 3. Compare it with the rest of the repository
 
-Generated code is usually optimized for the prompt it received. Your codebase is optimized – or at least slowly negotiated – for conventions the prompt may not contain. As AI does not understand what the pain is, it usually is not able to make architectural decisions oriented far into the future.
+Generated code is usually optimized for the prompt it received. Your codebase is optimized – or at least slowly negotiated – for conventions the prompt may not contain. The agent never felt the pain those conventions came from, so it rarely makes the architectural calls that only pay off years later.
 
-To spot this, search for a similar implementation elsewhere in the repository. See how neighboring routes authenticate users, where validation normally happens, how transactions and errors are handled, and which testing helpers the project already uses. These patterns often contain constraints that were never included in the agent’s prompt and which it could interpret incorrectly when copying is not an option.
+To spot this, search for a similar implementation elsewhere in the repository. See how neighboring routes authenticate users, where validation normally happens, how transactions and errors are handled, and which testing helpers the project already uses. These patterns often encode constraints that were never in the agent’s prompt, and the agent can get them wrong when it can't simply copy an existing example.
 
-Do not reject a different approach merely because it is different. But make the difference deliberate, e.g. a new endpoint should not introduce a second authorization system because the AI assistant did not see the first one. Obvious one here.
+Don't reject a different approach just because it's different, but make the difference deliberate. A new endpoint shouldn't introduce a second authorization system just because the AI assistant never saw the first one.
 
 This is one reason [reviewing only the diff is risky](/blog/why-diff-only-code-review-misses-bugs): the evidence needed to judge a change often lives in files that were not modified.
 
@@ -60,33 +60,33 @@ As you trace it, watch for an old field name surviving in one layer, optional va
 
 ## 5. Review security boundaries explicitly
 
-Instead of asking something like just checking the authentication implementation for a user you usually think “is this user allowed to perform this action on this specific resource?”. And make your AI think so as well through AGENTS.md and other ways to preserve project-specific context.
+Don't stop at "is this user authenticated?. The question that catches real bugs is "is this user allowed to perform this action on this specific resource?", and it's worth pushing your AI toward the same question through AGENTS.md and other project context.
 
-For every important read or write, identify the actor, the resource, its owning tenant and the permission required for accessing it. In my personal experience, most authorization bugs become obvious when one of those relationships has no enforcement point.
+For every important read or write, identify the actor, the resource, its owning tenant and the permission required to touch it. In my experience, most authorization bugs become obvious once one of those relationships has no enforcement point.
 
-Generated code is not inherently insecure. It is simply capable of repeating insecure patterns with really good formatting.
+Generated code isn't inherently insecure. It's just very good at repeating insecure patterns with clean formatting.
 
 ## 6. Attack the failure paths
 
-The happy path is usually the part AI agents handle best. Spend review time where something becomes wrong, where uncomfortable questions are asked.
+The happy path is usually the part AI agents handle best. Spend your review time where things go wrong.
 
 Walk through one inconvenient scenario instead of trying to think about every possible disaster at once. What happens if a database write succeeds but the following API call fails? Then consider atomicity, concurrency, timeouts and retries: can two requests update the same record, or can a queue deliver the same side effect twice? Empty, duplicated and unexpectedly large results are also productive tests because they expose assumptions hidden by normal data.
 
-These are just examples of possible exploration paths you can take - they usually come with experience but it's worth starting early, believe me.
+These are just examples of paths you can explore. The instinct for them usually comes with experience, but it's worth starting early.
 
 ## 7. Make tests prove something
 
 Generated tests can be impressive: many mocks, long names, everything green and very little evidence that it actually adds reliability to your system.
 
-A useful test should fail for the bug it claims to prevent. Temporarily reverse or remove the relevant implementation condition. If the test remains green, it is not worth anything.
+A useful test should fail for the bug it claims to prevent. Temporarily reverse or remove the relevant implementation condition. If the test stays green, it isn't telling you anything.
 
-A test should show that an unauthorized user is rejected, that validation prevents a write, that a retry cannot create a second charge, or that a migration preserves existing values. Those assertions survive refactoring because they describe what the system promises and do not focus on implementation.
+A test should show that an unauthorized user is rejected, that validation prevents a write, that a retry can't create a second charge, or that a migration preserves existing values. Those assertions survive refactoring because they describe what the system promises, not how it happens to be implemented.
 
 ## 8. Remove generated clutter
 
 AI assistants often leave comments that restate the next line, one-use abstractions that complicate the code and broad `try/catch` blocks that hide useful failures. They may also duplicate validation or add a dependency for a few lines of ordinary code.
 
-Remove anything that does not improve correctness, clarity or maintainability. The goal is not to hide that AI helped write the change but to leave the codebase better than it was before.
+Remove anything that doesn't improve correctness, clarity or maintainability. The goal isn't to hide that AI helped write the change, but to leave the codebase better than it was before.
 
 ## A reusable PR checklist
 
@@ -108,6 +108,6 @@ Paste this compact version into your repository’s pull request template:
 
 ## The reviewer still owns the merge
 
-AI can write code, propose tests and perform a useful first review. It cannot accept responsibility for the result. The person approving the pull request remains the final boundary between plausible code and production code.
+AI can write code, propose tests and perform a useful first review. It can't accept responsibility for the result. The person approving the pull request remains the final boundary between plausible code and production code.
 
 Use this checklist to make that responsibility manageable, not ceremonial. For the next step, learn [how AI code review differs from static analysis](/blog/ai-code-review-vs-static-analysis) or create repository-specific checks with [natural-language code review rules](/blog/natural-language-code-review-rules).

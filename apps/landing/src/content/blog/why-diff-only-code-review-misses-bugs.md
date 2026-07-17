@@ -6,13 +6,13 @@ author: "Matt, founder"
 tags: "code review, Git diff, repository context, AI code review"
 ---
 
-A Git diff shows what changed. It does not show everything the change affects, and that difference is responsible for a surprising number of review mistakes.
+A Git diff shows what changed. It doesn't show everything the change affects, and that difference is responsible for a surprising number of review mistakes.
 
-That distinction sounds small until a pull request changes one function and breaks three callers, violates a convention defined elsewhere or passes a value whose unit only becomes obvious two files downstream. The faulty line is visible in the diff; the reason it is faulty is not.
+That distinction sounds small until a pull request changes one function and breaks three callers, violates a convention defined elsewhere or passes a value whose unit only becomes obvious two files downstream. The faulty line is visible in the diff; the reason it's faulty isn't.
 
-Human reviewers compensate by opening related files, following symbols and searching the repository. An AI code reviewer needs to do the same. If the model receives only the patch, better prompting cannot recover a contract that was never included.
+Human reviewers compensate by opening related files, following symbols and searching the repository. An AI code reviewer needs to do the same. If the model receives only the patch, better prompting can't recover a contract that was never included.
 
-Here are the most common classes of bugs a diff cannot explain on its own.
+Here are the most common classes of bugs a diff can't explain on its own.
 
 ## A diff shows edits, not contracts
 
@@ -23,11 +23,11 @@ Consider this change:
 + await reserveCredits(workspace.id, pullRequest.changedLines)
 ```
 
-The new code is valid TypeScript. The names look compatible. Nothing in the diff proves that it is wrong.
+The new code is valid TypeScript. The names look compatible. Nothing in the diff proves it's wrong.
 
 Elsewhere in the repository, however, `reviewableLines` may exclude generated files and ignored paths, while `changedLines` includes everything GitHub reports. The function’s contract expects billable lines, not raw changed lines. A diff-only review sees a tidy refactor; a repository-aware review can see an accidental billing change.
 
-The missing context may be a caller, a type definition, a database constraint or a configuration default. Sometimes it is just a comment explaining why an ugly workaround cannot be removed yet.
+The missing context may be a caller, a type definition, a database constraint or a configuration default. Sometimes it's just a comment explaining why an ugly workaround can't be removed yet.
 
 Code rarely carries its entire meaning on the edited line.
 
@@ -42,7 +42,7 @@ app.delete("/invitations/:id", async ({ params, user }) => {
 })
 ```
 
-Within the diff, the route checks authentication and delegates cleanly. Whether it is secure depends on the service:
+Within the diff, the route checks authentication and delegates cleanly. Whether it's secure depends on the service:
 
 ```ts
 async function remove(id: string) {
@@ -72,7 +72,7 @@ The necessary context lives in the configuration parser or documentation:
 sessionTtl: z.coerce.number().default(3600) // seconds
 ```
 
-Repository context is not merely “more code.” It is the code that defines meaning.
+Repository context isn't merely “more code” – it's the code that gives an edit its meaning.
 
 ## Example 3: A caller depends on an old side effect
 
@@ -100,11 +100,9 @@ const response = await fetch(`/api/repositories/${id}`)
 
 The call may work. But the repository might require a generated, typed API client that attaches authentication, normalizes errors and refreshes expired sessions.
 
-The problem is not visible from the new line. It becomes visible when you search for other API calls.
+The problem isn't visible from the new line. It shows up when you search for other API calls.
 
-The same problem appears when code bypasses a shared authorization helper, uses raw SQL instead of the tenant-scoped repository, or reads environment variables outside the validated configuration module. These are not just style differences. The established helper often holds fixes and constraints you cannot see at the call site.
-
-These are not cosmetic conventions. A plain-looking helper often carries years of accumulated bug fixes.
+The same problem appears when code bypasses a shared authorization helper, uses raw SQL instead of the tenant-scoped repository, or reads environment variables outside the validated configuration module. These aren't just style differences. That plain-looking helper often holds years of accumulated fixes and constraints you can't see at the call site.
 
 ## Example 5: A schema change breaks an unedited consumer
 
@@ -124,7 +122,7 @@ The server diff may update its type and tests. A background worker, CLI package 
 
 This matters most for public APIs, shared packages, migrations, event payloads and queue jobs because their consumers are often far away from the code being edited.
 
-The absence of a changed consumer does not mean there are no consumers. Sometimes it means the pull request forgot them.
+The absence of a changed consumer doesn't mean there are none. Sometimes it means the pull request forgot them.
 
 ## How much context is enough?
 
@@ -132,11 +130,11 @@ The absence of a changed consumer does not mean there are no consumers. Sometime
 
 A better approach works outward from the diff. Start with the whole changed function rather than the edited lines alone, then follow the types it references, the calls that matter and the consumers downstream. Pull in similar code, tests, configuration and schema only when they help explain the behavior under review.
 
-The goal is not the most context. It is the smallest context that still holds the relevant contracts.
+The goal isn't the most context – it's the smallest slice that still holds the relevant contracts.
 
 ## A repository-context checklist for human reviewers
 
-When a change is important, do not stop at the Files Changed tab. Check:
+When a change is important, don't stop at the Files Changed tab. Check:
 
 - Definitions of new or modified types
 - Callers of changed public functions
@@ -148,11 +146,11 @@ When a change is important, do not stop at the Files Changed tab. Check:
 - Documentation or comments describing non-obvious constraints
 - Other packages consuming changed APIs, events or shared types
 
-You do not need to perform a grand tour of the monorepo for every typo. Review depth should follow risk.
+You don't need a grand tour of the monorepo for every typo. Review depth should follow risk.
 
 ## What this means for AI code review
 
-An LLM can only reason from the context it receives. A powerful model with an incomplete view will give you articulate feedback about the wrong boundaries. Better prompting cannot recover a contract that was never provided.
+An LLM can only reason from the context it receives. A powerful model with an incomplete view will give you articulate feedback about the wrong boundaries. No amount of prompting recovers a contract the model never received.
 
 When you evaluate an AI code reviewer, look at what happens before the model is called. Does it get complete functions or just patch fragments? Can it resolve symbols, find callers and include related tests? In a large repository, how does it decide what context is relevant? This retrieval step is a core part of the reviewer, not plumbing you can ignore.
 

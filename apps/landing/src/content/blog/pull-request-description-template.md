@@ -6,9 +6,9 @@ author: "Matt, founder"
 tags: "pull request template, PR description, code review, GitHub"
 ---
 
-A good pull request description is not paperwork. It saves every reviewer from reconstructing the same story from commits, issue comments and whatever they can guess from the diff.
+A good pull request description isn't paperwork. It saves every reviewer from reconstructing the same story from commits, issue comments and whatever they can guess from the diff.
 
-It should explain what changed, why it changed, how it was verified and where the reviewer should spend extra attention. That is usually enough.
+It should explain what changed, why it changed, how it was verified and where the reviewer should spend extra attention. That's usually enough.
 
 This guide gives you a practical pull request description template, examples, and advice for adapting it to your team without turning every three-line fix into an essay.
 
@@ -57,7 +57,7 @@ This guide gives you a practical pull request description template, examples, an
 - [ ] Monitoring or operational impact considered
 ```
 
-Delete sections that genuinely do not apply. Empty ritual is worse than no template because it trains reviewers to ignore the entire description.
+Delete sections that genuinely don't apply. Empty ritual is worse than no template because it trains reviewers to ignore the entire description.
 
 ## What each section is for
 
@@ -86,17 +86,17 @@ Write what was going wrong and who was affected:
 
 That single paragraph helps a reviewer evaluate whether the solution addresses the actual problem. It also helps the engineer investigating this code six months later, who may otherwise assume the strange filter is decorative.
 
-Link the issue or design document, but summarize the essential context in the PR. Links decay, permissions change and reviewers should not need to open seven tabs before understanding the first line.
+Link the issue or design document, but summarize the essential context in the PR. Links decay, permissions change and reviewers shouldn't need to open seven tabs before understanding the first line.
 
 ### Approach: explain decisions, not syntax
 
-Do not narrate every function. Explain the choices a reviewer cannot infer safely: why this layer owns the behavior, why an existing abstraction was not used, how compatibility is preserved or what constraint made the implementation unusual.
+Don't narrate every function. Explain the choices a reviewer can't infer safely: why this layer owns the behavior, why an existing abstraction wasn't used, how compatibility is preserved or what constraint made the implementation unusual.
 
 For example:
 
 > Filtering happens before credits are reserved so retries remain idempotent. I considered filtering inside the billing service, but that service intentionally has no repository-path context.
 
-That gives the reviewer something meaningful to challenge. “Created a function called `filterReviewablePaths`” does not.
+That gives the reviewer something meaningful to challenge. “Created a function called `filterReviewablePaths`” doesn't.
 
 ### How to test: make verification reproducible
 
@@ -119,7 +119,7 @@ Authors know which part of a change made them stare at the ceiling. Tell the rev
 
 Be honest about the part you are least sure about. “Please check the transaction boundary between credit reservation and queueing” is much more useful than asking for a general review. You can also point out that a migration rollback deserves another look or that generated client changes are not the important part of the diff.
 
-This is not an invitation to ignore the rest of the diff. It is a way to allocate scarce reviewer concentration to the highest-risk decisions.
+This isn't an invitation to ignore the rest of the diff. It's a way to point scarce reviewer attention at the highest-risk decisions.
 
 ### Screenshots or output: show observable changes
 
@@ -127,7 +127,7 @@ For UI changes, include before and after screenshots at relevant viewport sizes.
 
 Evidence answers questions faster than saying that the new version definitely works on your machine.
 
-Keep sensitive data out of screenshots and logs. It is easy to forget to blur something, and hard to take it back once it is posted.
+Keep sensitive data out of screenshots and logs. It's easy to forget to blur something, and hard to take it back once it's posted.
 
 ## Example: a weak and strong description
 
@@ -143,7 +143,7 @@ Adds invitation deletion.
 Added tests.
 ```
 
-It is not false, but the reviewer must discover almost everything.
+It's not false, but the reviewer has to discover almost everything.
 
 A stronger version:
 
@@ -258,7 +258,7 @@ A useful rule is: description depth should follow review risk, not line count. A
 
 ## Help AI reviewers by giving them intent
 
-An AI reviewer can inspect the implementation, but it cannot reliably infer unstated product requirements. A precise PR description gives it acceptance criteria, constraints and areas of concern to test against.
+An AI reviewer can inspect the implementation, but it can't reliably infer unstated product requirements. A precise PR description gives it acceptance criteria, constraints and areas of concern to test against.
 
 Good context helps both kinds of reviewer. People spend less time reconstructing intent, an AI reviewer can compare code with the stated behavior, and authors often catch omissions while writing the description. The same text becomes a useful decision record for whoever returns to the code later.
 
