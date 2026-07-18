@@ -1,4 +1,8 @@
-import { readRepositoryFileBuffer, resolveRepositoryRoot } from "./repository-file"
+import {
+  isBinaryBuffer,
+  readRepositoryFileBuffer,
+  resolveRepositoryRoot,
+} from "./repository-file"
 
 export type ReadRepositoryFileInput = {
   repository: string
@@ -23,19 +27,6 @@ const HARD_MAX_LINES = 800
 const MAX_FILE_BYTES = 1024 * 1024
 const MAX_OUTPUT_BYTES = 40 * 1024
 
-const isBinary = (buffer: Buffer) => {
-  if (buffer.includes(0)) return true
-  const sample = buffer.subarray(0, Math.min(buffer.length, 8_000))
-  let suspicious = 0
-  for (const byte of sample) {
-    if (byte === 9 || byte === 10 || byte === 13) continue
-    if (byte >= 32 && byte <= 126) continue
-    if (byte >= 128) continue
-    suspicious += 1
-  }
-  return sample.length > 0 && suspicious / sample.length > 0.3
-}
-
 export const readRepositoryFile = async ({
   repository,
   file,
@@ -50,28 +41,45 @@ export const readRepositoryFile = async ({
   })
   const { buffer } = result
   const normalized = result.file
-  if (isBinary(buffer)) {
+  if (isBinaryBuffer(buffer)) {
     throw new Error(`Repository file appears to be binary: ${normalized}`)
   }
 
   const lines = buffer.toString("utf8").split(/\r?\n/)
   const safeStartLine = Math.max(1, Math.floor(startLine))
-  const safeMaxLines = Math.min(HARD_MAX_LINES, Math.max(1, Math.floor(maxLines)))
-  const selected = lines.slice(safeStartLine - 1, safeStartLine - 1 + safeMaxLines)
-  let content = selected.map((line, index) => `${safeStartLine + index}: ${line}`).join("\n")
-  let truncated = safeStartLine - 1 + safeMaxLines < lines.length || maxLines > HARD_MAX_LINES
+  const safeMaxLines = Math.min(
+    HARD_MAX_LINES,
+    Math.max(1, Math.floor(maxLines))
+  )
+  const selected = lines.slice(
+    safeStartLine - 1,
+    safeStartLine - 1 + safeMaxLines
+  )
+  let content = selected
+    .map((line, index) => `${safeStartLine + index}: ${line}`)
+    .join("\n")
+  let truncated =
+    safeStartLine - 1 + safeMaxLines < lines.length || maxLines > HARD_MAX_LINES
 
-  while (Buffer.byteLength(content, "utf8") > MAX_OUTPUT_BYTES && selected.length > 1) {
+  while (
+    Buffer.byteLength(content, "utf8") > MAX_OUTPUT_BYTES &&
+    selected.length > 1
+  ) {
     selected.pop()
     truncated = true
-    content = selected.map((line, index) => `${safeStartLine + index}: ${line}`).join("\n")
+    content = selected
+      .map((line, index) => `${safeStartLine + index}: ${line}`)
+      .join("\n")
   }
 
   return {
     repositoryPath,
     file: normalized,
     startLine: safeStartLine,
-    endLine: selected.length === 0 ? safeStartLine : safeStartLine + selected.length - 1,
+    endLine:
+      selected.length === 0
+        ? safeStartLine
+        : safeStartLine + selected.length - 1,
     totalLines: lines.length,
     truncated,
     content,

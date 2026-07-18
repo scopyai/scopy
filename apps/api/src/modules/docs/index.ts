@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { protectedRoute } from "../auth"
 import { checkRateLimit } from "../../lib/rate-limit"
-import { requireWorkspaceRole } from "../workspaces/service"
+import { getWorkspaceForUserWithRole } from "../workspaces/service"
 import {
   createWorkspaceDocSource,
   deleteWorkspaceDocSource,
@@ -25,11 +25,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/docs/sources",
     async ({ params, user: currentUser, status }) => {
-      const membership = await requireWorkspaceRole(
+      const membership = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
       if (!membership) {
         return status(404, { error: "Workspace not found" })
       }
@@ -43,11 +43,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
       if (!parsed.success) {
         return status(400, { error: "Invalid doc source" })
       }
-      const membership = await requireWorkspaceRole(
+      const membership = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
       if (!membership) {
         return status(404, { error: "Workspace not found" })
       }
@@ -74,11 +74,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .delete(
     "/:workspaceId/docs/sources/:sourceId",
     async ({ params, user: currentUser, status }) => {
-      const membership = await requireWorkspaceRole(
+      const membership = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
       if (!membership) {
         return status(404, { error: "Workspace not found" })
       }
@@ -95,11 +95,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/docs/sources/:sourceId/crawl",
     async ({ params, user: currentUser, status }) => {
-      const membership = await requireWorkspaceRole(
+      const membership = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
       if (!membership) {
         return status(404, { error: "Workspace not found" })
       }

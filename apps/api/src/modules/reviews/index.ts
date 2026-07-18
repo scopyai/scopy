@@ -93,6 +93,7 @@ import { workerEnv as env } from "../../env"
 import { prepareRepositoryContextForReview } from "./repository-context"
 import { prepareReviewRuntime } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"
+import { textBytes, truncateText } from "./text"
 
 export const REVIEW_MODEL = reviewModels.main
 
@@ -163,17 +164,6 @@ export type ReviewAgentResult = {
   completedAt: string
   durationMs: number
 }
-
-const toolText = (text: string, maxBytes = 20_000) => {
-  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
-  let output = text
-  while (Buffer.byteLength(output, "utf8") > maxBytes) {
-    output = output.slice(0, Math.floor(output.length * 0.9))
-  }
-  return `${output}\n\n[truncated]`
-}
-
-const textBytes = (text: string) => Buffer.byteLength(text, "utf8")
 
 const chunked = <T>(items: T[], size: number) => {
   const chunks: T[][] = []
@@ -611,7 +601,7 @@ export const runReviewAgent = async ({
           })
           const output = {
             ...result.stats,
-            markdown: toolText(result.markdown),
+            markdown: truncateText(result.markdown),
           }
           await recorder.recordToolCall({
             name: `${scope}.locate_text`,
@@ -652,7 +642,7 @@ export const runReviewAgent = async ({
           vectorQueryCount += result.stats.queryUnits
           const output = {
             ...result.stats,
-            markdown: toolText(result.markdown),
+            markdown: truncateText(result.markdown),
           }
           await recorder.recordToolCall({
             name: `${scope}.search_code`,
@@ -990,7 +980,7 @@ export const runReviewAgent = async ({
         routedCandidates.length > 0
           ? `
 
-Already reported findings (do not re-report these or restate their root causes — but the files they live in are proven bug-dense, so look for different defects in those same files as well as everywhere else):
+Already reported findings (do not re-report these or restate their root causes – but the files they live in are proven bug-dense, so look for different defects in those same files as well as everywhere else):
 ${routedCandidates
   .map(
     (candidate) =>
@@ -1605,7 +1595,7 @@ ${task.objective}`
       const entry = patchesByFile.get(file)
       const omitted = omittedByFile.get(file)
       const output = entry
-        ? { file, patch: toolText(serializePullRequestFiles([entry])) }
+        ? { file, patch: truncateText(serializePullRequestFiles([entry])) }
         : omitted
           ? { file, patch: omitted.omittedReason ?? "Patch omitted." }
           : {

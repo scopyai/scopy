@@ -21,17 +21,7 @@ const matchesPattern = (path: string, pattern: string) => {
   return new RegExp(`^${expression}$`).test(path)
 }
 
-export const filterPullRequestFiles = (
-  files: PullRequestFile[],
-  includePatterns: string[],
-  excludePatterns: string[]
-) =>
-  files.filter(
-    (file) =>
-      !getPullRequestFileOmittedReason(file, includePatterns, excludePatterns)
-  )
-
-export const hardExcludePatterns = [
+const hardExcludePatterns = [
   "**/pnpm-lock.yaml",
   "**/package-lock.json",
   "**/yarn.lock",
@@ -77,7 +67,7 @@ export const hardExcludePatterns = [
   "**/vendor/**",
 ]
 
-export const getPullRequestFileOmittedReason = (
+const getPullRequestFileOmittedReason = (
   file: PullRequestFile,
   includePatterns: string[],
   excludePatterns: string[]
@@ -122,7 +112,7 @@ export const annotatePullRequestFilesForReview = (
       : { ...file, omittedReason: undefined }
   })
 
-export const defaultGeneratedPathPatterns = [
+const defaultGeneratedPathPatterns = [
   "**/*.gen.*",
   "**/*.generated.*",
   "**/*_generated.*",

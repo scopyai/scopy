@@ -1,4 +1,5 @@
-import { useState, type ChangeEvent, type KeyboardEvent } from "react"
+import { useState } from "react"
+import type { ChangeEvent, KeyboardEvent } from "react"
 import { ArrowUpIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Textarea } from "@workspace/ui/components/textarea"

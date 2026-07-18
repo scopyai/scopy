@@ -100,14 +100,8 @@ export const fillDailyBuckets = (
 const parseNumber = (value: number | string | null | undefined) =>
   value == null ? 0 : Number(value)
 
-const parseRepositoryIds = (repositoryIds: string | undefined) =>
-  (repositoryIds ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean)
-
-const parseAuthorIds = (authorIds: string | undefined) =>
-  (authorIds ?? "")
+const parseIds = (value: string | undefined) =>
+  (value ?? "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean)
@@ -116,10 +110,8 @@ const getRepositoryFilter = async (
   workspaceId: string,
   repositoryIds: string | undefined,
 ) => {
-  const selectedRepositoryIds = parseRepositoryIds(repositoryIds)
-  if (selectedRepositoryIds.length === 0) {
-    return { selectedRepositoryIds: null }
-  }
+  const selectedRepositoryIds = parseIds(repositoryIds)
+  if (selectedRepositoryIds.length === 0) return null
 
   const uniqueIds = [...new Set(selectedRepositoryIds)]
   const rows = await db
@@ -136,15 +128,7 @@ const getRepositoryFilter = async (
     throw new AnalyticsError("Invalid repository filter")
   }
 
-  return { selectedRepositoryIds: uniqueIds }
-}
-
-const getAuthorFilter = (authorIds: string | undefined) => {
-  const selectedAuthorIds = [...new Set(parseAuthorIds(authorIds))]
-  return {
-    selectedAuthorIds:
-      selectedAuthorIds.length > 0 ? selectedAuthorIds : null,
-  }
+  return uniqueIds
 }
 
 const withRepositoryFilter = (
@@ -526,11 +510,12 @@ export const getWorkspaceAnalytics = async ({
   authorIds?: string
   now?: Date
 }) => {
-  const { selectedRepositoryIds } = await getRepositoryFilter(
+  const selectedRepositoryIds = await getRepositoryFilter(
     workspaceId,
     repositoryIds,
   )
-  const { selectedAuthorIds } = getAuthorFilter(authorIds)
+  const authors = [...new Set(parseIds(authorIds))]
+  const selectedAuthorIds = authors.length ? authors : null
   const window = resolveAnalyticsWindow(range, now)
   const { start, end } = window
 

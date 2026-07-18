@@ -20,7 +20,6 @@ export function useWorkspaceDocSources(workspaceId: string | null | undefined) {
       return data
     },
     enabled: !!session && !!workspaceId,
-    // Live-update statuses while a crawl is queued or running.
     refetchInterval: (query) => {
       const sources = query.state.data
       const active = sources?.some(
@@ -54,10 +53,10 @@ export function useCreateWorkspaceDocSource(workspaceId: string) {
       queryClient.invalidateQueries({
         queryKey: docSourceKeys.all(workspaceId),
       })
-      toast.success("Documentation source added — crawling started")
+      toast.success("Documentation source added – crawling started")
     },
     onError: (err: { value?: { error?: string } }) => {
-      toast.error(err?.value?.error ?? "Failed to add documentation source")
+      toast.error(err.value?.error ?? "Failed to add documentation source")
     },
   })
 }
@@ -80,7 +79,7 @@ export function useDeleteWorkspaceDocSource(workspaceId: string) {
       })
     },
     onError: (err: { value?: { error?: string } }) => {
-      toast.error(err?.value?.error ?? "Failed to remove documentation source")
+      toast.error(err.value?.error ?? "Failed to remove documentation source")
     },
   })
 }
@@ -104,7 +103,7 @@ export function useCrawlWorkspaceDocSource(workspaceId: string) {
       toast.success("Recrawl started")
     },
     onError: (err: { value?: { error?: string } }) => {
-      toast.error(err?.value?.error ?? "Failed to start recrawl")
+      toast.error(err.value?.error ?? "Failed to start recrawl")
     },
   })
 }

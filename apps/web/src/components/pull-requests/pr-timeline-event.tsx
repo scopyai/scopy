@@ -292,7 +292,6 @@ export function PullRequestTimelineEvent({
   isLast,
 }: TimelineEventProps) {
   const isCompact = eventType === "lifecycle"
-  // Review events with no body render a single inline line; centre the avatar on it.
   const isInlineRow = eventType === "review" && !body
 
   return (
@@ -303,7 +302,6 @@ export function PullRequestTimelineEvent({
         isInlineRow && "items-center"
       )}
     >
-      {/* Vertical connector — starts at centre of this node, ends at centre of next */}
       {!isLast && (
         <div
           className="absolute left-3 top-3 -bottom-3 w-px bg-border"
@@ -311,7 +309,6 @@ export function PullRequestTimelineEvent({
         />
       )}
 
-      {/* Node — both types are size-6 (24 px) so the line centre (left-3 = 12 px) is always correct */}
       <div
         className={cn(
           "relative z-10 flex size-6 shrink-0 items-center justify-center",
@@ -322,16 +319,15 @@ export function PullRequestTimelineEvent({
         ) : (
           <Avatar size="sm">
             {author?.avatarUrl && (
-              <AvatarImage src={author.avatarUrl} alt={author?.login ?? ""} />
+              <AvatarImage src={author.avatarUrl} alt={author.login} />
             )}
             <AvatarFallback>
-              {author?.login?.[0]?.toUpperCase()}
+              {author?.login[0]?.toUpperCase()}
             </AvatarFallback>
           </Avatar>
         )}
       </div>
 
-      {/* Event content — bottom gap lives on the outer row, not here */}
       <div className="min-w-0 flex-1">
         {eventType === "lifecycle" && (
           <LifecycleEvent action={action} author={author} />

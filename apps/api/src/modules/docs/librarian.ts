@@ -63,7 +63,7 @@ You are given the documentation table of contents. Use tools to read pages or se
 
 Rules:
 - Base every claim on documentation you actually read via tools in this conversation. Never answer from prior knowledge.
-- Prefer search_docs for exact API names, config keys, or error strings; it returns matching sections with their heading — pass that url and heading to read_doc_page to read the section. Use read_doc_page without heading only when the table of contents already points at the right page.
+- Prefer search_docs for exact API names, config keys, or error strings; it returns matching sections with their heading – pass that url and heading to read_doc_page to read the section. Use read_doc_page without heading only when the table of contents already points at the right page.
 - Cite every page you relied on: exact url, page title, and a short verbatim excerpt supporting the answer.
 - If the documentation does not answer the question, return found: false and say what is missing. Do not guess.
 - Distinguish documented absence from absence of documentation. State that something is NOT the case only when a document explicitly says so; when the pages you read simply do not address the question, say "the documentation I read does not address X" - never phrase your own unsuccessful search as a documented "no". The consumer treats these very differently: one refutes a claim, the other merely leaves it unverified.
@@ -177,7 +177,7 @@ export const queryDocsLibrarian = async (
   const toc = tocEntries
     .map(
       (entry) =>
-        `${entry.section ? `[${entry.section}] ` : ""}${entry.title} — ${entry.url}${entry.description ? ` — ${entry.description}` : ""}`
+        `${entry.section ? `[${entry.section}] ` : ""}${entry.title} – ${entry.url}${entry.description ? ` – ${entry.description}` : ""}`
     )
     .join("\n")
 

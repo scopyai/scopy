@@ -38,10 +38,6 @@ export const auth = betterAuth({
   },
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
-      if (ctx.path.startsWith("/sign-up")) {
-        return
-      }
-
       const newSession = ctx.context.newSession
       if (!newSession || !isLoginPath(ctx.path)) {
         return

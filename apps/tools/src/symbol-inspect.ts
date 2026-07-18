@@ -83,16 +83,18 @@ export type InspectSymbolResult = {
   diagnostics: Diagnostic[]
 }
 
-const compareLocations = <T extends { file: string; line: number; column: number }>(
+const compareLocations = <
+  T extends { file: string; line: number; column: number },
+>(
   a: T,
-  b: T,
+  b: T
 ) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column
 
 const sourceFor = (
   index: RepositoryCodeIndex,
   file: string,
   startLine: number,
-  endLine: number,
+  endLine: number
 ) => {
   const source = index.sourceByFile.get(file)
   return source ? lineSlice(source, startLine, endLine) : undefined
@@ -101,7 +103,7 @@ const sourceFor = (
 const parentClassScopeFor = (
   index: RepositoryCodeIndex,
   scopeId: string | undefined,
-  includeSource: boolean,
+  includeSource: boolean
 ): InspectedScope | undefined => {
   let current = scopeId ? index.scopesById.get(scopeId) : undefined
   while (current?.parentScopeId) {
@@ -136,16 +138,17 @@ const inspectDefinition = (
   }: {
     includeDefinitionSource: boolean
     includeParentSource: boolean
-  },
+  }
 ): InspectedDefinition => {
   const scope = scopeForSymbol(index, definition)
   return {
     ...definition,
     startLine: scope?.startLine,
     endLine: scope?.endLine,
-    source: includeDefinitionSource && scope
-      ? sourceFor(index, definition.file, scope.startLine, scope.endLine)
-      : undefined,
+    source:
+      includeDefinitionSource && scope
+        ? sourceFor(index, definition.file, scope.startLine, scope.endLine)
+        : undefined,
     parentScope: parentClassScopeFor(index, scope?.id, includeParentSource),
   }
 }
@@ -164,13 +167,15 @@ const inspectCallSite = (
     confidence: Confidence
     enclosingSymbolId?: string
   },
-  includeCallerDefinitions: boolean,
+  includeCallerDefinitions: boolean
 ): InspectedCallSite => {
   const source = index.sourceByFile.get(call.file)
   const enclosing = call.enclosingSymbolId
     ? index.symbolsById.get(call.enclosingSymbolId)
     : undefined
-  const enclosingScope = enclosing ? scopeForSymbol(index, enclosing) : undefined
+  const enclosingScope = enclosing
+    ? scopeForSymbol(index, enclosing)
+    : undefined
 
   return {
     id: call.id,
@@ -202,7 +207,7 @@ const inspectCallSite = (
                   index,
                   enclosing.file,
                   enclosingScope.startLine,
-                  enclosingScope.endLine,
+                  enclosingScope.endLine
                 )
               : undefined,
         }
@@ -231,7 +236,7 @@ export const inspectSymbolInIndex = ({
     (diagnostic) =>
       diagnostic.kind !== "ambiguous-call" ||
       diagnostic.message.includes(`'${symbol}'`) ||
-      diagnostic.message.includes(`"${symbol}"`),
+      diagnostic.message.includes(`"${symbol}"`)
   )
   const definitions = index.graph.symbols
     .filter((definition) => definition.name === symbol)
@@ -240,7 +245,7 @@ export const inspectSymbolInIndex = ({
       inspectDefinition(index, definition, {
         includeDefinitionSource,
         includeParentSource,
-      }),
+      })
     )
 
   const result: InspectSymbolResult = {
@@ -257,7 +262,7 @@ export const inspectSymbolInIndex = ({
       directCallers: index.graph.edges
         .filter((edge) => edge.calleeSymbolId === definition.id)
         .map((edge) =>
-          inspectCallSite(index, edge.callSite, includeCallerDefinitions),
+          inspectCallSite(index, edge.callSite, includeCallerDefinitions)
         )
         .sort(compareLocations),
     }))
@@ -273,30 +278,6 @@ export const inspectSymbolInIndex = ({
   return result
 }
 
-const buildSymbolInspection = async ({
-  repository,
-  symbol,
-  includeCallers = false,
-  includeDefinitionSource = false,
-  includeParentSource = false,
-  includeCallerDefinitions = false,
-  includeUnresolved = true,
-}: Omit<
-  InspectSymbolInput,
-  "ref" | "keepTemporaryRepository"
->): Promise<InspectSymbolResult> => {
-  const index = await buildRepositoryCodeIndex({ repository })
-  return inspectSymbolInIndex({
-    index,
-    symbol,
-    includeCallers,
-    includeDefinitionSource,
-    includeParentSource,
-    includeCallerDefinitions,
-    includeUnresolved,
-  })
-}
-
 export const inspectSymbol = async ({
   repository,
   symbol,
@@ -310,8 +291,9 @@ export const inspectSymbol = async ({
 }: InspectSymbolInput): Promise<InspectSymbolResult> => {
   const prepared = await prepareRepository({ repository, ref })
   try {
-    return await buildSymbolInspection({
-      repository: prepared.path,
+    const index = await buildRepositoryCodeIndex({ repository: prepared.path })
+    return inspectSymbolInIndex({
+      index,
       symbol,
       includeCallers,
       includeDefinitionSource,

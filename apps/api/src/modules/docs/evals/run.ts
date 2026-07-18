@@ -187,7 +187,7 @@ const main = async () => {
   }
   for (const slug of librariesWithoutCorpus) {
     console.warn(
-      `WARN: no active corpus for "${slug}" — its cases will be skipped`
+      `WARN: no active corpus for "${slug}" – its cases will be skipped`
     )
   }
 

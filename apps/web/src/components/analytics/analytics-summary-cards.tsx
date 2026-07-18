@@ -20,7 +20,7 @@ function formatMergeTime(
   hours: number | null,
   days: number | null,
 ): string {
-  if (hours === null) return "—"
+  if (hours === null) return "–"
   if (days !== null && days >= 1) {
     return `${days.toFixed(1)}d`
   }
@@ -65,7 +65,7 @@ export function AnalyticsSummaryCards({ summary }: { summary: Summary }) {
         icon={GitPullRequestIcon}
         title="PR Reviews"
         value={summary.totalPrReviews.toLocaleString()}
-        subtitle={`${summary.reviewedPrCount ?? 0} distinct PRs`}
+        subtitle={`${summary.reviewedPrCount} distinct PRs`}
       />
       <SummaryCard
         icon={BugIcon}

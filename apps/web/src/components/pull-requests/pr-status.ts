@@ -19,15 +19,6 @@ export type PullRequestLifecycleAction =
   | "ready_for_review"
   | "converted_to_draft"
 
-export const PULL_REQUEST_LIFECYCLE_ACTIONS = [
-  "opened",
-  "closed",
-  "reopened",
-  "merged",
-  "ready_for_review",
-  "converted_to_draft",
-] as const satisfies readonly PullRequestLifecycleAction[]
-
 const GREEN_ICON = "text-green-500"
 const GREEN_BADGE =
   "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"

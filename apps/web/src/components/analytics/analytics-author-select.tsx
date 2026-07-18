@@ -85,7 +85,7 @@ export function AnalyticsAuthorSelect({
                   alt={selectedAuthor.login}
                 />
                 <AvatarFallback className="text-[10px]">
-                  {selectedAuthor.login[0]?.toUpperCase()}
+                  {selectedAuthor.login[0].toUpperCase()}
                 </AvatarFallback>
               </Avatar>
             )}
@@ -160,7 +160,7 @@ function AuthorOption({
           <Avatar className="size-5">
             <AvatarImage src={avatarUrl} alt={label} />
             <AvatarFallback className="text-[10px]">
-              {label[0]?.toUpperCase()}
+              {label[0].toUpperCase()}
             </AvatarFallback>
           </Avatar>
         )}

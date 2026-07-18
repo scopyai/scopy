@@ -88,7 +88,7 @@ function ManageTeamRoute() {
             <WorkspaceMembers
               workspaceId={selectedWorkspaceId}
               currentUserId={session.user.id}
-              currentUserRole={selectedEntry.role as "owner" | "admin" | "member"}
+              currentUserRole={selectedEntry.role}
             />
           )}
 

@@ -9,7 +9,6 @@ import {
 import { env } from "../../env"
 
 export const MICRO_USD_PER_USD = 1_000_000
-export const MICROCENTS_PER_USD = MICRO_USD_PER_USD
 const BYTES_PER_GIB = 1024 ** 3
 const BYTES_PER_TIB = 1024 ** 4
 
@@ -20,8 +19,6 @@ export const usdToMicroUsd = (usd: number) => {
   if (!Number.isFinite(usd) || usd < 0) return null
   return Math.ceil(usd * MICRO_USD_PER_USD)
 }
-
-export const usdToMicrocents = usdToMicroUsd
 
 export const calculateVectorWriteCostMicrocents = (bytes: number) =>
   Number(

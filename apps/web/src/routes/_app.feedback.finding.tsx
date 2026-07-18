@@ -59,7 +59,7 @@ function truncate(value: string, maxLength: number) {
 function buildFeedbackMessage(finding: Finding, note: string) {
   const normalizedNote = truncate(note.trim(), USER_NOTE_MAX_LENGTH)
   const prefix = [
-    `Finding feedback — ${finding.repo}`,
+    `Finding feedback – ${finding.repo}`,
     `${finding.file} [${finding.severity}]`,
     finding.title,
     "",

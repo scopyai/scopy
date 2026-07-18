@@ -111,7 +111,7 @@ function OnboardingOverviewPage() {
             <CardTitle>What to expect</CardTitle>
             <CardDescription>
               Scopy runs in the background and keeps feedback where your team
-              already works — on the pull request.
+              already works – on the pull request.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">

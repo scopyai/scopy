@@ -24,6 +24,7 @@ import {
 } from "../../db/schema"
 import { reviewAgentConfig } from "./config"
 import type { ReviewRunRecorder } from "./debug-run"
+import { textBytes, truncateText } from "./text"
 
 type Repository = typeof repository.$inferSelect
 type PullRequest = typeof pullRequest.$inferSelect
@@ -49,17 +50,6 @@ export type PreparedRepositoryContext = {
   baseSha: string
   billingGeneration?: unknown
 }
-
-const toolText = (text: string, maxBytes = 90_000) => {
-  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
-  let output = text
-  while (Buffer.byteLength(output, "utf8") > maxBytes) {
-    output = output.slice(0, Math.floor(output.length * 0.9))
-  }
-  return `${output}\n\n[truncated]`
-}
-
-const textBytes = (text: string) => Buffer.byteLength(text, "utf8")
 
 const moduleKeyForFile = (file: string) => {
   const parts = file.split("/")
@@ -270,7 +260,7 @@ const createRepositoryTools = ({
       })
       const output = {
         ...result.stats,
-        markdown: toolText(result.markdown),
+        markdown: truncateText(result.markdown, 90_000),
       }
       await recorder.recordToolCall({
         name: "repository_context.locate_text",

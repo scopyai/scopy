@@ -58,7 +58,7 @@ function OnboardingUsagePage() {
 
         {billingPending ? (
           <Skeleton className="h-80 w-full rounded-xl" />
-        ) : billingError || !billing ? (
+        ) : billingError ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-card p-6 text-center">
             <p className="text-sm text-muted-foreground">
               Plan details could not be loaded.
@@ -80,7 +80,7 @@ function OnboardingUsagePage() {
               accountTier={billing.account.tier}
               pendingTier={billing.account.pendingTier}
               planChangesDisabled={billing.account.cancelAtPeriodEnd}
-              isOwner={isOwner ?? false}
+              isOwner={isOwner}
               workspaceId={activeWorkspace.id}
             />
 

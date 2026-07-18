@@ -15,8 +15,8 @@ import { listGitHubInstallationRepositories } from "../github/service"
 import {
   getWorkspaceMembershipForUser,
   inviteWorkspaceMemberByEmail,
-  requireWorkspaceForUser,
-  requireWorkspaceRole,
+  getWorkspaceForUser,
+  getWorkspaceForUserWithRole,
   syncWorkspaceRepositories,
 } from "./service"
 import { syncRepositoryPullRequests } from "../pull-requests/service"
@@ -99,10 +99,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       .orderBy(asc(workspace.name))
   })
   .get("/:workspaceId", async ({ params, user: currentUser, status }) => {
-    const workspaceWithRole = await requireWorkspaceForUser(
+    const workspaceWithRole = await getWorkspaceForUser(
       params.workspaceId,
       currentUser.id
-    ).catch(() => null)
+    )
 
     if (!workspaceWithRole) {
       return status(404, { error: "Workspace not found" })
@@ -113,10 +113,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/github-links",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -150,11 +150,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid workspace update" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -175,10 +175,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/review-config",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -196,11 +196,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid review config update" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -238,11 +238,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
     }
   )
   .delete("/:workspaceId", async ({ params, user: currentUser, status }) => {
-    const workspaceWithRole = await requireWorkspaceRole(
+    const workspaceWithRole = await getWorkspaceForUserWithRole(
       params.workspaceId,
       currentUser.id,
       ["owner"]
-    ).catch(() => null)
+    )
 
     if (!workspaceWithRole) {
       return status(404, { error: "Workspace not found" })
@@ -253,10 +253,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/members",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -300,11 +300,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid member invite" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -425,11 +425,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid member update" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -487,11 +487,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .delete(
     "/:workspaceId/members/:memberId",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -539,11 +539,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
     }
   )
   .post("/:workspaceId/sync", async ({ params, user: currentUser, status }) => {
-    const workspaceWithRole = await requireWorkspaceRole(
+    const workspaceWithRole = await getWorkspaceForUserWithRole(
       params.workspaceId,
       currentUser.id,
       ["owner", "admin"]
-    ).catch(() => null)
+    )
 
     if (!workspaceWithRole) {
       return status(404, { error: "Workspace not found" })
@@ -567,10 +567,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories",
     async ({ params, user: currentUser, query, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -609,11 +609,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid onboarding repository selection" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -683,10 +683,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -715,11 +715,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid repository update" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -777,10 +777,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId/pull-requests",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -808,11 +808,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/repositories/:repositoryId/pull-requests/sync",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -844,10 +844,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -896,10 +896,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId/review-config",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUser(
         params.workspaceId,
         currentUser.id
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -931,11 +931,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid review config update" })
       }
 
-      const workspaceWithRole = await requireWorkspaceRole(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
-      ).catch(() => null)
+      )
 
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })

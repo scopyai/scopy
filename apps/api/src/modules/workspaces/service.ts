@@ -46,31 +46,15 @@ export const getWorkspaceForUser = async (
   return rows[0] ?? null
 }
 
-export const requireWorkspaceForUser = async (
-  workspaceId: string,
-  userId: string
-) => {
-  const workspaceWithRole = await getWorkspaceForUser(workspaceId, userId)
-
-  if (!workspaceWithRole) {
-    throw new Error("Workspace not found")
-  }
-
-  return workspaceWithRole
-}
-
-export const requireWorkspaceRole = async (
+export const getWorkspaceForUserWithRole = async (
   workspaceId: string,
   userId: string,
   roles: WorkspaceMemberRole[]
 ) => {
-  const workspaceWithRole = await requireWorkspaceForUser(workspaceId, userId)
-
-  if (!roles.includes(workspaceWithRole.role)) {
-    throw new Error("Insufficient workspace permissions")
-  }
-
-  return workspaceWithRole
+  const workspaceWithRole = await getWorkspaceForUser(workspaceId, userId)
+  return workspaceWithRole && roles.includes(workspaceWithRole.role)
+    ? workspaceWithRole
+    : null
 }
 
 export const getWorkspaceMembershipForUser = async (

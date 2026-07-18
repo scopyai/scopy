@@ -75,11 +75,6 @@ function LoginPage() {
 
   useEffect(() => {
     if (!shouldRedirect) return
-    // Client-side (SPA) navigation — NOT window.location.href. A hard reload
-    // would re-initialize the auth store and re-race the cross-origin session
-    // fetch, which can flap null<->present between _app and /login and cause a
-    // reload loop. Parse the query string so search params (e.g. ?data=) are
-    // preserved through the typed router.
     const url = new URL(safeRedirect, window.location.origin)
     navigate({
       to: url.pathname,

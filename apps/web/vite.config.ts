@@ -1,5 +1,5 @@
 import { defineConfig } from "vite"
-// import { devtools } from "@tanstack/devtools-vite"
+import type { UserConfig } from "vite"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { cloudflare } from "@cloudflare/vite-plugin"
 
@@ -9,9 +9,8 @@ import tailwindcss from "@tailwindcss/vite"
 const config = defineConfig({
   resolve: {
     tsconfigPaths: true,
-  } as import("vite").UserConfig["resolve"],
+  } as UserConfig["resolve"],
   plugins: [
-    // devtools(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),
     tailwindcss(),
     tanstackStart(),

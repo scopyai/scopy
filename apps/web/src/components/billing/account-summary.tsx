@@ -57,7 +57,7 @@ export function AccountSummary({
 
         {account.cancelAtPeriodEnd && account.periodEnd && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-            Subscription cancelled — access until{" "}
+            Subscription cancelled – access until{" "}
             <span className="font-medium">
               {formatPeriodEnd(account.periodEnd)}
             </span>

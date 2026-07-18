@@ -82,7 +82,7 @@ function RepositoriesList({
   const handleSync = async () => {
     try {
       const result = await syncWorkspace.mutateAsync()
-      toast.success(`Synced ${result?.synced ?? 0} repositories`)
+      toast.success(`Synced ${result.synced} repositories`)
     } catch {
       toast.error("Failed to sync repositories")
     }
@@ -121,7 +121,7 @@ function RepositoriesList({
     })
   }
 
-  if (isPending && repos === undefined) {
+  if (isPending) {
     return (
       <div className="flex flex-col gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
