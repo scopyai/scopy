@@ -1,0 +1,62 @@
+@media (min-width: 48rem) {
+  .app-sidebar {
+    width: var(--sidebar-width, 260px);
+    min-width: 64px;
+    max-width: 360px;
+    container: app-sidebar / inline-size;
+  }
+
+  .sidebar-resizer::after {
+    position: absolute;
+    inset-block: 0;
+    left: 50%;
+    width: 1px;
+    content: "";
+    background: color-mix(in oklab, var(--foreground) 28%, transparent);
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .sidebar-resizer[data-active]::after,
+  .sidebar-resizer:focus-visible::after {
+    opacity: 0.45;
+  }
+
+  .sidebar-resizer[data-active] {
+    cursor: col-resize;
+  }
+
+  .sidebar-resizer[data-dragging]::after {
+    opacity: 0.75;
+  }
+}
+
+@container app-sidebar (max-width: 130px) {
+  .sidebar-copy,
+  .sidebar-end-icon,
+  .sidebar-expanded-only,
+  .sidebar-section-title {
+    display: none !important;
+  }
+
+  .sidebar-collapsed-only {
+    display: inline-flex !important;
+  }
+
+  .sidebar-item,
+  .sidebar-trigger,
+  .sidebar-user {
+    justify-content: center;
+  }
+
+  .sidebar-item,
+  .sidebar-user {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .sidebar-item {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+}

@@ -58,7 +58,7 @@ function SettingsRoute() {
       <PageHeader icon={Settings2Icon} title="Settings" />
 
       {selectedWorkspaceId ? (
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
           <div className="flex flex-col gap-6">
             <WorkspaceReviewSettings
               workspaceId={selectedWorkspaceId}

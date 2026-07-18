@@ -9,6 +9,7 @@ import {
   AlertDialogTrigger,
 } from "@workspace/ui/components/alert-dialog"
 import { Button } from "@workspace/ui/components/button"
+import { LifeBuoyIcon } from "lucide-react"
 import { toast } from "sonner"
 
 const supportEmail = "support@scopy.dev"
@@ -26,8 +27,14 @@ export function SidebarSupport() {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full">
-          Support
+        <Button
+          variant="outline"
+          size="sm"
+          className="sidebar-item w-full"
+          title="Support"
+        >
+          <LifeBuoyIcon className="sidebar-collapsed-only hidden" />
+          <span className="sidebar-copy">Support</span>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent className="sm:max-w-sm">

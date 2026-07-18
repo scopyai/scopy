@@ -24,19 +24,25 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import { cn } from "@workspace/ui/lib/utils"
 import { authClient } from "@/lib/auth-client"
 import { useMeUser } from "@/hooks/use-me"
 
-export function UserMenu() {
+export function UserMenu({ compact = false }: { compact?: boolean }) {
   const { data: session, isPending: sessionPending } = authClient.useSession()
   const { data: user } = useMeUser()
   const { theme, setTheme } = useTheme()
 
   if (sessionPending) {
     return (
-      <div className="flex items-center gap-2 p-2">
+      <div
+        className={cn(
+          "sidebar-user flex items-center gap-2 p-2",
+          compact && "justify-center"
+        )}
+      >
         <Skeleton className="size-7 rounded-full" />
-        <Skeleton className="h-4 w-32" />
+        {!compact && <Skeleton className="sidebar-copy h-4 w-32" />}
       </div>
     )
   }
@@ -48,18 +54,40 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-base transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+        <button
+          className={cn(
+            "sidebar-user flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-base transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            compact && "w-10 justify-center px-0"
+          )}
+          title={user?.name ?? displayName}
+        >
           <Avatar size="sm">
             <AvatarImage src={avatarUrl} alt={displayName} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          <span className="min-w-0 flex-1 truncate font-medium">
+          <span
+            className={cn(
+              "sidebar-copy min-w-0 flex-1 truncate font-medium",
+              compact && "hidden"
+            )}
+          >
             {user?.name ?? displayName}
           </span>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground/60" />
+          <ChevronsUpDown
+            className={cn(
+              "sidebar-end-icon size-3.5 shrink-0 text-muted-foreground/60",
+              compact && "hidden"
+            )}
+          />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" sideOffset={6}>
+      <DropdownMenuContent
+        side={compact ? "bottom" : "top"}
+        align={compact ? "end" : "start"}
+        sideOffset={8}
+        collisionPadding={8}
+        className="max-h-[calc(100svh-4rem)] w-[calc(100vw-1rem)] max-w-[280px] overflow-y-auto md:w-[280px]"
+      >
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">
@@ -69,35 +97,56 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="gap-2">
-            {theme === "light" ? (
-              <SunIcon className="size-4" />
-            ) : (
-              <MoonIcon className="size-4" />
-            )}
-            Theme
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={theme}
-              onValueChange={setTheme}
-            >
-              <DropdownMenuRadioItem value="light" className="gap-2">
+        {compact ? (
+          <>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Theme
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+              <DropdownMenuRadioItem
+                value="light"
+                className="min-h-11 gap-2"
+              >
                 <SunIcon className="size-4" />
                 Light
               </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="dark" className="gap-2">
+              <DropdownMenuRadioItem
+                value="dark"
+                className="min-h-11 gap-2"
+              >
                 <MoonIcon className="size-4" />
                 Dark
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+          </>
+        ) : (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="gap-2">
+              {theme === "light" ? (
+                <SunIcon className="size-4" />
+              ) : (
+                <MoonIcon className="size-4" />
+              )}
+              Theme
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent collisionPadding={12}>
+              <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+                <DropdownMenuRadioItem value="light" className="gap-2">
+                  <SunIcon className="size-4" />
+                  Light
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="dark" className="gap-2">
+                  <MoonIcon className="size-4" />
+                  Dark
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
-          className="gap-2"
+          className="min-h-11 gap-2 md:min-h-0"
           onClick={() => authClient.signOut()}
         >
           <LogOutIcon />

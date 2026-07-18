@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router"
 import { useState } from "react"
 import { authClient } from "@/lib/auth-client"
-import { AppSidebar } from "@/components/sidebar/app-sidebar"
+import { AppSidebar, MobileHeader } from "@/components/sidebar/app-sidebar"
 import { WorkspaceContext } from "@/contexts/workspace-context"
 import { useMeUser } from "@/hooks/use-me"
 import { getOnboardingRepositoriesEntryPath } from "@/lib/onboarding-flow"
@@ -58,7 +58,10 @@ function AppLayout() {
       <div className="flex h-svh overflow-hidden bg-background text-foreground">
         {!isOnboardingPath ? <AppSidebar /> : null}
         <main className="flex min-w-0 flex-1 flex-col overflow-auto">
-          <Outlet />
+          {!isOnboardingPath ? <MobileHeader /> : null}
+          <div className="min-h-0 flex-1 overflow-auto">
+            <Outlet />
+          </div>
         </main>
       </div>
     </WorkspaceContext.Provider>

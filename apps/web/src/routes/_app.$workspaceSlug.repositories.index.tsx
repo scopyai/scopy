@@ -56,7 +56,7 @@ function RepositoriesIndexRoute() {
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader icon={GitForkIcon} title="Repositories" />
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6">
         <RepositoriesList
           workspaceId={selectedWorkspaceId}
           workspaceSlug={workspaceSlug}

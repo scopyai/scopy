@@ -82,7 +82,7 @@ function ManageTeamRoute() {
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader icon={UsersIcon} title="Manage Team" />
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6">
         <div className="flex flex-col gap-6">
           {session?.user.id && (
             <WorkspaceMembers
