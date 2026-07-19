@@ -1,9 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import {
-  ExternalLinkIcon,
-  RefreshCwIcon,
-  Settings2Icon,
-} from "lucide-react"
+import { ExternalLinkIcon, RefreshCwIcon, Settings2Icon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@workspace/ui/components/button"
 import { PageHeader } from "@/components/page-header"

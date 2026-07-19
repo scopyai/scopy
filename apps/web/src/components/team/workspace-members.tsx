@@ -1,3 +1,4 @@
+import { MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 import {
@@ -17,6 +18,12 @@ import {
 } from "@workspace/ui/components/alert-dialog"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 import {
@@ -104,18 +111,12 @@ export function WorkspaceMembers({
   }
 
   const canManageMember = (targetRole: MemberRole, targetUserId: string) => {
-    if (targetUserId === currentUserId) return false
-    if (targetRole === "owner") return false
-    if (currentUserRole === "admin" && targetRole !== "member") return false
-    return true
+    return (
+      targetUserId !== currentUserId &&
+      targetRole !== "owner" &&
+      (currentUserRole !== "admin" || targetRole === "member")
+    )
   }
-
-  const memberCount = members?.length ?? 0
-  const memberGridClass = canManage
-    ? "grid grid-cols-[auto_minmax(0,1fr)_5.5rem_4.5rem_3.5rem] items-center gap-3"
-    : "grid grid-cols-[auto_minmax(0,1fr)_5.5rem_4.5rem] items-center gap-3"
-  const roleSelectClassName =
-    "!h-6 w-full gap-1 py-0 pl-1.5 pr-1 text-xs shadow-none [&_svg]:size-3"
 
   return (
     <>
@@ -171,136 +172,122 @@ export function WorkspaceMembers({
         )}
 
         <div className={cn("flex flex-col gap-2", canManage && "mt-4")}>
-        {membersLoading ? (
-          <div className="flex flex-col gap-2">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
-              >
-                <Skeleton className="size-8 rounded-full" />
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <Skeleton className="h-3.5 w-32" />
-                  <Skeleton className="h-3 w-48" />
-                </div>
-                <Skeleton className="h-5 w-14 rounded-full" />
-              </div>
-            ))}
-          </div>
-        ) : members && members.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            <div
-              className={`${memberGridClass} px-4 text-xs text-muted-foreground`}
-            >
-              <span className="col-span-2 flex h-6 items-center">
-                {memberCount} {memberCount === 1 ? "member" : "members"}
-              </span>
-              <span className="flex h-6 items-center">Role</span>
-              <span className="flex h-6 items-center">Status</span>
-              {canManage && (
-                <span className="flex h-6 items-center justify-end">
-                  Actions
-                </span>
-              )}
-            </div>
-            {members.map((member) => {
-              const memberRole = member.role as MemberRole
-              const memberStatus = member.status as MemberStatus
-              const showMemberActions =
-                canManage && canManageMember(memberRole, member.user.id)
-
-              return (
+          {membersLoading ? (
+            <div className="flex flex-col gap-2">
+              {[1, 2, 3].map((i) => (
                 <div
-                  key={member.id}
-                  className={`${memberGridClass} rounded-lg border border-border bg-card px-4 py-2.5`}
+                  key={i}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
                 >
-                  <Avatar size="sm">
-                    <AvatarImage
-                      src={member.user.image ?? undefined}
-                      alt={member.user.name}
-                    />
-                    <AvatarFallback>
-                      {member.user.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate text-sm font-medium">
-                      {member.user.name}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {member.user.email}
-                    </span>
+                  <Skeleton className="size-8 rounded-full" />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-48" />
                   </div>
-                  <div className="flex h-6 items-center">
-                    {showMemberActions ? (
-                      <Select
-                        value={memberRole}
-                        onValueChange={(v) =>
-                          handleRoleChange(member.id, v as "admin" | "member")
-                        }
-                        disabled={updateMember.isPending}
-                      >
-                        <SelectTrigger
-                          size="sm"
-                          className={roleSelectClassName}
+                  <Skeleton className="h-5 w-14 rounded-full" />
+                </div>
+              ))}
+            </div>
+          ) : members && members.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="px-1 text-xs text-muted-foreground">
+                {members.length} {members.length === 1 ? "member" : "members"}
+              </p>
+              {members.map((member) => {
+                const memberRole = member.role as MemberRole
+                const memberStatus = member.status as MemberStatus
+                const showMemberActions =
+                  canManage && canManageMember(memberRole, member.user.id)
+
+                return (
+                  <div
+                    key={member.id}
+                    className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5"
+                  >
+                    <Avatar size="sm">
+                      <AvatarImage
+                        src={member.user.image ?? undefined}
+                        alt={member.user.name}
+                      />
+                      <AvatarFallback>
+                        {member.user.name.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="truncate text-sm font-medium">
+                        {member.user.name}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {member.user.email}
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge
+                          variant="outline"
+                          className={tagToneClassName(memberRole, "capitalize")}
                         >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="member">Member</SelectItem>
-                          {currentUserRole === "owner" && (
-                            <SelectItem value="admin">Admin</SelectItem>
+                          {memberRole}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={tagToneClassName(
+                            memberStatus,
+                            "capitalize"
                           )}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className={tagToneClassName(memberRole, "capitalize")}
-                      >
-                        {memberRole}
-                      </Badge>
+                        >
+                          {memberStatus}
+                        </Badge>
+                      </div>
+                    </div>
+                    {showMemberActions && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Actions for ${member.user.name}`}
+                            disabled={
+                              updateMember.isPending || removeMember.isPending
+                            }
+                          >
+                            <MoreHorizontalIcon />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {currentUserRole === "owner" && (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                handleRoleChange(
+                                  member.id,
+                                  memberRole === "admin" ? "member" : "admin"
+                                )
+                              }
+                            >
+                              Make {memberRole === "admin" ? "member" : "admin"}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() =>
+                              setRemoveTarget({
+                                id: member.id,
+                                name: member.user.name,
+                              })
+                            }
+                          >
+                            Remove
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
                   </div>
-                  <div className="flex h-6 items-center">
-                    <Badge
-                      variant="outline"
-                      className={tagToneClassName(memberStatus, "capitalize")}
-                    >
-                      {memberStatus}
-                    </Badge>
-                  </div>
-                  {canManage && (
-                    <div className="flex h-6 items-center justify-end">
-                      {showMemberActions ? (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          disabled={removeMember.isPending}
-                          onClick={() =>
-                            setRemoveTarget({
-                              id: member.id,
-                              name: member.user.name,
-                            })
-                          }
-                        >
-                          Remove
-                        </Button>
-                      ) : (
-                        <span className="inline-block w-[4.25rem]" aria-hidden />
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            No members yet
-          </p>
-        )}
+                )
+              })}
+            </div>
+          ) : (
+            <p className="py-12 text-center text-sm text-muted-foreground">
+              No members yet
+            </p>
+          )}
         </div>
       </section>
 

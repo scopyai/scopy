@@ -150,7 +150,10 @@ function RepositoriesList({
           disabled={syncWorkspace.isPending}
         >
           <RefreshCwIcon
-            className={cn("size-3.5", syncWorkspace.isPending && "animate-spin")}
+            className={cn(
+              "size-3.5",
+              syncWorkspace.isPending && "animate-spin"
+            )}
           />
           {syncWorkspace.isPending ? "Syncing…" : "Sync"}
         </Button>
@@ -184,7 +187,10 @@ function RepositoriesList({
             title="Sync repositories"
           >
             <RefreshCwIcon
-              className={cn("size-3.5", syncWorkspace.isPending && "animate-spin")}
+              className={cn(
+                "size-3.5",
+                syncWorkspace.isPending && "animate-spin"
+              )}
             />
           </Button>
         </div>

@@ -159,7 +159,7 @@ function AnalyticsRoute() {
             <div
               className={cn(
                 "flex flex-col gap-6 transition-opacity duration-200",
-                isRefreshing && "pointer-events-none opacity-60",
+                isRefreshing && "pointer-events-none opacity-60"
               )}
               aria-busy={isRefreshing}
             >

@@ -74,7 +74,8 @@ export function AppSidebar() {
           setResizeActive(false)
         }}
         onPointerDown={(event) => {
-          if (!resizeActive) return
+          clearActivationTimer()
+          setResizeActive(true)
           event.currentTarget.setPointerCapture(event.pointerId)
           draggingRef.current = true
           setDragging(true)

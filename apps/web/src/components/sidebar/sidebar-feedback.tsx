@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent } from "react"
 import { ArrowUpIcon, MessageSquareIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
@@ -8,6 +8,7 @@ import { useSubmitFeedback } from "@/hooks/use-submit-feedback"
 
 export function SidebarFeedback({ onExpand }: { onExpand: () => void }) {
   const [message, setMessage] = useState("")
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { mutate, isPending } = useSubmitFeedback()
 
   function handleSubmit() {
@@ -21,6 +22,11 @@ export function SidebarFeedback({ onExpand }: { onExpand: () => void }) {
     })
   }
 
+  function handleExpand() {
+    onExpand()
+    window.requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
   return (
     <>
       <Button
@@ -30,12 +36,13 @@ export function SidebarFeedback({ onExpand }: { onExpand: () => void }) {
         className="sidebar-collapsed-only mx-auto hidden"
         title="Feedback"
         aria-label="Open feedback form"
-        onClick={onExpand}
+        onClick={handleExpand}
       >
         <MessageSquareIcon />
       </Button>
       <div className="sidebar-expanded-only rounded-xl bg-muted/50 p-2 shadow-md ring-1 ring-border/30">
         <Textarea
+          ref={textareaRef}
           placeholder="For feedback or anything else..."
           aria-label="Feedback message"
           rows={1}

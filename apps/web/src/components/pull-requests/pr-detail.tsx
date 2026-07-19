@@ -96,7 +96,23 @@ export function PullRequestDetail({
     )
   }
 
-  if (!pullRequest) return null
+  if (!pullRequest) {
+    return (
+      <div className="flex h-full min-w-0 items-center justify-center p-6 text-center">
+        <div className="flex max-w-sm flex-col items-center gap-3">
+          <div className="space-y-1">
+            <h2 className="text-sm font-medium">Pull request unavailable</h2>
+            <p className="text-sm text-muted-foreground">
+              It may have been removed or could not be loaded.
+            </p>
+          </div>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Back to pull requests
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   const {
     icon: StateIcon,

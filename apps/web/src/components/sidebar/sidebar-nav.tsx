@@ -205,7 +205,8 @@ export function MobileNav() {
         const navBounds = nav.getBoundingClientRect()
         const navStyles = window.getComputedStyle(nav)
         const itemBounds = activeItem.getBoundingClientRect()
-        const visibleLeft = navBounds.left + Number.parseFloat(navStyles.paddingLeft)
+        const visibleLeft =
+          navBounds.left + Number.parseFloat(navStyles.paddingLeft)
         const visibleRight =
           navBounds.right - Number.parseFloat(navStyles.paddingRight)
 
@@ -254,6 +255,7 @@ export function MobileNav() {
             ref={isActive ? activeItemRef : undefined}
             to={item.to}
             params={{ workspaceSlug }}
+            aria-current={isActive ? "page" : undefined}
             className={cn(
               "flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition-colors",
               isActive && "bg-primary/10 font-medium text-primary"

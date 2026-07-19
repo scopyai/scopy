@@ -1,5 +1,4 @@
 import { GitPullRequestIcon } from "lucide-react"
-import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Separator } from "@workspace/ui/components/separator"
 import { PullRequestListItem } from "./pr-list-item"
 
@@ -40,7 +39,9 @@ export function PullRequestList({
           <GitPullRequestIcon className="size-5 text-muted-foreground" />
         </div>
         <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">No pull requests</p>
+          <p className="text-sm font-medium text-foreground">
+            No pull requests
+          </p>
           <p className="max-w-[220px] text-xs text-muted-foreground">
             Enable repository tracking to import pull requests from GitHub.
           </p>
@@ -53,8 +54,8 @@ export function PullRequestList({
   const closed = pullRequests.filter((pr) => pr.state !== "open")
 
   return (
-    <ScrollArea className="flex-1 min-h-0">
-      <div className="flex flex-col gap-px px-2 py-2">
+    <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div className="flex w-full min-w-0 flex-col gap-px px-2 py-2">
         {open.map((pr) => (
           <PullRequestListItem
             key={pr.id}
@@ -80,6 +81,6 @@ export function PullRequestList({
           />
         ))}
       </div>
-    </ScrollArea>
+    </div>
   )
 }

@@ -1,9 +1,11 @@
 import {
-  LogOutIcon,
   ChevronsUpDown,
-  SunIcon,
+  LifeBuoyIcon,
+  LogOutIcon,
   MoonIcon,
+  SunIcon,
 } from "lucide-react"
+import { useState } from "react"
 import { useTheme } from "next-themes"
 import {
   Avatar,
@@ -27,11 +29,13 @@ import { Skeleton } from "@workspace/ui/components/skeleton"
 import { cn } from "@workspace/ui/lib/utils"
 import { authClient } from "@/lib/auth-client"
 import { useMeUser } from "@/hooks/use-me"
+import { SupportDialog } from "./sidebar-support"
 
 export function UserMenu({ compact = false }: { compact?: boolean }) {
   const { data: session, isPending: sessionPending } = authClient.useSession()
   const { data: user } = useMeUser()
   const { theme, setTheme } = useTheme()
+  const [supportOpen, setSupportOpen] = useState(false)
 
   if (sessionPending) {
     return (
@@ -52,107 +56,120 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   const avatarUrl = user?.image ?? undefined
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          className={cn(
-            "sidebar-user flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-base transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-            compact && "w-10 justify-center px-0"
-          )}
-          title={user?.name ?? displayName}
-        >
-          <Avatar size="sm">
-            <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback>{initials}</AvatarFallback>
-          </Avatar>
-          <span
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
             className={cn(
-              "sidebar-copy min-w-0 flex-1 truncate font-medium",
-              compact && "hidden"
+              "sidebar-user flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-base transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              compact && "w-10 justify-center px-0"
             )}
+            title={user?.name ?? displayName}
           >
-            {user?.name ?? displayName}
-          </span>
-          <ChevronsUpDown
-            className={cn(
-              "sidebar-end-icon size-3.5 shrink-0 text-muted-foreground/60",
-              compact && "hidden"
-            )}
-          />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side={compact ? "bottom" : "top"}
-        align={compact ? "end" : "start"}
-        sideOffset={8}
-        collisionPadding={8}
-        className="max-h-[calc(100svh-4rem)] w-[calc(100vw-1rem)] max-w-[280px] overflow-y-auto md:w-[280px]"
-      >
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium">
+            <Avatar size="sm">
+              <AvatarImage src={avatarUrl} alt={displayName} />
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
+            <span
+              className={cn(
+                "sidebar-copy min-w-0 flex-1 truncate font-medium",
+                compact && "hidden"
+              )}
+            >
               {user?.name ?? displayName}
             </span>
-            <span className="text-xs text-muted-foreground">{user?.email}</span>
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {compact ? (
-          <>
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Theme
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
-              <DropdownMenuRadioItem
-                value="light"
-                className="min-h-11 gap-2"
-              >
-                <SunIcon className="size-4" />
-                Light
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem
-                value="dark"
-                className="min-h-11 gap-2"
-              >
-                <MoonIcon className="size-4" />
-                Dark
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        ) : (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2">
-              {theme === "light" ? (
-                <SunIcon className="size-4" />
-              ) : (
-                <MoonIcon className="size-4" />
+            <ChevronsUpDown
+              className={cn(
+                "sidebar-end-icon size-3.5 shrink-0 text-muted-foreground/60",
+                compact && "hidden"
               )}
-              Theme
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent collisionPadding={12}>
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side={compact ? "bottom" : "top"}
+          align={compact ? "end" : "start"}
+          sideOffset={8}
+          collisionPadding={8}
+          className="max-h-[calc(100svh-4rem)] w-[calc(100vw-1rem)] max-w-[280px] overflow-y-auto md:w-[280px]"
+        >
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">
+                {user?.name ?? displayName}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {user?.email}
+              </span>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {compact ? (
+            <>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Theme
+              </DropdownMenuLabel>
               <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
-                <DropdownMenuRadioItem value="light" className="gap-2">
+                <DropdownMenuRadioItem value="light" className="min-h-11 gap-2">
                   <SunIcon className="size-4" />
                   Light
                 </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="dark" className="gap-2">
+                <DropdownMenuRadioItem value="dark" className="min-h-11 gap-2">
                   <MoonIcon className="size-4" />
                   Dark
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          className="min-h-11 gap-2 md:min-h-0"
-          onClick={() => authClient.signOut()}
-        >
-          <LogOutIcon />
-          Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            </>
+          ) : (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="gap-2">
+                {theme === "light" ? (
+                  <SunIcon className="size-4" />
+                ) : (
+                  <MoonIcon className="size-4" />
+                )}
+                Theme
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent collisionPadding={12}>
+                <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+                  <DropdownMenuRadioItem value="light" className="gap-2">
+                    <SunIcon className="size-4" />
+                    Light
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark" className="gap-2">
+                    <MoonIcon className="size-4" />
+                    Dark
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+          {compact && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="min-h-11 gap-2"
+                onSelect={() => setSupportOpen(true)}
+              >
+                <LifeBuoyIcon />
+                Support
+              </DropdownMenuItem>
+            </>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            className="min-h-11 gap-2 md:min-h-0"
+            onClick={() => authClient.signOut()}
+          >
+            <LogOutIcon />
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {compact && (
+        <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
+      )}
+    </>
   )
 }

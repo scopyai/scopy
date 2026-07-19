@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowLeftIcon, GitPullRequestIcon, Settings2Icon } from "lucide-react"
 import { z } from "zod"
 import { Button } from "@workspace/ui/components/button"
@@ -28,6 +28,8 @@ export const Route = createFileRoute(
 const MIN_LIST_WIDTH = 240
 const MAX_LIST_WIDTH = 600
 const DEFAULT_LIST_WIDTH = 320
+const MIN_DETAIL_WIDTH = 320
+const RESIZER_WIDTH = 16
 
 function RepositoryPage() {
   const { repositoryId } = Route.useParams()
@@ -59,7 +61,44 @@ function RepositoryPage() {
 
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
   const containerRef = useRef<HTMLDivElement>(null)
+  const listPaneRef = useRef<HTMLDivElement>(null)
+  const backButtonRef = useRef<HTMLButtonElement>(null)
+  const previousDetailOpenRef = useRef(detailOpen)
+  const pullRequestToRestoreFocusRef = useRef<string | null>(null)
   const isResizing = useRef(false)
+
+  useEffect(() => {
+    const wasDetailOpen = previousDetailOpenRef.current
+    previousDetailOpenRef.current = detailOpen
+
+    if (
+      wasDetailOpen === detailOpen ||
+      window.matchMedia("(min-width: 64rem)").matches
+    ) {
+      return
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (detailOpen) {
+        backButtonRef.current?.focus()
+        return
+      }
+
+      const pullRequestIdToFocus = pullRequestToRestoreFocusRef.current
+      if (!pullRequestIdToFocus) return
+
+      const pullRequestButton = Array.from(
+        listPaneRef.current?.querySelectorAll<HTMLButtonElement>(
+          "[data-pull-request-id]"
+        ) ?? []
+      ).find((button) => button.dataset.pullRequestId === pullRequestIdToFocus)
+
+      pullRequestButton?.focus()
+      pullRequestToRestoreFocusRef.current = null
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [detailOpen])
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -69,9 +108,16 @@ function RepositoryPage() {
 
     const onMouseMove = (event: MouseEvent) => {
       if (!isResizing.current || !containerRef.current) return
-      const containerLeft = containerRef.current.getBoundingClientRect().left
+      const containerBounds = containerRef.current.getBoundingClientRect()
+      const containerLeft = containerBounds.left
       const newWidth = event.clientX - containerLeft
-      setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, newWidth)))
+      const availableListWidth =
+        containerBounds.width - MIN_DETAIL_WIDTH - RESIZER_WIDTH
+      const maxListWidth = Math.max(
+        MIN_LIST_WIDTH,
+        Math.min(MAX_LIST_WIDTH, availableListWidth)
+      )
+      setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(maxListWidth, newWidth)))
     }
 
     const onMouseUp = () => {
@@ -87,12 +133,14 @@ function RepositoryPage() {
   }, [])
 
   const handleSelectPullRequest = (id: string) => {
+    pullRequestToRestoreFocusRef.current = id
     navigate({
       search: (prev) => ({ ...prev, pullRequestId: id, view: "pull-requests" }),
     })
   }
 
   const handleCloseDetail = () => {
+    pullRequestToRestoreFocusRef.current = pullRequestId ?? null
     navigate({ search: (prev) => ({ ...prev, pullRequestId: undefined }) })
   }
 
@@ -118,6 +166,7 @@ function RepositoryPage() {
           {detailOpen && (
             <div className="absolute top-1/2 -left-2 -translate-y-1/2 lg:hidden">
               <Button
+                ref={backButtonRef}
                 type="button"
                 variant="ghost"
                 size="icon"
@@ -193,7 +242,16 @@ function RepositoryPage() {
       ) : (
         <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
           <div
-            style={detailOpen ? { width: listWidth } : undefined}
+            ref={listPaneRef}
+            style={
+              detailOpen
+                ? {
+                    width: listWidth,
+                    minWidth: MIN_LIST_WIDTH,
+                    maxWidth: `calc(100% - ${MIN_DETAIL_WIDTH + RESIZER_WIDTH}px)`,
+                  }
+                : undefined
+            }
             className={
               detailOpen
                 ? "hidden shrink-0 flex-col overflow-hidden lg:flex"
@@ -218,7 +276,7 @@ function RepositoryPage() {
           )}
 
           {detailOpen && (
-            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden lg:min-w-80">
               <PullRequestDetail
                 pullRequest={pullRequestDetail}
                 isPending={detailPending}

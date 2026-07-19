@@ -25,16 +25,9 @@ function AppLayout() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
     null
   )
-
   if (isPending) return null
   if (!session) {
-    return (
-      <Navigate
-        to="/login"
-        search={{ redirect: location.href }}
-        replace
-      />
-    )
+    return <Navigate to="/login" search={{ redirect: location.href }} replace />
   }
 
   if (userPending) return null
@@ -46,9 +39,7 @@ function AppLayout() {
   }
 
   if (!isOnboardingPath && user?.onboardingStatus === "select_repositories") {
-    return (
-      <Navigate to={getOnboardingRepositoriesEntryPath()} replace />
-    )
+    return <Navigate to={getOnboardingRepositoriesEntryPath()} replace />
   }
 
   return (
