@@ -21,6 +21,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "eval:docs": "tsx src/modules/docs/evals/run.ts",
+    "eval:memories": "tsx src/modules/reviews/evals/memories.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "db:push": "drizzle-kit push --config drizzle.config.ts",

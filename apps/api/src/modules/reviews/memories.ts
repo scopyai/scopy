@@ -40,7 +40,7 @@ export const parseFindingMarker = (body: string): FindingMarkerData | null => {
   }
 }
 
-const memoryOutputSchema = z.object({
+export const memoryOutputSchema = z.object({
   action: z
     .enum(["noop", "create", "update", "retract", "clarify"])
     .describe("The single action to take for the newest reply."),
@@ -62,6 +62,12 @@ const memoryOutputSchema = z.object({
     .describe(
       "For create or update: the facts from the human's reply that justify the rule, stated as established facts about this repository. Null otherwise."
     ),
+  restatesDefault: z
+    .boolean()
+    .nullable()
+    .describe(
+      "For update: true if the replacement rule only tells the reviewer to do what it already does by default, such as flag genuine issues. Null otherwise."
+    ),
   reply: z
     .string()
     .nullable()
@@ -70,14 +76,21 @@ const memoryOutputSchema = z.object({
     ),
 })
 
-const distillInstructions = [
+export const resolveMemoryAction = (
+  object: z.infer<typeof memoryOutputSchema>
+) =>
+  object.action === "update" && object.restatesDefault
+    ? "retract"
+    : object.action
+
+export const distillInstructions = [
   "You maintain long-term memories for an AI code reviewer.",
   "You are given one review finding the reviewer posted on a pull request, the discussion thread under it, and the repository's existing memories.",
   "Based only on the newest human reply, choose exactly one action:",
   "- noop: no durable guidance, or it is already covered by an existing memory. A reply that narrows, broadens, or corrects the scope of an existing memory is never noop: it is an update.",
-  "- create: the reply states durable guidance not covered by any existing memory: a dismissal with a reason, a factual correction, or a team convention or preference. A reply that explains why a finding does not apply, such as facts about the deployment or infrastructure, is a dismissal with a reason even when it is not phrased as an instruction.",
-  "- update: the reply refines or corrects one existing memory, for example narrowing, broadening, or rewording it. Set memoryId and the full replacement rule and reason.",
-  "- retract: the reply withdraws the guidance an existing memory records, so the reviewer should return to its default behavior. Set memoryId. Never choose update to invert a memory into what the reviewer already does by default, such as flagging real issues: withdrawing guidance is always retract.",
+  "- create: the reply states durable guidance not covered by any existing memory: a dismissal with a reason, a factual correction, or a team convention or preference, including how severely to treat a class of issues. A reply that explains why a finding does not apply, such as facts about the deployment or infrastructure, is a dismissal with a reason even when it is not phrased as an instruction.",
+  "- update: the reply refines or corrects one existing memory, for example narrowing, broadening, or rewording it. Set memoryId and the full replacement rule and reason. If the replacement rule would only tell the reviewer to do its default job, such as flagging real issues, the action is retract, not update.",
+  "- retract: the reply withdraws the guidance an existing memory records, so the reviewer should return to its default behavior. Set memoryId.",
   "- clarify: durable intent is likely, but which memory it targets or what it should say is ambiguous. Ask one short question and change nothing.",
   "Rules:",
   "- Acknowledgements, questions, jokes, fix confirmations, bare disagreements without a reason, and remarks that only apply to this one pull request are noop.",
@@ -90,6 +103,53 @@ const distillInstructions = [
   "- When the reply states guidance that a disabled memory already records, choose update for that memory rather than create or noop, so it becomes active again.",
   "- Change at most one memory. When the reply affects several, choose clarify.",
 ].join("\n")
+
+export const composeMemoryContent = (
+  rule: string | null,
+  reason: string | null
+) =>
+  rule
+    ? `${rule.trim().replace(/[.\s]+$/, "")}.${reason ? ` Reason: ${reason.trim()}` : ""}`
+    : null
+
+export const buildDistillPrompt = ({
+  finding,
+  thread,
+  reply,
+  memories,
+}: {
+  finding: FindingMarkerData
+  thread: { author: string; body: string }[]
+  reply: { author: string; body: string }
+  memories: { id: string; enabled: boolean; content: string }[]
+}) =>
+  [
+    "Finding:",
+    `File: ${finding.file}:${finding.startLine}-${finding.endLine}`,
+    `Severity: ${finding.severity}`,
+    `Title: ${finding.title}`,
+    finding.body,
+    ...(thread.length > 0
+      ? [
+          "",
+          "Earlier replies in this thread:",
+          ...thread.map((comment) => `${comment.author}: ${comment.body}`),
+        ]
+      : []),
+    "",
+    `Newest reply, from ${reply.author} (act on this one):`,
+    reply.body,
+    "",
+    ...(memories.length > 0
+      ? [
+          "Existing memories for this repository:",
+          ...memories.map(
+            (memory) =>
+              `- id ${memory.id}${memory.enabled ? "" : " (disabled)"}: ${memory.content}`
+          ),
+        ]
+      : ["There are no existing memories for this repository."]),
+  ].join("\n")
 
 export const distillReviewMemory = async ({
   repositoryId,
@@ -158,36 +218,18 @@ export const distillReviewMemory = async ({
     model: llm.chatModel(reviewModels.subagent),
     schema: memoryOutputSchema,
     system: distillInstructions,
-    prompt: [
-      "Finding:",
-      `File: ${finding.file}:${finding.startLine}-${finding.endLine}`,
-      `Severity: ${finding.severity}`,
-      `Title: ${finding.title}`,
-      finding.body,
-      ...(thread.length > 0
-        ? [
-            "",
-            "Earlier replies in this thread:",
-            ...thread.map(
-              (comment) =>
-                `${comment.user.type === "Bot" ? "you (the reviewer)" : `@${comment.user.login}`}: ${stripMarker(comment.body)}`
-            ),
-          ]
-        : []),
-      "",
-      `Newest reply, from @${reply.user.login} (act on this one):`,
-      reply.body,
-      "",
-      ...(memories.length > 0
-        ? [
-            "Existing memories for this repository:",
-            ...memories.map(
-              (memory) =>
-                `- id ${memory.id}${memory.enabled ? "" : " (disabled)"}: ${memory.content}`
-            ),
-          ]
-        : ["There are no existing memories for this repository."]),
-    ].join("\n"),
+    prompt: buildDistillPrompt({
+      finding,
+      thread: thread.map((comment) => ({
+        author:
+          comment.user.type === "Bot"
+            ? "you (the reviewer)"
+            : `@${comment.user.login}`,
+        body: stripMarker(comment.body),
+      })),
+      reply: { author: `@${reply.user.login}`, body: reply.body },
+      memories,
+    }),
     maxRetries: 2,
   })
 
@@ -195,39 +237,35 @@ export const distillReviewMemory = async ({
     ? memories.find((memory) => memory.id === object.memoryId)
     : undefined
   const now = new Date()
-  const content = object.rule
-    ? `${object.rule.trim().replace(/[.\s]+$/, "")}.${object.reason ? ` Reason: ${object.reason.trim()}` : ""}`
-    : null
+  const action = resolveMemoryAction(object)
+  const content = composeMemoryContent(object.rule, object.reason)
 
-  if (object.action === "noop") {
+  if (action === "noop") {
     logger.info("Review memory distillation skipped reply", {
       repositoryId,
       commentId,
     })
     return
   }
-  if ((object.action === "update" || object.action === "retract") && !target) {
+  if ((action === "update" || action === "retract") && !target) {
     logger.info("Review memory action skipped: unknown target memory", {
       repositoryId,
       commentId,
-      action: object.action,
+      action: action,
       memoryId: object.memoryId,
     })
     return
   }
-  if (
-    (object.action === "create" || object.action === "update") &&
-    !content
-  ) {
+  if ((action === "create" || action === "update") && !content) {
     logger.info("Review memory action skipped: missing content", {
       repositoryId,
       commentId,
-      action: object.action,
+      action: action,
     })
     return
   }
 
-  if (object.action === "create") {
+  if (action === "create") {
     await db
       .insert(reviewMemory)
       .values({
@@ -245,7 +283,7 @@ export const distillReviewMemory = async ({
           updatedAt: now,
         },
       })
-  } else if (object.action === "update") {
+  } else if (action === "update") {
     await db
       .update(reviewMemory)
       .set({
@@ -255,7 +293,7 @@ export const distillReviewMemory = async ({
         updatedAt: now,
       })
       .where(eq(reviewMemory.id, target!.id))
-  } else if (object.action === "retract") {
+  } else if (action === "retract") {
     await db
       .update(reviewMemory)
       .set({ enabled: false, updatedAt: now })
@@ -264,12 +302,12 @@ export const distillReviewMemory = async ({
   logger.info("Review memory action applied", {
     repositoryId,
     commentId,
-    action: object.action,
+    action: action,
     memoryId: target?.id,
   })
 
   const fallbackReply =
-    object.action === "retract"
+    action === "retract"
       ? "Got it, I removed that memory."
       : content
         ? `Noted, I will remember this:\n\n> ${content}`
