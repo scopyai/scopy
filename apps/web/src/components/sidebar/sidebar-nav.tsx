@@ -1,6 +1,7 @@
 import {
   BookOpenIcon,
   BarChart3Icon,
+  BrainIcon,
   CreditCardIcon,
   ArrowUpRight,
   GitForkIcon,
@@ -16,6 +17,7 @@ type AppRoute =
   | "/$workspaceSlug/repositories"
   | "/$workspaceSlug/analytics"
   | "/$workspaceSlug/settings"
+  | "/$workspaceSlug/memories"
   | "/$workspaceSlug/billing"
   | "/$workspaceSlug/manage-team"
 
@@ -37,6 +39,11 @@ const workspaceItems: NavItem[] = [
     label: "Analytics",
     icon: BarChart3Icon,
     to: "/$workspaceSlug/analytics",
+  },
+  {
+    label: "Memories",
+    icon: BrainIcon,
+    to: "/$workspaceSlug/memories",
   },
 ]
 

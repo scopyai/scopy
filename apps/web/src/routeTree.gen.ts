@@ -21,6 +21,7 @@ import { Route as AppOnboardingConnectRouteImport } from './routes/_app.onboardi
 import { Route as AppFeedbackFindingRouteImport } from './routes/_app.feedback.finding'
 import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
 import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
+import { Route as AppWorkspaceSlugMemoriesRouteImport } from './routes/_app.$workspaceSlug.memories'
 import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
 import { Route as AppWorkspaceSlugBillingRouteImport } from './routes/_app.$workspaceSlug.billing'
 import { Route as AppWorkspaceSlugAnalyticsRouteImport } from './routes/_app.$workspaceSlug.analytics'
@@ -90,6 +91,12 @@ const AppWorkspaceSlugRepositoriesRoute =
     path: '/repositories',
     getParentRoute: () => AppWorkspaceSlugRoute,
   } as any)
+const AppWorkspaceSlugMemoriesRoute =
+  AppWorkspaceSlugMemoriesRouteImport.update({
+    id: '/memories',
+    path: '/memories',
+    getParentRoute: () => AppWorkspaceSlugRoute,
+  } as any)
 const AppWorkspaceSlugManageTeamRoute =
   AppWorkspaceSlugManageTeamRouteImport.update({
     id: '/manage-team',
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
+  '/$workspaceSlug/memories': typeof AppWorkspaceSlugMemoriesRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
   '/feedback/finding': typeof AppFeedbackFindingRoute
@@ -153,6 +161,7 @@ export interface FileRoutesByTo {
   '/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
   '/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
+  '/$workspaceSlug/memories': typeof AppWorkspaceSlugMemoriesRoute
   '/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
   '/feedback/finding': typeof AppFeedbackFindingRoute
   '/onboarding/connect': typeof AppOnboardingConnectRoute
@@ -173,6 +182,7 @@ export interface FileRoutesById {
   '/_app/$workspaceSlug/analytics': typeof AppWorkspaceSlugAnalyticsRoute
   '/_app/$workspaceSlug/billing': typeof AppWorkspaceSlugBillingRouteWithChildren
   '/_app/$workspaceSlug/manage-team': typeof AppWorkspaceSlugManageTeamRoute
+  '/_app/$workspaceSlug/memories': typeof AppWorkspaceSlugMemoriesRoute
   '/_app/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   '/_app/$workspaceSlug/settings': typeof AppWorkspaceSlugSettingsRoute
   '/_app/feedback/finding': typeof AppFeedbackFindingRoute
@@ -194,6 +204,7 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/analytics'
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
+    | '/$workspaceSlug/memories'
     | '/$workspaceSlug/repositories'
     | '/$workspaceSlug/settings'
     | '/feedback/finding'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/$workspaceSlug/analytics'
     | '/$workspaceSlug/billing'
     | '/$workspaceSlug/manage-team'
+    | '/$workspaceSlug/memories'
     | '/$workspaceSlug/settings'
     | '/feedback/finding'
     | '/onboarding/connect'
@@ -232,6 +244,7 @@ export interface FileRouteTypes {
     | '/_app/$workspaceSlug/analytics'
     | '/_app/$workspaceSlug/billing'
     | '/_app/$workspaceSlug/manage-team'
+    | '/_app/$workspaceSlug/memories'
     | '/_app/$workspaceSlug/repositories'
     | '/_app/$workspaceSlug/settings'
     | '/_app/feedback/finding'
@@ -336,6 +349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceSlugRepositoriesRouteImport
       parentRoute: typeof AppWorkspaceSlugRoute
     }
+    '/_app/$workspaceSlug/memories': {
+      id: '/_app/$workspaceSlug/memories'
+      path: '/memories'
+      fullPath: '/$workspaceSlug/memories'
+      preLoaderRoute: typeof AppWorkspaceSlugMemoriesRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
+    }
     '/_app/$workspaceSlug/manage-team': {
       id: '/_app/$workspaceSlug/manage-team'
       path: '/manage-team'
@@ -417,6 +437,7 @@ interface AppWorkspaceSlugRouteChildren {
   AppWorkspaceSlugAnalyticsRoute: typeof AppWorkspaceSlugAnalyticsRoute
   AppWorkspaceSlugBillingRoute: typeof AppWorkspaceSlugBillingRouteWithChildren
   AppWorkspaceSlugManageTeamRoute: typeof AppWorkspaceSlugManageTeamRoute
+  AppWorkspaceSlugMemoriesRoute: typeof AppWorkspaceSlugMemoriesRoute
   AppWorkspaceSlugRepositoriesRoute: typeof AppWorkspaceSlugRepositoriesRouteWithChildren
   AppWorkspaceSlugSettingsRoute: typeof AppWorkspaceSlugSettingsRoute
 }
@@ -425,6 +446,7 @@ const AppWorkspaceSlugRouteChildren: AppWorkspaceSlugRouteChildren = {
   AppWorkspaceSlugAnalyticsRoute: AppWorkspaceSlugAnalyticsRoute,
   AppWorkspaceSlugBillingRoute: AppWorkspaceSlugBillingRouteWithChildren,
   AppWorkspaceSlugManageTeamRoute: AppWorkspaceSlugManageTeamRoute,
+  AppWorkspaceSlugMemoriesRoute: AppWorkspaceSlugMemoriesRoute,
   AppWorkspaceSlugRepositoriesRoute:
     AppWorkspaceSlugRepositoriesRouteWithChildren,
   AppWorkspaceSlugSettingsRoute: AppWorkspaceSlugSettingsRoute,

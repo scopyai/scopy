@@ -1,5 +1,5 @@
 {
-  "id": "7acc00ad-98e7-4d63-b127-94437b3873d2",
+  "id": "fd401d2b-c1b2-4f40-9431-8550ae397de9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -112,6 +112,456 @@
           "tableTo": "user",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.doc_chunk": {
+      "name": "doc_chunk",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "page_id": {
+          "name": "page_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ord": {
+          "name": "ord",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "heading": {
+          "name": "heading",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_md": {
+          "name": "content_md",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_tsv": {
+          "name": "content_tsv",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "to_tsvector('english', content_md)",
+            "type": "stored"
+          }
+        },
+        "approx_tokens": {
+          "name": "approx_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "doc_chunk_page_id_ord_idx": {
+          "name": "doc_chunk_page_id_ord_idx",
+          "columns": [
+            {
+              "expression": "page_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ord",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "doc_chunk_source_id_idx": {
+          "name": "doc_chunk_source_id_idx",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "doc_chunk_content_fts_idx": {
+          "name": "doc_chunk_content_fts_idx",
+          "columns": [
+            {
+              "expression": "content_tsv",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "doc_chunk_source_id_doc_source_id_fk": {
+          "name": "doc_chunk_source_id_doc_source_id_fk",
+          "tableFrom": "doc_chunk",
+          "tableTo": "doc_source",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "doc_chunk_page_id_doc_page_id_fk": {
+          "name": "doc_chunk_page_id_doc_page_id_fk",
+          "tableFrom": "doc_chunk",
+          "tableTo": "doc_page",
+          "columnsFrom": [
+            "page_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.doc_page": {
+      "name": "doc_page",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approx_tokens": {
+          "name": "approx_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_seen_crawl_id": {
+          "name": "last_seen_crawl_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "doc_page_source_id_url_idx": {
+          "name": "doc_page_source_id_url_idx",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "doc_page_source_last_seen_idx": {
+          "name": "doc_page_source_last_seen_idx",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_seen_crawl_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "doc_page_source_id_doc_source_id_fk": {
+          "name": "doc_page_source_id_doc_source_id_fk",
+          "tableFrom": "doc_page",
+          "tableTo": "doc_source",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.doc_source": {
+      "name": "doc_source",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "llms_txt_url": {
+          "name": "llms_txt_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active_crawl_id": {
+          "name": "active_crawl_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "toc": {
+          "name": "toc",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "page_count": {
+          "name": "page_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "doc_source_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'idle'"
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_crawled_at": {
+          "name": "last_crawled_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "doc_source_global_slug_idx": {
+          "name": "doc_source_global_slug_idx",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"doc_source\".\"workspace_id\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "doc_source_workspace_slug_idx": {
+          "name": "doc_source_workspace_slug_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"doc_source\".\"workspace_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "doc_source_workspace_id_idx": {
+          "name": "doc_source_workspace_id_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "doc_source_workspace_id_workspace_id_fk": {
+          "name": "doc_source_workspace_id_workspace_id_fk",
+          "tableFrom": "doc_source",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
           ],
           "columnsTo": [
             "id"
@@ -596,9 +1046,33 @@
           "primaryKey": false,
           "notNull": false
         },
+        "natural_language_rules": {
+          "name": "natural_language_rules",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "max_review_changed_lines": {
           "name": "max_review_changed_lines",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "detected_doc_libraries": {
+          "name": "detected_doc_libraries",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "doc_libraries_detected_at": {
+          "name": "doc_libraries_detected_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "excluded_doc_libraries": {
+          "name": "excluded_doc_libraries",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -765,11 +1239,17 @@
         }
       },
       "indexes": {
-        "repository_context_repository_id_idx": {
-          "name": "repository_context_repository_id_idx",
+        "repository_context_repository_id_base_sha_idx": {
+          "name": "repository_context_repository_id_base_sha_idx",
           "columns": [
             {
               "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "base_sha",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -967,6 +1447,155 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.review_memory": {
+      "name": "review_memory",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path_glob": {
+          "name": "path_glob",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "source_comment_id": {
+          "name": "source_comment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_comment_url": {
+          "name": "source_comment_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "review_memory_workspace_id_idx": {
+          "name": "review_memory_workspace_id_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_memory_repository_id_idx": {
+          "name": "review_memory_repository_id_idx",
+          "columns": [
+            {
+              "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_memory_source_comment_id_idx": {
+          "name": "review_memory_source_comment_id_idx",
+          "columns": [
+            {
+              "expression": "source_comment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "review_memory_workspace_id_workspace_id_fk": {
+          "name": "review_memory_workspace_id_workspace_id_fk",
+          "tableFrom": "review_memory",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "review_memory_repository_id_repository_id_fk": {
+          "name": "review_memory_repository_id_repository_id_fk",
+          "tableFrom": "review_memory",
+          "tableTo": "repository",
+          "columnsFrom": [
+            "repository_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.review_run": {
       "name": "review_run",
       "schema": "",
@@ -1127,6 +1756,290 @@
           "tableTo": "webhook_event",
           "columnsFrom": [
             "trigger_webhook_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.review_usage": {
+      "name": "review_usage",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "review_run_id": {
+          "name": "review_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pull_request_id": {
+          "name": "pull_request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credits_charged": {
+          "name": "credits_charged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "included_credits_charged": {
+          "name": "included_credits_charged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "purchased_credits_charged": {
+          "name": "purchased_credits_charged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "credit_balance_after": {
+          "name": "credit_balance_after",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reviewable_additions": {
+          "name": "reviewable_additions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reviewable_deletions": {
+          "name": "reviewable_deletions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reviewable_changed_lines": {
+          "name": "reviewable_changed_lines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verifier_model_id": {
+          "name": "verifier_model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "llm_cost_microcents": {
+          "name": "llm_cost_microcents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vector_write_cost_microcents": {
+          "name": "vector_write_cost_microcents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "vector_query_cost_microcents": {
+          "name": "vector_query_cost_microcents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "vector_network_cost_microcents": {
+          "name": "vector_network_cost_microcents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_cost_microcents": {
+          "name": "total_cost_microcents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vector_write_bytes": {
+          "name": "vector_write_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "vector_query_bytes": {
+          "name": "vector_query_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "vector_network_bytes": {
+          "name": "vector_network_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "vector_query_count": {
+          "name": "vector_query_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "models": {
+          "name": "models",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "review_usage_review_run_id_idx": {
+          "name": "review_usage_review_run_id_idx",
+          "columns": [
+            {
+              "expression": "review_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_usage_workspace_created_at_idx": {
+          "name": "review_usage_workspace_created_at_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_usage_repository_id_idx": {
+          "name": "review_usage_repository_id_idx",
+          "columns": [
+            {
+              "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "review_usage_review_run_id_review_run_id_fk": {
+          "name": "review_usage_review_run_id_review_run_id_fk",
+          "tableFrom": "review_usage",
+          "tableTo": "review_run",
+          "columnsFrom": [
+            "review_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "review_usage_workspace_id_workspace_id_fk": {
+          "name": "review_usage_workspace_id_workspace_id_fk",
+          "tableFrom": "review_usage",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "review_usage_repository_id_repository_id_fk": {
+          "name": "review_usage_repository_id_repository_id_fk",
+          "tableFrom": "review_usage",
+          "tableTo": "repository",
+          "columnsFrom": [
+            "repository_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "review_usage_pull_request_id_pull_request_id_fk": {
+          "name": "review_usage_pull_request_id_pull_request_id_fk",
+          "tableFrom": "review_usage",
+          "tableTo": "pull_request",
+          "columnsFrom": [
+            "pull_request_id"
           ],
           "columnsTo": [
             "id"
@@ -1617,6 +2530,13 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "natural_language_rules": {
+          "name": "natural_language_rules",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "max_review_changed_lines": {
           "name": "max_review_changed_lines",
           "type": "integer",
@@ -1657,9 +2577,16 @@
           "notNull": true,
           "default": "'free'"
         },
-        "credit_balance": {
-          "name": "credit_balance",
-          "type": "bigint",
+        "included_credit_balance": {
+          "name": "included_credit_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "purchased_credit_balance": {
+          "name": "purchased_credit_balance",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "default": 0
@@ -1672,6 +2599,12 @@
         },
         "creem_subscription_id": {
           "name": "creem_subscription_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_credit_reset_key": {
+          "name": "last_credit_reset_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1811,8 +2744,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.workspace_credit_transaction": {
-      "name": "workspace_credit_transaction",
+    "public.workspace_charge": {
+      "name": "workspace_charge",
       "schema": "",
       "columns": {
         "id": {
@@ -1827,9 +2760,15 @@
           "primaryKey": false,
           "notNull": true
         },
+        "creem_transaction_id": {
+          "name": "creem_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "type": {
           "name": "type",
-          "type": "workspace_credit_transaction_type",
+          "type": "workspace_charge_type",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
@@ -1840,33 +2779,50 @@
           "primaryKey": false,
           "notNull": true
         },
-        "balance_after": {
-          "name": "balance_after",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
+        "currency": {
+          "name": "currency",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "reason": {
-          "name": "reason",
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
+        "credits": {
+          "name": "credits",
+          "type": "integer",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tier": {
+          "name": "tier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -1874,11 +2830,11 @@
         }
       },
       "indexes": {
-        "workspace_credit_transaction_idempotency_key_idx": {
-          "name": "workspace_credit_transaction_idempotency_key_idx",
+        "workspace_charge_creem_transaction_id_idx": {
+          "name": "workspace_charge_creem_transaction_id_idx",
           "columns": [
             {
-              "expression": "idempotency_key",
+              "expression": "creem_transaction_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1889,8 +2845,8 @@
           "method": "btree",
           "with": {}
         },
-        "workspace_credit_transaction_workspace_created_at_idx": {
-          "name": "workspace_credit_transaction_workspace_created_at_idx",
+        "workspace_charge_workspace_created_at_idx": {
+          "name": "workspace_charge_workspace_created_at_idx",
           "columns": [
             {
               "expression": "workspace_id",
@@ -1912,9 +2868,9 @@
         }
       },
       "foreignKeys": {
-        "workspace_credit_transaction_workspace_id_workspace_id_fk": {
-          "name": "workspace_credit_transaction_workspace_id_workspace_id_fk",
-          "tableFrom": "workspace_credit_transaction",
+        "workspace_charge_workspace_id_workspace_id_fk": {
+          "name": "workspace_charge_workspace_id_workspace_id_fk",
+          "tableFrom": "workspace_charge",
           "tableTo": "workspace",
           "columnsFrom": [
             "workspace_id"
@@ -2090,6 +3046,15 @@
     }
   },
   "enums": {
+    "public.doc_source_status": {
+      "name": "doc_source_status",
+      "schema": "public",
+      "values": [
+        "idle",
+        "crawling",
+        "error"
+      ]
+    },
     "public.provider_account_type": {
       "name": "provider_account_type",
       "schema": "public",
@@ -2166,6 +3131,15 @@
         "enterprise"
       ]
     },
+    "public.workspace_charge_type": {
+      "name": "workspace_charge_type",
+      "schema": "public",
+      "values": [
+        "payment",
+        "refund",
+        "dispute"
+      ]
+    },
     "public.workspace_connection_status": {
       "name": "workspace_connection_status",
       "schema": "public",
@@ -2173,15 +3147,6 @@
         "active",
         "suspended",
         "deleted"
-      ]
-    },
-    "public.workspace_credit_transaction_type": {
-      "name": "workspace_credit_transaction_type",
-      "schema": "public",
-      "values": [
-        "reset",
-        "revoke",
-        "usage_debit"
       ]
     },
     "public.workspace_member_role": {

@@ -11,6 +11,10 @@ export const jobPayloadSchemas = {
   crawlDocSource: z.object({
     sourceId: z.string().min(1),
   }),
+  distillReviewMemory: z.object({
+    repositoryId: z.string().min(1),
+    commentId: z.number().int().positive(),
+  }),
 }
 
 export const jobs = {
@@ -40,6 +44,16 @@ export const jobs = {
     ) =>
       enqueueJob(executor, "crawl_doc_source", payload, {
         jobKey: `docs-crawl:${payload.sourceId}`,
+        maxAttempts: 3,
+      }),
+  },
+  distillReviewMemory: {
+    enqueue: (
+      executor: JobExecutor,
+      payload: z.infer<typeof jobPayloadSchemas.distillReviewMemory>,
+    ) =>
+      enqueueJob(executor, "distill_review_memory", payload, {
+        jobKey: `review-memory:${payload.commentId}`,
         maxAttempts: 3,
       }),
   },

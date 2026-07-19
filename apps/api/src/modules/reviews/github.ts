@@ -2,7 +2,9 @@ import { env } from "../../env"
 import type { repository } from "../../db/schema"
 import { createGitHubApp } from "../github/service"
 import type { PullRequestFile } from "./diff"
+import { renderFindingMarker } from "./memories"
 import { findingLabel, type ReviewFinding } from "./prompt"
+import { replaceEmDashes } from "./text"
 
 type Repository = typeof repository.$inferSelect
 type PullRequestReviewComment = {
@@ -193,7 +195,7 @@ export const getReviewCommentMarker = ({
     : `<!-- reviewbot:summary:${encodeURIComponent(pullRequestId)} -->`
 
 const withMarker = (body: string, scope: ReviewCommentScope) =>
-  `${body}\n\n${getReviewCommentMarker(scope)}`
+  `${replaceEmDashes(body)}\n\n${getReviewCommentMarker(scope)}`
 
 export const reviewStartedBody =
   "Review started. I am analyzing the changes in this pull request."
@@ -264,7 +266,7 @@ export const renderInlineReviewComment = (
   finding: ReviewFinding,
   repoFullName: string
 ) =>
-  [
+  replaceEmDashes([
     `**[${findingLabel(finding)}] ${finding.title}**`,
     "",
     finding.body,
@@ -274,7 +276,9 @@ export const renderInlineReviewComment = (
     renderFixPrompt(finding),
     "",
     feedbackLink(finding, repoFullName),
-  ].join("\n")
+    "",
+    renderFindingMarker(finding),
+  ].join("\n"))
 
 export const buildPullRequestReviewComments = (
   findings: ReviewFinding[],

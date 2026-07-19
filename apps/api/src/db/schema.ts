@@ -495,6 +495,36 @@ export const reviewFinding = pgTable(
   ]
 )
 
+export const reviewMemory = pgTable(
+  "review_memory",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    repositoryId: text("repository_id").references(() => repository.id, {
+      onDelete: "cascade",
+    }),
+    content: text("content").notNull(),
+    pathGlob: text("path_glob"),
+    enabled: boolean("enabled").default(true).notNull(),
+    sourceCommentId: text("source_comment_id"),
+    sourceCommentUrl: text("source_comment_url"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("review_memory_workspace_id_idx").on(table.workspaceId),
+    index("review_memory_repository_id_idx").on(table.repositoryId),
+    uniqueIndex("review_memory_source_comment_id_idx").on(
+      table.sourceCommentId
+    ),
+  ]
+)
+
 export const webhookEvent = pgTable(
   "webhook_event",
   {
@@ -737,6 +767,7 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   webhookEvents: many(webhookEvent),
   reviewUsage: many(reviewUsage),
   charges: many(workspaceCharge),
+  memories: many(reviewMemory),
 }))
 
 export const workspaceMemberRelations = relations(
@@ -764,6 +795,7 @@ export const repositoryRelations = relations(repository, ({ one, many }) => ({
   }),
   context: one(repositoryContext),
   pullRequests: many(pullRequest),
+  memories: many(reviewMemory),
 }))
 
 export const pullRequestRelations = relations(pullRequest, ({ one, many }) => ({
@@ -812,6 +844,17 @@ export const reviewFindingRelations = relations(reviewFinding, ({ one }) => ({
   reviewRun: one(reviewRun, {
     fields: [reviewFinding.reviewRunId],
     references: [reviewRun.id],
+  }),
+}))
+
+export const reviewMemoryRelations = relations(reviewMemory, ({ one }) => ({
+  workspace: one(workspace, {
+    fields: [reviewMemory.workspaceId],
+    references: [workspace.id],
+  }),
+  repository: one(repository, {
+    fields: [reviewMemory.repositoryId],
+    references: [repository.id],
   }),
 }))
 

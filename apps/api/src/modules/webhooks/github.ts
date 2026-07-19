@@ -5,6 +5,7 @@ import {
   workspace,
   type ProviderActor,
 } from "../../db/schema"
+import { jobs } from "../../jobs/definitions"
 import { listGitHubInstallationRepositories } from "../github/service"
 import {
   addPullRequestLifecycleEvent,
@@ -57,6 +58,8 @@ export type GitHubWebhookPayload = {
     pull_request?: unknown
   }
   comment?: {
+    id?: number
+    in_reply_to_id?: number | null
     body?: string | null
     user?: GitHubWebhookActor
   }
@@ -181,6 +184,18 @@ export const handleGitHubWebhook = async ({
 
   if (!repo || !number) {
     return
+  }
+
+  if (
+    event.eventName === "pull_request_review_comment" &&
+    (payload.action === "created" || payload.action === "edited") &&
+    payload.comment?.id &&
+    payload.comment.in_reply_to_id
+  ) {
+    await jobs.distillReviewMemory.enqueue(db, {
+      repositoryId: repo.id,
+      commentId: payload.comment.id,
+    })
   }
 
   const savedPullRequest = await syncGitHubPullRequest(repo, number)

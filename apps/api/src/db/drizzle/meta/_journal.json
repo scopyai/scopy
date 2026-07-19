@@ -5,50 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1782155214051,
-      "tag": "0000_swift_shinobi_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1782590400000,
-      "tag": "0001_natural_language_rules",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1783247577133,
-      "tag": "0002_billing_usage_without_byok",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1783315200000,
-      "tag": "0003_integer_review_credits",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1783641600000,
-      "tag": "0004_repository_context_per_base_sha",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1783987200000,
-      "tag": "0005_docs_referencing",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1784332800000,
-      "tag": "0006_doc_library_detection",
+      "when": 1784449180131,
+      "tag": "0000_spicy_vanisher",
       "breakpoints": true
     }
   ]

@@ -1,6 +1,7 @@
 import type { TaskList } from "graphile-worker"
 import { crawlDocSource } from "../modules/docs/crawler"
 import { enqueueDueDocSourceCrawls } from "../modules/docs/service"
+import { distillReviewMemory } from "../modules/reviews/memories"
 import { executeReviewPullRequest } from "../modules/reviews/task"
 import { processGitHubWebhookEvent } from "../modules/webhooks/service"
 import { jobPayloadSchemas } from "./definitions"
@@ -30,6 +31,12 @@ export const taskList: TaskList = {
         maxAttempts: helpers.job.max_attempts,
       }
     )
+  },
+  distill_review_memory: async (payload, helpers) => {
+    await distillReviewMemory({
+      ...jobPayloadSchemas.distillReviewMemory.parse(payload),
+      logger: helpers.logger,
+    })
   },
   crawl_doc_source: async (payload, helpers) => {
     const { sourceId } = jobPayloadSchemas.crawlDocSource.parse(payload)
