@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import { Separator } from "@workspace/ui/components/separator"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { cn } from "@workspace/ui/lib/utils"
@@ -76,17 +77,31 @@ export function MemoryList({
     )
   }
 
+  const enabledMemories = memories.filter((memory) => memory.enabled)
+  const disabledMemories = memories.filter((memory) => !memory.enabled)
+
+  const renderMemory = (memory: WorkspaceMemory) => (
+    <MemoryRow
+      key={memory.id}
+      memory={memory}
+      workspaceId={workspaceId}
+      canEdit={canEdit}
+      showRepository={showRepository}
+    />
+  )
+
   return (
-    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-      {memories.map((memory) => (
-        <MemoryRow
-          key={memory.id}
-          memory={memory}
-          workspaceId={workspaceId}
-          canEdit={canEdit}
-          showRepository={showRepository}
-        />
-      ))}
+    <div className="flex flex-col gap-2">
+      {enabledMemories.map(renderMemory)}
+
+      {enabledMemories.length > 0 && disabledMemories.length > 0 ? (
+        <div className="py-1">
+          <Separator />
+          <p className="mt-3 mb-1 text-sm text-muted-foreground">Disabled</p>
+        </div>
+      ) : null}
+
+      {disabledMemories.map(renderMemory)}
     </div>
   )
 }
@@ -141,77 +156,81 @@ function MemoryRow({
   }
 
   return (
-    <article className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={memory.enabled ? "secondary" : "outline"}>
-          {memory.enabled ? "Enabled" : "Disabled"}
-        </Badge>
-        {showRepository ? (
-          <Badge variant="outline">{memory.repository.fullName}</Badge>
-        ) : null}
-        {memory.pathGlob ? (
-          <Badge variant="outline">{memory.pathGlob}</Badge>
-        ) : null}
-        {memory.sourceCommentUrl ? (
-          <a
-            href={memory.sourceCommentUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            Source comment <ExternalLinkIcon className="size-3" />
-          </a>
-        ) : null}
-        <span className="text-xs text-muted-foreground">
-          {new Date(memory.createdAt).toLocaleDateString()}
-        </span>
-      </div>
+    <article
+      className={cn(
+        "rounded-lg border border-border bg-card p-4 transition-colors",
+        !memory.enabled && "border-dashed"
+      )}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {showRepository ? (
+            <Badge variant="outline">{memory.repository.fullName}</Badge>
+          ) : null}
+          {memory.pathGlob ? (
+            <Badge variant="outline">{memory.pathGlob}</Badge>
+          ) : null}
+          {memory.sourceCommentUrl ? (
+            <a
+              href={memory.sourceCommentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Source comment <ExternalLinkIcon className="size-3" />
+            </a>
+          ) : null}
+          <span className="text-xs text-muted-foreground">
+            {new Date(memory.createdAt).toLocaleDateString()}
+          </span>
+        </div>
 
-      <p
-        className={cn(
-          "text-sm leading-relaxed",
-          !memory.enabled && "text-muted-foreground"
-        )}
-      >
-        {memory.content}
-      </p>
-
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleToggle}
-          disabled={!canEdit || updateMemory.isPending}
-        >
-          {memory.enabled ? (
-            <CirclePauseIcon className="size-3.5" />
-          ) : (
-            <CirclePlayIcon className="size-3.5" />
+        <p
+          className={cn(
+            "text-sm leading-relaxed",
+            !memory.enabled && "text-muted-foreground"
           )}
-          {memory.enabled ? "Disable" : "Enable"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setDraft(memory.content)
-            setEditOpen(true)
-          }}
-          disabled={!canEdit}
         >
-          <PencilIcon className="size-3.5" />
-          Edit
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          onClick={() => setDeleteOpen(true)}
-          disabled={!canEdit || deleteMemory.isPending}
-        >
-          <Trash2Icon className="size-3.5" />
-          Delete
-        </Button>
+          {memory.content}
+        </p>
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleToggle}
+            disabled={!canEdit || updateMemory.isPending}
+          >
+            {memory.enabled ? (
+              <CirclePauseIcon className="size-3.5" />
+            ) : (
+              <CirclePlayIcon className="size-3.5" />
+            )}
+            {memory.enabled ? "Disable" : "Enable"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDraft(memory.content)
+              setEditOpen(true)
+            }}
+            disabled={!canEdit}
+          >
+            <PencilIcon className="size-3.5" />
+            Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setDeleteOpen(true)}
+            disabled={!canEdit || deleteMemory.isPending}
+          >
+            <Trash2Icon className="size-3.5" />
+            Delete
+          </Button>
+        </div>
       </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
