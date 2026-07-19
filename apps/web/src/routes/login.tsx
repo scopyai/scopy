@@ -13,6 +13,7 @@ import {
 import { authClient } from "@/lib/auth-client"
 import { env } from "@/env"
 import { WorkspaceHomeRedirect } from "@/components/workspace-home-redirect"
+import { isRedirectMutationPending } from "@/hooks/use-redirect-lock"
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -105,11 +106,13 @@ function LoginPage() {
             type="button"
             variant="outline"
             className="w-full"
-            disabled={mutation.isPending}
+            disabled={isRedirectMutationPending(mutation)}
             onClick={() => mutation.mutate()}
           >
             <GoogleIcon />
-            {mutation.isPending ? "Redirecting..." : "Continue with Google"}
+            {isRedirectMutationPending(mutation)
+              ? "Redirecting..."
+              : "Continue with Google"}
           </Button>
         </CardContent>
       </Card>

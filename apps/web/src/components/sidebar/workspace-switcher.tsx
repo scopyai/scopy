@@ -17,6 +17,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
+import { useRedirectLock } from "@/hooks/use-redirect-lock"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import {
   getWorkspaceSlug,
@@ -35,7 +36,9 @@ const statusVariant = {
 export function WorkspaceSwitcher() {
   const { selectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces, isPending: workspacesPending } = useWorkspaces()
-  const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
+  const { refetch: fetchInstallUrl } = useInstallUrl()
+  const { isRedirecting, startRedirect, cancelRedirect, redirectTo } =
+    useRedirectLock()
   const navigate = useNavigate()
 
   const active = getActiveWorkspaces(workspaces)
@@ -56,14 +59,20 @@ export function WorkspaceSwitcher() {
   }
 
   const handleAddOrg = async () => {
-    const result = await fetchInstallUrl()
-    if (result.error || !result.data?.url) {
-      toast.error(
-        "Failed to get GitHub install URL. Is the GitHub App configured?"
-      )
-      return
+    startRedirect()
+    try {
+      const result = await fetchInstallUrl()
+      if (result.error || !result.data?.url) {
+        toast.error(
+          "Failed to get GitHub install URL. Is the GitHub App configured?"
+        )
+        cancelRedirect()
+        return
+      }
+      redirectTo(result.data.url)
+    } catch {
+      cancelRedirect()
     }
-    window.location.href = result.data.url
   }
 
   if (workspacesPending) {
@@ -168,13 +177,13 @@ export function WorkspaceSwitcher() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleAddOrg}
-          disabled={fetchingUrl}
+          disabled={isRedirecting}
           className="min-h-11 gap-2 md:min-h-0"
         >
           <div className="flex size-4 items-center justify-center rounded-sm border border-dashed border-border">
             <Plus className="size-3" />
           </div>
-          {fetchingUrl ? "Loading…" : "Add workspace"}
+          {isRedirecting ? "Loading…" : "Add workspace"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

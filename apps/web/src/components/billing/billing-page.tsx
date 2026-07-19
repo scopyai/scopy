@@ -8,6 +8,7 @@ import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { useCheckoutCredits } from "@/hooks/use-workspace-billing-mutations"
+import { isRedirectMutationPending } from "@/hooks/use-redirect-lock"
 import { formatPlanPriceAmount } from "@/lib/billing-format"
 import { AccountSummary } from "./account-summary"
 import { PlanCards } from "./plan-cards"
@@ -106,10 +107,14 @@ function CreditTopUp({
               </span>
             </div>
             <Button
-              disabled={checkout.isPending || normalizedCredits < 10}
+              disabled={
+                isRedirectMutationPending(checkout) || normalizedCredits < 10
+              }
               onClick={() => checkout.mutate(normalizedCredits)}
             >
-              {checkout.isPending ? "Redirecting..." : "Buy credits"}
+              {isRedirectMutationPending(checkout)
+                ? "Redirecting..."
+                : "Buy credits"}
             </Button>
           </div>
         </div>

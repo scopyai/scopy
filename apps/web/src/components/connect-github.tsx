@@ -1,5 +1,6 @@
 import { Button } from "@workspace/ui/components/button"
 import { useInstallUrl } from "@/hooks/use-install-url"
+import { useRedirectLock } from "@/hooks/use-redirect-lock"
 import { toast } from "sonner"
 
 type ConnectGitHubProps = {
@@ -19,17 +20,25 @@ export function ConnectGitHub({
   title = defaultTitle,
   description = defaultDescription,
 }: ConnectGitHubProps) {
-  const { refetch, isFetching } = useInstallUrl(source)
+  const { refetch } = useInstallUrl(source)
+  const { isRedirecting, startRedirect, cancelRedirect, redirectTo } =
+    useRedirectLock()
 
   const handleConnect = async () => {
-    const result = await refetch()
-    if (result.error || !result.data?.url) {
-      toast.error(
-        "Failed to get GitHub install URL. Is the GitHub App configured?"
-      )
-      return
+    startRedirect()
+    try {
+      const result = await refetch()
+      if (result.error || !result.data?.url) {
+        toast.error(
+          "Failed to get GitHub install URL. Is the GitHub App configured?"
+        )
+        cancelRedirect()
+        return
+      }
+      redirectTo(result.data.url)
+    } catch {
+      cancelRedirect()
     }
-    window.location.href = result.data.url
   }
 
   return (
@@ -68,8 +77,8 @@ export function ConnectGitHub({
         </h1>
         <p className="text-sm text-muted-foreground">{description}</p>
       </div>
-      <Button onClick={handleConnect} disabled={isFetching}>
-        {isFetching ? "Loading…" : "Connect GitHub"}
+      <Button onClick={handleConnect} disabled={isRedirecting}>
+        {isRedirecting ? "Loading…" : "Connect GitHub"}
       </Button>
     </div>
   )

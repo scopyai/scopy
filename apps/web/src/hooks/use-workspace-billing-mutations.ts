@@ -10,12 +10,11 @@ export function useCheckoutBilling(workspaceId: string) {
         .workspaces({ workspaceId })
         .billing.checkout.post({ tier, requestId: crypto.randomUUID() })
       if (error) throw error
+      if (!data.url) throw new Error("Missing checkout URL")
       return data
     },
     onSuccess: (data) => {
-      if (data.url) {
-        window.location.href = data.url
-      }
+      window.location.href = data.url
     },
     onError: () => {
       toast.error("Failed to start checkout")
@@ -33,12 +32,11 @@ export function useCheckoutCredits(workspaceId: string) {
           requestId: crypto.randomUUID(),
         })
       if (error) throw error
+      if (!data.url) throw new Error("Missing checkout URL")
       return data
     },
     onSuccess: (data) => {
-      if (data.url) {
-        window.location.href = data.url
-      }
+      window.location.href = data.url
     },
     onError: () => {
       toast.error("Failed to start credit checkout")
@@ -53,12 +51,11 @@ export function usePortalBilling(workspaceId: string) {
         .workspaces({ workspaceId })
         .billing.portal.post()
       if (error) throw error
+      if (!data.url) throw new Error("Missing portal URL")
       return data
     },
     onSuccess: (data) => {
-      if (data.url) {
-        window.location.href = data.url
-      }
+      window.location.href = data.url
     },
     onError: () => {
       toast.error("Failed to open billing portal")

@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppConnectRouteImport } from './routes/_app.connect'
 import { Route as AppWorkspaceSlugRouteImport } from './routes/_app.$workspaceSlug'
+import { Route as AppOnboardingWelcomeRouteImport } from './routes/_app.onboarding.welcome'
 import { Route as AppOnboardingUsageRouteImport } from './routes/_app.onboarding.usage'
 import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
 import { Route as AppOnboardingOverviewRouteImport } from './routes/_app.onboarding.overview'
@@ -51,6 +52,11 @@ const AppConnectRoute = AppConnectRouteImport.update({
 const AppWorkspaceSlugRoute = AppWorkspaceSlugRouteImport.update({
   id: '/$workspaceSlug',
   path: '/$workspaceSlug',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingWelcomeRoute = AppOnboardingWelcomeRouteImport.update({
+  id: '/onboarding/welcome',
+  path: '/onboarding/welcome',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOnboardingUsageRoute = AppOnboardingUsageRouteImport.update({
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
   '/onboarding/usage': typeof AppOnboardingUsageRoute
+  '/onboarding/welcome': typeof AppOnboardingWelcomeRoute
   '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
   '/onboarding/usage': typeof AppOnboardingUsageRoute
+  '/onboarding/welcome': typeof AppOnboardingWelcomeRoute
   '/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/$workspaceSlug/repositories': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -190,6 +198,7 @@ export interface FileRoutesById {
   '/_app/onboarding/overview': typeof AppOnboardingOverviewRoute
   '/_app/onboarding/repositories': typeof AppOnboardingRepositoriesRoute
   '/_app/onboarding/usage': typeof AppOnboardingUsageRoute
+  '/_app/onboarding/welcome': typeof AppOnboardingWelcomeRoute
   '/_app/$workspaceSlug/billing/success': typeof AppWorkspaceSlugBillingSuccessRoute
   '/_app/$workspaceSlug/repositories/$repositoryId': typeof AppWorkspaceSlugRepositoriesRepositoryIdRoute
   '/_app/$workspaceSlug/repositories/': typeof AppWorkspaceSlugRepositoriesIndexRoute
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/onboarding/overview'
     | '/onboarding/repositories'
     | '/onboarding/usage'
+    | '/onboarding/welcome'
     | '/$workspaceSlug/billing/success'
     | '/$workspaceSlug/repositories/$repositoryId'
     | '/$workspaceSlug/repositories/'
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
     | '/onboarding/overview'
     | '/onboarding/repositories'
     | '/onboarding/usage'
+    | '/onboarding/welcome'
     | '/$workspaceSlug/billing/success'
     | '/$workspaceSlug/repositories/$repositoryId'
     | '/$workspaceSlug/repositories'
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/_app/onboarding/overview'
     | '/_app/onboarding/repositories'
     | '/_app/onboarding/usage'
+    | '/_app/onboarding/welcome'
     | '/_app/$workspaceSlug/billing/success'
     | '/_app/$workspaceSlug/repositories/$repositoryId'
     | '/_app/$workspaceSlug/repositories/'
@@ -298,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/$workspaceSlug'
       fullPath: '/$workspaceSlug'
       preLoaderRoute: typeof AppWorkspaceSlugRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/welcome': {
+      id: '/_app/onboarding/welcome'
+      path: '/onboarding/welcome'
+      fullPath: '/onboarding/welcome'
+      preLoaderRoute: typeof AppOnboardingWelcomeRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/onboarding/usage': {
@@ -463,6 +482,7 @@ interface AppRouteChildren {
   AppOnboardingOverviewRoute: typeof AppOnboardingOverviewRoute
   AppOnboardingRepositoriesRoute: typeof AppOnboardingRepositoriesRoute
   AppOnboardingUsageRoute: typeof AppOnboardingUsageRoute
+  AppOnboardingWelcomeRoute: typeof AppOnboardingWelcomeRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -473,6 +493,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOnboardingOverviewRoute: AppOnboardingOverviewRoute,
   AppOnboardingRepositoriesRoute: AppOnboardingRepositoriesRoute,
   AppOnboardingUsageRoute: AppOnboardingUsageRoute,
+  AppOnboardingWelcomeRoute: AppOnboardingWelcomeRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

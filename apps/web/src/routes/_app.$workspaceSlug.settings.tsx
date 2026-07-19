@@ -8,6 +8,7 @@ import { WorkspaceReviewSettings } from "@/components/repositories/workspace-rev
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
+import { useRedirectLock } from "@/hooks/use-redirect-lock"
 import { useWorkspaceGithubLinks } from "@/hooks/use-workspace-github-links"
 
 export const Route = createFileRoute("/_app/$workspaceSlug/settings")({
@@ -17,7 +18,9 @@ export const Route = createFileRoute("/_app/$workspaceSlug/settings")({
 function SettingsRoute() {
   const { selectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces } = useWorkspaces()
-  const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
+  const { refetch: fetchInstallUrl } = useInstallUrl()
+  const { isRedirecting, startRedirect, cancelRedirect, redirectTo } =
+    useRedirectLock()
   const { data: githubLinks } = useWorkspaceGithubLinks(selectedWorkspaceId)
 
   const selectedEntry = workspaces?.find(
@@ -32,14 +35,20 @@ function SettingsRoute() {
 
   const handleConfigureGitHub = async () => {
     if (isReinstall) {
-      const result = await fetchInstallUrl()
-      if (result.error || !result.data?.url) {
-        toast.error(
-          "Failed to get GitHub install URL. Is the GitHub App configured?"
-        )
-        return
+      startRedirect()
+      try {
+        const result = await fetchInstallUrl()
+        if (result.error || !result.data?.url) {
+          toast.error(
+            "Failed to get GitHub install URL. Is the GitHub App configured?"
+          )
+          cancelRedirect()
+          return
+        }
+        redirectTo(result.data.url)
+      } catch {
+        cancelRedirect()
       }
-      window.location.href = result.data.url
     } else if (githubLinks?.installationSettingsUrl) {
       window.open(
         githubLinks.installationSettingsUrl,
@@ -86,14 +95,14 @@ function SettingsRoute() {
                   className="shrink-0"
                   onClick={handleConfigureGitHub}
                   disabled={
-                    fetchingUrl ||
+                    isRedirecting ||
                     (!isReinstall && !githubLinks?.installationSettingsUrl)
                   }
                 >
                   {isReinstall ? (
                     <>
                       <RefreshCwIcon className="size-3.5" />
-                      {fetchingUrl ? "Loading…" : "Reinstall on GitHub"}
+                      {isRedirecting ? "Loading…" : "Reinstall on GitHub"}
                     </>
                   ) : (
                     <>
