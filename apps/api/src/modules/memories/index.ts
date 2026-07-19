@@ -1,9 +1,16 @@
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "../../db/client"
 import { repository, reviewMemory } from "../../db/schema"
 import { protectedRoute } from "../auth"
-import { getWorkspaceForUser } from "../workspaces/service"
+import {
+  getWorkspaceForUser,
+  getWorkspaceForUserWithRole,
+} from "../workspaces/service"
+
+const listMemoriesSchema = z.object({
+  repositoryId: z.string().min(1).optional(),
+})
 
 const updateMemorySchema = z.object({
   content: z.string().min(1).optional(),
@@ -11,7 +18,12 @@ const updateMemorySchema = z.object({
 })
 
 export const memoryRoutes = protectedRoute("/workspaces")
-  .get("/:workspaceId/memories", async ({ params, user, status }) => {
+  .get("/:workspaceId/memories", async ({ params, query, user, status }) => {
+    const parsed = listMemoriesSchema.safeParse(query)
+    if (!parsed.success) {
+      return status(400, { error: "Invalid memory query" })
+    }
+
     const workspaceWithRole = await getWorkspaceForUser(
       params.workspaceId,
       user.id
@@ -31,8 +43,15 @@ export const memoryRoutes = protectedRoute("/workspaces")
         repository: { id: repository.id, fullName: repository.fullName },
       })
       .from(reviewMemory)
-      .leftJoin(repository, eq(reviewMemory.repositoryId, repository.id))
-      .where(eq(reviewMemory.workspaceId, params.workspaceId))
+      .innerJoin(repository, eq(reviewMemory.repositoryId, repository.id))
+      .where(
+        parsed.data.repositoryId
+          ? and(
+              eq(repository.workspaceId, params.workspaceId),
+              eq(repository.id, parsed.data.repositoryId)
+            )
+          : eq(repository.workspaceId, params.workspaceId)
+      )
       .orderBy(desc(reviewMemory.createdAt))
   })
   .patch(
@@ -43,9 +62,10 @@ export const memoryRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid memory update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
-        user.id
+        user.id,
+        ["owner", "admin"]
       )
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -57,7 +77,13 @@ export const memoryRoutes = protectedRoute("/workspaces")
         .where(
           and(
             eq(reviewMemory.id, params.memoryId),
-            eq(reviewMemory.workspaceId, params.workspaceId)
+            inArray(
+              reviewMemory.repositoryId,
+              db
+                .select({ id: repository.id })
+                .from(repository)
+                .where(eq(repository.workspaceId, params.workspaceId))
+            )
           )
         )
         .returning()
@@ -71,9 +97,10 @@ export const memoryRoutes = protectedRoute("/workspaces")
   .delete(
     "/:workspaceId/memories/:memoryId",
     async ({ params, user, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+      const workspaceWithRole = await getWorkspaceForUserWithRole(
         params.workspaceId,
-        user.id
+        user.id,
+        ["owner", "admin"]
       )
       if (!workspaceWithRole) {
         return status(404, { error: "Workspace not found" })
@@ -84,7 +111,13 @@ export const memoryRoutes = protectedRoute("/workspaces")
         .where(
           and(
             eq(reviewMemory.id, params.memoryId),
-            eq(reviewMemory.workspaceId, params.workspaceId)
+            inArray(
+              reviewMemory.repositoryId,
+              db
+                .select({ id: repository.id })
+                .from(repository)
+                .where(eq(repository.workspaceId, params.workspaceId))
+            )
           )
         )
         .returning()

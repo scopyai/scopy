@@ -8,6 +8,13 @@
       "when": 1784449180131,
       "tag": "0000_spicy_vanisher",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784457132736,
+      "tag": "0001_cynical_radioactive_man",
+      "breakpoints": true
     }
   ]
 }

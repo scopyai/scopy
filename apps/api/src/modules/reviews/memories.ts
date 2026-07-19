@@ -41,32 +41,54 @@ export const parseFindingMarker = (body: string): FindingMarkerData | null => {
 }
 
 const memoryOutputSchema = z.object({
-  memory: z
+  action: z
+    .enum(["noop", "create", "update", "retract", "clarify"])
+    .describe("The single action to take for the newest reply."),
+  memoryId: z
     .string()
-    .min(1)
     .nullable()
     .describe(
-      "One short imperative rule the reviewer should apply in future reviews, including the reason, or null when the reply contains no durable guidance."
+      "For update or retract: the id of the existing memory to change, copied exactly from the list. Null otherwise."
+    ),
+  rule: z
+    .string()
+    .nullable()
+    .describe(
+      "For create or update: one short unconditional instruction to the reviewer, starting with a verb such as 'Do not flag' or 'Flag', naming its subject concretely. No conditions, no 'when' or 'if' clauses. Null otherwise."
+    ),
+  reason: z
+    .string()
+    .nullable()
+    .describe(
+      "For create or update: the facts from the human's reply that justify the rule, stated as established facts about this repository. Null otherwise."
     ),
   reply: z
     .string()
     .nullable()
     .describe(
-      'A very short, natural acknowledgement to post as the reviewer\'s reply when a memory is saved, e.g. "Got it, I won\'t flag SSRF here anymore." Null when the memory is null.'
+      "A very short, natural response to post in the thread: confirm what you did, or ask the clarifying question. Null for noop."
     ),
 })
 
 const distillInstructions = [
   "You maintain long-term memories for an AI code reviewer.",
-  "You are given one review finding the reviewer posted on a pull request and a human reply to it.",
-  "Decide whether the reply contains durable guidance the reviewer should remember for future reviews of this repository: a dismissal with a reason, a factual correction, or a stated team convention or preference.",
-  "Acknowledgements, questions, jokes, fix confirmations, and remarks that only apply to this one pull request are not durable guidance; return a null memory for those.",
-  "A bare disagreement without a reason is not durable guidance either.",
-  "The memory must faithfully record the human's position, never your own judgement of the finding: when the reply dismisses the finding with a reason, the memory instructs the reviewer not to raise that kind of finding and records the human's reason, even if you disagree with it.",
-  "Treat what the human states as established fact about this repository, not as a condition for the reviewer to verify: the rule is unconditional and the human's reason is only context.",
-  "State the rule at the same generality as the human's guidance: when they dismiss a whole class of issues, the memory covers that class, not the specifics of this one finding.",
-  "When there is durable guidance, phrase the memory as one short imperative rule with its reason, understandable without seeing this conversation.",
-  "When the guidance is already covered by an existing memory, return a null memory.",
+  "You are given one review finding the reviewer posted on a pull request, the discussion thread under it, and the repository's existing memories.",
+  "Based only on the newest human reply, choose exactly one action:",
+  "- noop: no durable guidance, or it is already covered by an existing memory. A reply that narrows, broadens, or corrects the scope of an existing memory is never noop: it is an update.",
+  "- create: the reply states durable guidance not covered by any existing memory: a dismissal with a reason, a factual correction, or a team convention or preference. A reply that explains why a finding does not apply, such as facts about the deployment or infrastructure, is a dismissal with a reason even when it is not phrased as an instruction.",
+  "- update: the reply refines or corrects one existing memory, for example narrowing, broadening, or rewording it. Set memoryId and the full replacement rule and reason.",
+  "- retract: the reply withdraws the guidance an existing memory records, so the reviewer should return to its default behavior. Set memoryId. Never choose update to invert a memory into what the reviewer already does by default, such as flagging real issues: withdrawing guidance is always retract.",
+  "- clarify: durable intent is likely, but which memory it targets or what it should say is ambiguous. Ask one short question and change nothing.",
+  "Rules:",
+  "- Acknowledgements, questions, jokes, fix confirmations, bare disagreements without a reason, and remarks that only apply to this one pull request are noop.",
+  "- Record the human's position faithfully, never your own judgement of the finding, even if you disagree with it.",
+  "- Address the rule to the reviewer, telling it what to flag or not flag, not to the team about how to build the code.",
+  "- Treat what the human states as established fact about this repository, not as a condition for the reviewer to verify: rules are unconditional and the human's reason is only context.",
+  "- Never fold the reason into the rule as a condition: a rule shaped like 'Do not flag X when Y' is wrong. The rule is only 'Do not flag X' and Y belongs in the reason.",
+  "- State rules at the same generality as the human's guidance: when they dismiss a whole class of issues, the rule covers that class, not the specifics of one finding.",
+  "- Memories are read by a reviewer that has never seen this conversation. Never write references like 'this webhook', 'this endpoint', or 'here': resolve them into concrete details from the finding, such as the file path, route, or function, so the rule identifies its subject on its own.",
+  "- When the reply states guidance that a disabled memory already records, choose update for that memory rather than create or noop, so it becomes active again.",
+  "- Change at most one memory. When the reply affects several, choose clarify.",
 ].join("\n")
 
 export const distillReviewMemory = async ({
@@ -105,13 +127,31 @@ export const distillReviewMemory = async ({
 
   const reply = await getComment(commentId)
   if (!reply?.body || !reply.in_reply_to_id || reply.user.type === "Bot") return
-  const parent = await getComment(reply.in_reply_to_id)
-  const finding = parent && parseFindingMarker(parent.body)
+
+  const pullNumber = Number(reply.pull_request_url.split("/").pop())
+  const pullComments = await octokit.paginate(
+    "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+    {
+      owner: repo.owner,
+      repo: repo.name,
+      pull_number: pullNumber,
+      per_page: 100,
+    }
+  )
+  const root = pullComments.find(
+    (comment) => comment.id === reply.in_reply_to_id
+  )
+  const finding = root && parseFindingMarker(root.body)
   if (!finding) return
 
-  const existingMemories = await db.query.reviewMemory.findMany({
+  const stripMarker = (body: string) =>
+    body.replace(/<!-- scopy:finding [A-Za-z0-9_-]+ -->/g, "").trim()
+  const thread = pullComments.filter(
+    (comment) => comment.in_reply_to_id === root.id && comment.id !== commentId
+  )
+
+  const memories = await db.query.reviewMemory.findMany({
     where: eq(reviewMemory.repositoryId, repo.id),
-    columns: { content: true },
   })
   const llm = createReviewLlm()
   const { object } = await generateObject({
@@ -124,47 +164,118 @@ export const distillReviewMemory = async ({
       `Severity: ${finding.severity}`,
       `Title: ${finding.title}`,
       finding.body,
-      "",
-      `Reply from @${reply.user.login}:`,
-      reply.body,
-      ...(existingMemories.length > 0
+      ...(thread.length > 0
         ? [
             "",
-            "Existing memories:",
-            ...existingMemories.map((memory) => `- ${memory.content}`),
+            "Earlier replies in this thread:",
+            ...thread.map(
+              (comment) =>
+                `${comment.user.type === "Bot" ? "you (the reviewer)" : `@${comment.user.login}`}: ${stripMarker(comment.body)}`
+            ),
           ]
         : []),
+      "",
+      `Newest reply, from @${reply.user.login} (act on this one):`,
+      reply.body,
+      "",
+      ...(memories.length > 0
+        ? [
+            "Existing memories for this repository:",
+            ...memories.map(
+              (memory) =>
+                `- id ${memory.id}${memory.enabled ? "" : " (disabled)"}: ${memory.content}`
+            ),
+          ]
+        : ["There are no existing memories for this repository."]),
     ].join("\n"),
     maxRetries: 2,
   })
 
-  if (!object.memory) {
+  const target = object.memoryId
+    ? memories.find((memory) => memory.id === object.memoryId)
+    : undefined
+  const now = new Date()
+  const content = object.rule
+    ? `${object.rule.trim().replace(/[.\s]+$/, "")}.${object.reason ? ` Reason: ${object.reason.trim()}` : ""}`
+    : null
+
+  if (object.action === "noop") {
     logger.info("Review memory distillation skipped reply", {
       repositoryId,
       commentId,
     })
     return
   }
+  if ((object.action === "update" || object.action === "retract") && !target) {
+    logger.info("Review memory action skipped: unknown target memory", {
+      repositoryId,
+      commentId,
+      action: object.action,
+      memoryId: object.memoryId,
+    })
+    return
+  }
+  if (
+    (object.action === "create" || object.action === "update") &&
+    !content
+  ) {
+    logger.info("Review memory action skipped: missing content", {
+      repositoryId,
+      commentId,
+      action: object.action,
+    })
+    return
+  }
 
-  await db
-    .insert(reviewMemory)
-    .values({
-      id: randomUUID(),
-      workspaceId: repo.workspaceId,
-      repositoryId: repo.id,
-      content: replaceEmDashes(object.memory),
-      sourceCommentId: String(commentId),
-      sourceCommentUrl: reply.html_url,
-    })
-    .onConflictDoUpdate({
-      target: reviewMemory.sourceCommentId,
-      set: {
-        content: replaceEmDashes(object.memory),
-        pathGlob: null,
-        updatedAt: new Date(),
-      },
-    })
-  logger.info("Review memory saved", { repositoryId, commentId })
+  if (object.action === "create") {
+    await db
+      .insert(reviewMemory)
+      .values({
+        id: randomUUID(),
+        repositoryId: repo.id,
+        content: replaceEmDashes(content!),
+        sourceCommentId: String(commentId),
+        sourceCommentUrl: reply.html_url,
+      })
+      .onConflictDoUpdate({
+        target: reviewMemory.sourceCommentId,
+        set: {
+          content: replaceEmDashes(content!),
+          pathGlob: null,
+          updatedAt: now,
+        },
+      })
+  } else if (object.action === "update") {
+    await db
+      .update(reviewMemory)
+      .set({
+        content: replaceEmDashes(content!),
+        enabled: true,
+        sourceCommentUrl: reply.html_url,
+        updatedAt: now,
+      })
+      .where(eq(reviewMemory.id, target!.id))
+  } else if (object.action === "retract") {
+    await db
+      .update(reviewMemory)
+      .set({ enabled: false, updatedAt: now })
+      .where(eq(reviewMemory.id, target!.id))
+  }
+  logger.info("Review memory action applied", {
+    repositoryId,
+    commentId,
+    action: object.action,
+    memoryId: target?.id,
+  })
+
+  const fallbackReply =
+    object.action === "retract"
+      ? "Got it, I removed that memory."
+      : content
+        ? `Noted, I will remember this:\n\n> ${content}`
+        : null
+  const replyBody = object.reply ?? fallbackReply
+  if (!replyBody) return
 
   try {
     await octokit.request(
@@ -172,11 +283,9 @@ export const distillReviewMemory = async ({
       {
         owner: repo.owner,
         repo: repo.name,
-        pull_number: Number(reply.pull_request_url.split("/").pop()),
+        pull_number: pullNumber,
         comment_id: commentId,
-        body: replaceEmDashes(
-          object.reply ?? `Noted, I will remember this:\n\n> ${object.memory}`
-        ),
+        body: replaceEmDashes(replyBody),
       }
     )
   } catch (error) {

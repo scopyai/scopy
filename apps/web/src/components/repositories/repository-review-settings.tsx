@@ -4,6 +4,8 @@ import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { RepositoryDocLibraries } from "@/components/repositories/repository-doc-libraries"
 import { ReviewSettingsFields } from "@/components/repositories/review-settings-fields"
+import { SettingsSection } from "@/components/repositories/settings-section"
+import { MemoryList } from "@/components/memories/memory-list"
 import type {
   ReviewConfigKey,
   ReviewConfigValues,
@@ -120,6 +122,17 @@ export function RepositoryReviewSettings({
           canEdit={canEdit}
         />
 
+        <SettingsSection
+          title="Review memories"
+          description="Repository-specific guidance learned from review conversations. Enabled memories shape future reviews of this repository."
+        >
+          <MemoryList
+            workspaceId={workspaceId}
+            repositoryId={repositoryId}
+            canEdit={canEdit}
+            showRepository={false}
+          />
+        </SettingsSection>
       </div>
     </div>
   )
