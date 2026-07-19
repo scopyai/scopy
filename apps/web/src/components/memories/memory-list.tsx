@@ -71,7 +71,7 @@ export function MemoryList({
         <p className="text-sm font-medium">No memories yet</p>
         <p className="max-w-sm px-4 text-xs text-muted-foreground">
           Reply to a review finding and explain what the reviewer should learn.
-          Durable guidance will appear here.
+          Memories will appear here.
         </p>
       </div>
     )

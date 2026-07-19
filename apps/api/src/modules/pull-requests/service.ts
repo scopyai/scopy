@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto"
-import {
-  and,
-  eq,
-  isNull,
-  notInArray,
-} from "drizzle-orm"
+import { and, eq, isNull, notInArray } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
   pullRequest,
@@ -77,7 +72,9 @@ const toDate = (value: string) => new Date(value)
 const toNullableDate = (value: string | null | undefined) =>
   value ? new Date(value) : null
 
-const toActor = (actor: GitHubActor | null | undefined): ProviderActor | null =>
+const toActor = (
+  actor: GitHubActor | null | undefined
+): ProviderActor | null =>
   actor
     ? {
         id: String(actor.id),
@@ -164,13 +161,15 @@ const ensureInitialPullRequestLifecycleEvent = async ({
   htmlUrl: string
   providerCreatedAt: Date
 }) => {
-  const existingOpenedEvent = await db.query.pullRequestTimelineEvent.findFirst({
-    where: and(
-      eq(pullRequestTimelineEvent.pullRequestId, pullRequestId),
-      eq(pullRequestTimelineEvent.eventType, "lifecycle"),
-      eq(pullRequestTimelineEvent.action, "opened"),
-    ),
-  })
+  const existingOpenedEvent = await db.query.pullRequestTimelineEvent.findFirst(
+    {
+      where: and(
+        eq(pullRequestTimelineEvent.pullRequestId, pullRequestId),
+        eq(pullRequestTimelineEvent.eventType, "lifecycle"),
+        eq(pullRequestTimelineEvent.action, "opened")
+      ),
+    }
+  )
 
   if (existingOpenedEvent) {
     return
@@ -194,7 +193,7 @@ const ensureInitialPullRequestLifecycleEvent = async ({
 const markMissingTimelineEventsDeleted = async (
   pullRequestId: string,
   eventType: TimelineEventType,
-  externalKeys: string[],
+  externalKeys: string[]
 ) => {
   const where = [
     eq(pullRequestTimelineEvent.pullRequestId, pullRequestId),
@@ -217,7 +216,7 @@ const markMissingTimelineEventsDeleted = async (
 
 const syncIssueComments = async (
   pullRequestId: string,
-  comments: GitHubIssueComment[],
+  comments: GitHubIssueComment[]
 ) => {
   const externalKeys = comments.map((comment) => `issue-comment:${comment.id}`)
 
@@ -237,7 +236,7 @@ const syncIssueComments = async (
   await markMissingTimelineEventsDeleted(
     pullRequestId,
     "issue_comment",
-    externalKeys,
+    externalKeys
   )
 }
 
@@ -269,7 +268,7 @@ const syncReviews = async (pullRequestId: string, reviews: GitHubReview[]) => {
 
 const syncReviewComments = async (
   pullRequestId: string,
-  comments: GitHubReviewComment[],
+  comments: GitHubReviewComment[]
 ) => {
   const externalKeys = comments.map((comment) => `review-comment:${comment.id}`)
 
@@ -300,57 +299,22 @@ const syncReviewComments = async (
   await markMissingTimelineEventsDeleted(
     pullRequestId,
     "review_comment",
-    externalKeys,
+    externalKeys
   )
 }
 
-export const syncGitHubPullRequest = async (
-  repo: typeof repository.$inferSelect,
-  number: number,
+const buildPullRequestValues = (
+  repositoryId: string,
+  githubPullRequest: GitHubPullRequest
 ) => {
-  const workspace = await db.query.workspace.findFirst({
-    where: (workspace, { eq }) => eq(workspace.id, repo.workspaceId),
-  })
-
-  if (!workspace) {
-    throw new Error("Workspace not found for repository")
-  }
-
-  const octokit = await getInstallationOctokit(workspace.providerInstallationId)
-  const [pullResponse, issueComments, reviews, reviewComments] =
-    await Promise.all([
-      octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
-        owner: repo.owner,
-        repo: repo.name,
-        pull_number: number,
-      }),
-      octokit.paginate("GET /repos/{owner}/{repo}/issues/{issue_number}/comments", {
-        owner: repo.owner,
-        repo: repo.name,
-        issue_number: number,
-        per_page: 100,
-      }),
-      octokit.paginate("GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
-        owner: repo.owner,
-        repo: repo.name,
-        pull_number: number,
-        per_page: 100,
-      }),
-      octokit.paginate("GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", {
-        owner: repo.owner,
-        repo: repo.name,
-        pull_number: number,
-        per_page: 100,
-      }),
-    ])
-  const githubPullRequest = pullResponse.data as GitHubPullRequest
   const now = new Date()
   const state = githubPullRequest.merged_at
     ? ("merged" as const)
     : githubPullRequest.state
-  const values = {
+
+  return {
     id: randomUUID(),
-    repositoryId: repo.id,
+    repositoryId,
     providerPullRequestId: String(githubPullRequest.id),
     number: githubPullRequest.number,
     title: githubPullRequest.title,
@@ -363,7 +327,7 @@ export const syncGitHubPullRequest = async (
     headRef: githubPullRequest.head.ref,
     headSha: githubPullRequest.head.sha,
     labels: githubPullRequest.labels.flatMap((label) =>
-      label.name ? [label.name] : [],
+      label.name ? [label.name] : []
     ),
     assignees: (githubPullRequest.assignees ?? []).flatMap((actor) => {
       const assignee = toActor(actor)
@@ -377,7 +341,11 @@ export const syncGitHubPullRequest = async (
     lastSyncedAt: now,
     updatedAt: now,
   }
+}
 
+const upsertPullRequest = async (
+  values: ReturnType<typeof buildPullRequestValues>
+) => {
   const [savedPullRequest] = await db
     .insert(pullRequest)
     .values(values)
@@ -407,6 +375,70 @@ export const syncGitHubPullRequest = async (
     })
     .returning()
 
+  return savedPullRequest
+}
+
+const getRepositoryWorkspaceOctokit = async (
+  repo: typeof repository.$inferSelect
+) => {
+  const workspace = await db.query.workspace.findFirst({
+    where: (workspace, { eq }) => eq(workspace.id, repo.workspaceId),
+  })
+
+  if (!workspace) {
+    throw new Error("Workspace not found for repository")
+  }
+
+  return getInstallationOctokit(workspace.providerInstallationId)
+}
+
+export const syncGitHubPullRequest = async (
+  repo: typeof repository.$inferSelect,
+  number: number
+) => {
+  const octokit = await getRepositoryWorkspaceOctokit(repo)
+  const [pullResponse, issueComments, reviews, reviewComments] =
+    await Promise.all([
+      octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+        owner: repo.owner,
+        repo: repo.name,
+        pull_number: number,
+      }),
+      octokit.paginate(
+        "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        {
+          owner: repo.owner,
+          repo: repo.name,
+          issue_number: number,
+          per_page: 100,
+        }
+      ),
+      octokit.paginate(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+        {
+          owner: repo.owner,
+          repo: repo.name,
+          pull_number: number,
+          per_page: 100,
+        }
+      ),
+      octokit.paginate(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+        {
+          owner: repo.owner,
+          repo: repo.name,
+          pull_number: number,
+          per_page: 100,
+        }
+      ),
+    ])
+
+  const values = buildPullRequestValues(
+    repo.id,
+    pullResponse.data as GitHubPullRequest
+  )
+  const savedPullRequest = await upsertPullRequest(values)
+
   await Promise.all([
     ensureInitialPullRequestLifecycleEvent({
       pullRequestId: savedPullRequest.id,
@@ -416,12 +448,12 @@ export const syncGitHubPullRequest = async (
     }),
     syncIssueComments(
       savedPullRequest.id,
-      issueComments as GitHubIssueComment[],
+      issueComments as GitHubIssueComment[]
     ),
     syncReviews(savedPullRequest.id, reviews as GitHubReview[]),
     syncReviewComments(
       savedPullRequest.id,
-      reviewComments as GitHubReviewComment[],
+      reviewComments as GitHubReviewComment[]
     ),
   ])
 
@@ -429,44 +461,37 @@ export const syncGitHubPullRequest = async (
 }
 
 export const syncRepositoryPullRequests = async (
-  repo: typeof repository.$inferSelect,
+  repo: typeof repository.$inferSelect
 ) => {
   if (repo.providerAccessRemovedAt) {
     throw new Error("Repository is no longer accessible through the GitHub App")
   }
 
-  const workspace = await db.query.workspace.findFirst({
-    where: (workspace, { eq }) => eq(workspace.id, repo.workspaceId),
-  })
-
-  if (!workspace) {
-    throw new Error("Workspace not found for repository")
-  }
-
-  const octokit = await getInstallationOctokit(workspace.providerInstallationId)
-  const [openPullRequests, knownPullRequests] = await Promise.all([
-    octokit.paginate("GET /repos/{owner}/{repo}/pulls", {
+  const octokit = await getRepositoryWorkspaceOctokit(repo)
+  const openPullRequests = (await octokit.paginate(
+    "GET /repos/{owner}/{repo}/pulls",
+    {
       owner: repo.owner,
       repo: repo.name,
       state: "open",
       per_page: 100,
-    }),
-    db
-      .select({ number: pullRequest.number })
-      .from(pullRequest)
-      .where(eq(pullRequest.repositoryId, repo.id)),
-  ])
-  const numbers = new Set<number>([
-    ...(openPullRequests as GitHubPullRequest[]).map((item) => item.number),
-    ...knownPullRequests.map((item) => item.number),
-  ])
+    }
+  )) as GitHubPullRequest[]
 
-  for (const number of numbers) {
-    await syncGitHubPullRequest(repo, number)
+  for (const githubPullRequest of openPullRequests) {
+    const values = buildPullRequestValues(repo.id, githubPullRequest)
+    const savedPullRequest = await upsertPullRequest(values)
+
+    await ensureInitialPullRequestLifecycleEvent({
+      pullRequestId: savedPullRequest.id,
+      author: values.author,
+      htmlUrl: values.htmlUrl,
+      providerCreatedAt: values.providerCreatedAt,
+    })
   }
 
   return {
-    synced: numbers.size,
+    synced: openPullRequests.length,
   }
 }
 
@@ -481,7 +506,7 @@ export const addPullRequestLifecycleEvent = async (
     providerCreatedAt: Date
     providerUpdatedAt: Date
     metadata: Record<string, unknown>
-  },
+  }
 ) => {
   if (action === "opened") {
     await db
@@ -489,8 +514,8 @@ export const addPullRequestLifecycleEvent = async (
       .where(
         and(
           eq(pullRequestTimelineEvent.pullRequestId, pullRequestId),
-          eq(pullRequestTimelineEvent.externalKey, "lifecycle:initialized"),
-        ),
+          eq(pullRequestTimelineEvent.externalKey, "lifecycle:initialized")
+        )
       )
   }
 
@@ -513,7 +538,7 @@ export const addPullRequestLifecycleEvent = async (
 
 export const getTrackedRepositoryForWebhook = async (
   workspaceId: string,
-  providerRepositoryId: number | undefined,
+  providerRepositoryId: number | undefined
 ) => {
   if (!providerRepositoryId) {
     return null
@@ -524,7 +549,7 @@ export const getTrackedRepositoryForWebhook = async (
       eq(repository.workspaceId, workspaceId),
       eq(repository.providerRepositoryId, String(providerRepositoryId)),
       eq(repository.enabled, true),
-      isNull(repository.providerAccessRemovedAt),
+      isNull(repository.providerAccessRemovedAt)
     ),
   })
 }

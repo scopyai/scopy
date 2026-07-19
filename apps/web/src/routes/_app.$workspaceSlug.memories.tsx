@@ -25,7 +25,7 @@ function MemoriesRoute() {
       <div className="flex-1 overflow-auto p-4 sm:p-6">
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Guidance learned from review conversations across this workspace.
+            Memories learned from review conversations across this workspace.
             Each memory applies only to the repository shown.
           </p>
 

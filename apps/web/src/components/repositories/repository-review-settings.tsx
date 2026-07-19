@@ -124,7 +124,7 @@ export function RepositoryReviewSettings({
 
         <SettingsSection
           title="Review memories"
-          description="Repository-specific guidance learned from review conversations. Enabled memories shape future reviews of this repository."
+          description="Repository-specific memories learned from review conversations. Enabled memories shape future reviews of this repository."
         >
           <MemoryList
             workspaceId={workspaceId}
