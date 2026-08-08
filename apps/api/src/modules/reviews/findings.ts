@@ -1,6 +1,7 @@
 import { severityRank, type ReviewFinding } from "./prompt"
 
 type Range = { file: string; startLine: number; endLine: number }
+type IssueShape = Range & { title: string; body: string }
 
 const overlaps = (first: Range, second: Range) =>
   first.file === second.file &&
@@ -25,7 +26,7 @@ const tokenOverlapScore = (first: Set<string>, second: Set<string>) => {
   return shared / Math.min(first.size, second.size)
 }
 
-const findingTokens = (finding: Pick<ReviewFinding, "title" | "body">) =>
+const findingTokens = (finding: Pick<IssueShape, "title" | "body">) =>
   new Set([
     ...meaningfulTokens(finding.title),
     ...meaningfulTokens(finding.body),
@@ -49,9 +50,9 @@ const rangeJaccard = (first: Range, second: Range) => {
 }
 
 const sameIssue = (
-  first: ReviewFinding,
+  first: IssueShape,
   firstTokens: Set<string>,
-  second: ReviewFinding,
+  second: IssueShape,
   secondTokens: Set<string>
 ) => {
   if (!overlaps(first, second)) return false
@@ -63,13 +64,10 @@ const sameIssue = (
   )
 }
 
-export const isSameIssue = (first: ReviewFinding, second: ReviewFinding) =>
+export const isSameIssue = (first: IssueShape, second: IssueShape) =>
   sameIssue(first, findingTokens(first), second, findingTokens(second))
 
-export const resemblesSameIssue = (
-  first: ReviewFinding,
-  second: ReviewFinding
-) =>
+export const resemblesSameIssue = (first: IssueShape, second: IssueShape) =>
   isSameIssue(first, second) ||
   tokenOverlapScore(findingTokens(first), findingTokens(second)) >=
     SAME_ISSUE_TOKEN_OVERLAP

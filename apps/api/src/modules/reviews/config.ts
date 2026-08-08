@@ -9,12 +9,13 @@ export type ReviewReasoningEffort =
 export const reviewAgentConfig = {
   main: {
     reasoningEffort: "medium" as ReviewReasoningEffort,
-    maxSteps: 16,
+    maxSteps: 40,
   },
   subagent: {
-    reasoningEffort: "medium" as ReviewReasoningEffort,
+    reasoningEffort: "high" as ReviewReasoningEffort,
     maxSteps: 40,
-    concurrency: 2,
+    concurrency: 1,
+    requireCompleteFileCoverage: true,
   },
   verifier: {
     reasoningEffort: "medium" as ReviewReasoningEffort,
