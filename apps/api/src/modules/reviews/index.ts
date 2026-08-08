@@ -54,6 +54,7 @@ import {
   reportComposerOutputSchema,
   reportSummaryInstructions,
   reportSummaryOutputSchema,
+  reviewDecisionOutputSchema,
   reviewDecisionSchema,
   reviewSubagentDocsInstructions,
   reviewSubagentInstructions,
@@ -61,8 +62,10 @@ import {
   reviewVerifierDocsInstructions,
   reviewVerifierInstructions,
   reviewVerifierOutputSchema,
+  reviewVerifierVerdictSchema,
   safePathSegment,
   type CandidateFinding,
+  type ReviewProof,
   type ReviewReport,
 } from "./prompt"
 import {
@@ -201,6 +204,41 @@ type FindingDecision = {
   decision: "reject" | "escalate" | "accept" | "failed_open"
   details: unknown
   findingIndex?: number | null
+}
+
+const validateProofLocations = ({
+  proof,
+  inspectedFiles,
+  changedLinesByFile,
+}: {
+  proof: Pick<ReviewProof, "proofLocations">
+  inspectedFiles: Set<string>
+  changedLinesByFile: Map<string, number[]>
+}) => {
+  const problems: string[] = []
+  for (const location of proof.proofLocations) {
+    if (location.endLine < location.startLine) {
+      problems.push(
+        `${location.role} has an invalid range ${location.file}:${location.startLine}-${location.endLine}`
+      )
+    }
+    if (!inspectedFiles.has(location.file)) {
+      problems.push(`${location.role} cites unread file ${location.file}`)
+    }
+    if (location.role !== "change") continue
+    const changedLines = changedLinesByFile.get(location.file) ?? []
+    if (
+      !changedLines.some(
+        (line) => line >= location.startLine && line <= location.endLine
+      )
+    ) {
+      problems.push(
+        `change proof does not overlap a changed line at ${location.file}:${location.startLine}-${location.endLine}`
+      )
+    }
+  }
+
+  return problems
 }
 
 export const runReviewAgent = async ({
@@ -388,6 +426,7 @@ export const runReviewAgent = async ({
   }
   const parsedDiffFiles = parseUnifiedDiff(unifiedDiff)
   const changedLinesByFile = new Map<string, number[]>()
+  const proofLinesByFile = new Map<string, number[]>()
   for (const diffFile of parsedDiffFiles) {
     const file =
       diffFile.newPath && diffFile.newPath !== "/dev/null"
@@ -396,8 +435,13 @@ export const runReviewAgent = async ({
     if (!file || file === "/dev/null" || diffFile.status === "deleted") {
       continue
     }
-    changedLinesByFile.set(file, [
-      ...new Set(diffFile.hunks.flatMap((hunk) => hunk.touchedNewLines)),
+    const changedLines = diffFile.hunks.flatMap((hunk) => hunk.touchedNewLines)
+    changedLinesByFile.set(file, [...new Set(changedLines)])
+    proofLinesByFile.set(file, [
+      ...new Set([
+        ...changedLines,
+        ...diffFile.hunks.flatMap((hunk) => hunk.anchorNewLines),
+      ]),
     ])
   }
   const changedLineMap = renderChangedLineMap(changedLinesByFile)
@@ -937,10 +981,26 @@ export const runReviewAgent = async ({
 
   const runVerifier = async (candidate: CandidateFinding) => {
     const safeId = safePathSegment(candidate.id)
-    const outputSchema = reviewVerifierOutputSchema.refine(
-      (output) => output.id === candidate.id,
-      `Return the verdict for ${candidate.id}.`
-    )
+    const inspectedFiles = new Set<string>()
+    const verdictSchema = reviewVerifierVerdictSchema
+      .refine(
+        (output) => output.id === candidate.id,
+        `Return the verdict for ${candidate.id}.`
+      )
+      .superRefine((output, validation) => {
+        const problems = validateProofLocations({
+          proof: output,
+          inspectedFiles,
+          changedLinesByFile: proofLinesByFile,
+        })
+        if (problems.length > 0) {
+          validation.addIssue({
+            code: "custom",
+            path: ["proofLocations"],
+            message: `Proof must cite inspected code and a pull-request change. Problems: ${problems.join(", ")}.`,
+          })
+        }
+      })
     const prompt = buildReviewVerifierPrompt({
       title: pullRequest.title,
       body: pullRequest.body,
@@ -959,6 +1019,7 @@ export const runReviewAgent = async ({
     let lastError: unknown
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const attemptSteps: unknown[] = []
+      inspectedFiles.clear()
       try {
         const agent = new ToolLoopAgent({
           model: agentLayers.verifier.model,
@@ -967,13 +1028,15 @@ export const runReviewAgent = async ({
               ? `${reviewVerifierInstructions}${reviewVerifierDocsInstructions}`
               : reviewVerifierInstructions,
           tools: {
-            ...createRepositoryTools(`verifier.${safeId}.${attempt}`),
+            ...createRepositoryTools(`verifier.${safeId}.${attempt}`, (file) =>
+              inspectedFiles.add(file)
+            ),
             ...createDocsLookupTool(`verifier.${safeId}.${attempt}`),
           },
           providerOptions: agentLayers.verifier.providerOptions,
           output: repairedJsonOutput(
             Output.object({
-              schema: outputSchema,
+              schema: reviewVerifierOutputSchema,
               name: "verified_finding",
               description: "One evidence-backed verdict for one finding",
             })
@@ -993,10 +1056,11 @@ export const runReviewAgent = async ({
           generation
         )
         attemptSteps.length = 0
-        const verdict = outputSchema.parse(generation.output)
+        const verdict = verdictSchema.parse(generation.output)
         await recorder.writeJson(`verifier/${safeId}/attempt-${attempt}.json`, {
           finishReason: generation.finishReason,
           usage: generation.totalUsage,
+          inspectedFiles: [...inspectedFiles],
           output: verdict,
         })
         logger.info("Review finding verification completed", {
@@ -1759,11 +1823,12 @@ ${task.area}`
     repositoryContextSource: preparedRepositoryContext.source,
     semanticEnabled,
   })
-  const mainOutputSchema = mainReviewReportSchema
-    .extend({
-      findings: z.array(mainFindingSchema),
-      decisions: z.array(reviewDecisionSchema),
-    })
+  const mainResponseSchema = mainReviewReportSchema.extend({
+    findings: z.array(mainFindingSchema),
+    decisions: z.array(reviewDecisionOutputSchema),
+  })
+  const mainOutputSchema = mainResponseSchema
+    .extend({ decisions: z.array(reviewDecisionSchema) })
     .superRefine((output, validation) => {
       const seen = new Set<string>()
       const problems: string[] = []
@@ -1781,12 +1846,12 @@ ${task.area}`
             `accepted ${decision.id} must reference an existing findingIndex`
           )
         }
-        for (const location of decision.checkedLocations) {
-          if (!mainInspectedFiles.has(location.file)) {
-            problems.push(
-              `${decision.id} cites ${location.file}, which the main agent did not read`
-            )
-          }
+        for (const problem of validateProofLocations({
+          proof: decision,
+          inspectedFiles: mainInspectedFiles,
+          changedLinesByFile: proofLinesByFile,
+        })) {
+          problems.push(`${decision.id}: ${problem}`)
         }
       }
       for (const id of mainQueueIds) {
@@ -1860,7 +1925,7 @@ ${task.area}`
     providerOptions: agentLayers.main.providerOptions,
     output: repairedJsonOutput(
       Output.object({
-        schema: mainOutputSchema,
+        schema: mainResponseSchema,
         name: "review_report",
         description:
           "Final review findings and exactly one decision per reviewQueue id",
@@ -1900,7 +1965,50 @@ ${task.area}`
     )
   }
 
-  const mainOutput = mainOutputSchema.parse(mainGeneration.output)
+  const rawMainOutput = mainResponseSchema.parse(mainGeneration.output)
+  const returnedIds = new Set(rawMainOutput.decisions.map(({ id }) => id))
+  const unknownDecisions = rawMainOutput.decisions.filter(
+    ({ id }) => !mainQueueIds.has(id)
+  )
+  const missingIds = [...mainQueueIds].filter((id) => !returnedIds.has(id))
+  const correctedId =
+    unknownDecisions.length === 1 && missingIds.length === 1
+      ? { from: unknownDecisions[0]!.id, to: missingIds[0]! }
+      : null
+  const normalizedMainOutput = correctedId
+    ? {
+        ...rawMainOutput,
+        findings: rawMainOutput.findings.map((finding) => ({
+          ...finding,
+          sourceCandidateIds: finding.sourceCandidateIds.map((id) =>
+            id === correctedId.from ? correctedId.to : id
+          ),
+        })),
+        decisions: rawMainOutput.decisions.map((decision) =>
+          decision.id === correctedId.from
+            ? { ...decision, id: correctedId.to }
+            : decision
+        ),
+      }
+    : rawMainOutput
+  if (correctedId) {
+    await recorder.appendEvent("main.decision_id.corrected", correctedId)
+    logger.info("Corrected one unambiguous main decision id", {
+      ...context,
+      ...correctedId,
+    })
+  }
+  const parsedMainOutput = mainOutputSchema.safeParse(normalizedMainOutput)
+  if (!parsedMainOutput.success) {
+    await recorder.writeJson("main-agent-validation-error.json", {
+      issues: parsedMainOutput.error.issues,
+      output: normalizedMainOutput,
+    })
+    throw new Error(
+      `Main report failed contract validation: ${parsedMainOutput.error.issues.map((issue) => issue.message).join("; ")}`
+    )
+  }
+  const mainOutput = parsedMainOutput.data
   const finalMainGenerationMetadata = {
     finishReason: mainGeneration.finishReason,
     totalUsage: mainGeneration.totalUsage,

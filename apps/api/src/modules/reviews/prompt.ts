@@ -45,76 +45,134 @@ export const reviewSubagentOutputSchema = z.object({
   findings: z.array(candidateFindingSchema),
 })
 
-export const reviewVerifierVerdictSchema = z
-  .object({
-    id: z.string().min(1),
-    verdict: z.enum(["accept", "reject", "escalate"]),
-    rootCause: z.string(),
-    failurePath: z.string(),
-    usefulness: z.string(),
-    contradiction: z.string(),
-    unresolvedQuestion: z.string(),
-    knownFacts: z.string(),
-    locations: z.array(codeLocationSchema),
-  })
-  .superRefine((output, validation) => {
-    const requireText = (field: keyof typeof output, value: string) => {
-      if (value.trim().length === 0) {
-        validation.addIssue({
-          code: "custom",
-          path: [field],
-          message: `${field} is required for verdict ${output.verdict}.`,
-        })
-      }
+const reviewProofFields = {
+  entryPath: z.string(),
+  actualResult: z.string(),
+  expectedResult: z.string(),
+  expectationSource: z.enum([
+    "contract",
+    "caller",
+    "test",
+    "existing_behavior",
+    "documentation",
+    "pull_request",
+    "none",
+  ]),
+  changeLink: z.string(),
+  counterEvidence: z.string(),
+  usefulness: z.string(),
+  proofLocations: z.array(
+    codeLocationSchema.extend({
+      role: z.enum([
+        "entry_path",
+        "actual_result",
+        "expected_result",
+        "change",
+        "counter_evidence",
+        "known_fact",
+      ]),
+    })
+  ),
+}
+
+export type ReviewProof = z.infer<z.ZodObject<typeof reviewProofFields>>
+
+const validateReviewProof = ({
+  proof,
+  outcome,
+  addIssue,
+}: {
+  proof: ReviewProof
+  outcome: "accept" | "reject"
+  addIssue: (path: string, message: string) => void
+}) => {
+  const requireText = (field: keyof ReviewProof) => {
+    const value = proof[field]
+    if (typeof value === "string" && value.trim().length === 0) {
+      addIssue(field, `${field} is required for ${outcome}.`)
     }
+  }
+  const requireLocation = (
+    role: ReviewProof["proofLocations"][number]["role"]
+  ) => {
+    if (!proof.proofLocations.some((location) => location.role === role)) {
+      addIssue("proofLocations", `${role} proof is required for ${outcome}.`)
+    }
+  }
+
+  requireText("changeLink")
+  requireText("counterEvidence")
+  if (proof.proofLocations.length === 0) {
+    addIssue("proofLocations", `Inspected code proof is required for ${outcome}.`)
+  }
+  if (outcome === "reject") return
+
+  requireLocation("change")
+  for (const field of [
+    "entryPath",
+    "actualResult",
+    "expectedResult",
+    "usefulness",
+  ] as const) {
+    requireText(field)
+  }
+  if (proof.expectationSource === "none") {
+    addIssue("expectationSource", "Accept requires an expectation source.")
+  }
+}
+
+export const reviewVerifierOutputSchema = z.object({
+  id: z.string().min(1),
+  verdict: z.enum(["accept", "reject", "escalate"]),
+  ...reviewProofFields,
+  failedCondition: z.string(),
+  unresolvedQuestion: z.string(),
+  knownFacts: z.string(),
+})
+
+export const reviewVerifierVerdictSchema =
+  reviewVerifierOutputSchema.superRefine((output, validation) => {
+    const addIssue = (path: string, message: string) =>
+      validation.addIssue({ code: "custom", path: [path], message })
     if (output.verdict === "accept") {
-      requireText("rootCause", output.rootCause)
-      requireText("failurePath", output.failurePath)
-      requireText("usefulness", output.usefulness)
-      if (output.locations.length === 0) {
-        validation.addIssue({
-          code: "custom",
-          path: ["locations"],
-          message: "Accepted findings require at least one code location.",
-        })
-      }
+      validateReviewProof({ proof: output, outcome: "accept", addIssue })
     } else if (output.verdict === "reject") {
-      requireText("contradiction", output.contradiction)
-      if (output.locations.length === 0) {
-        validation.addIssue({
-          code: "custom",
-          path: ["locations"],
-          message: "Rejected findings require at least one code location.",
-        })
+      validateReviewProof({ proof: output, outcome: "reject", addIssue })
+      if (output.failedCondition.trim().length === 0) {
+        addIssue("failedCondition", "failedCondition is required for reject.")
       }
     } else {
-      requireText("unresolvedQuestion", output.unresolvedQuestion)
-      requireText("knownFacts", output.knownFacts)
-    }
-  })
-
-export const reviewVerifierOutputSchema = reviewVerifierVerdictSchema
-
-export const reviewDecisionSchema = z
-  .object({
-    id: z.string().min(1),
-    decision: z.enum(["accept", "reject"]),
-    findingIndex: z.number().int().nonnegative().nullable(),
-    rootCause: z.string(),
-    failurePath: z.string(),
-    failedCondition: z.string(),
-    checkedLocations: z.array(codeLocationSchema).min(1),
-  })
-  .superRefine((output, validation) => {
-    const requireText = (field: keyof typeof output, value: string) => {
-      if (value.trim().length === 0) {
-        validation.addIssue({
-          code: "custom",
-          path: [field],
-          message: `${field} is required for decision ${output.decision}.`,
-        })
+      if (output.unresolvedQuestion.trim().length === 0) {
+        addIssue(
+          "unresolvedQuestion",
+          "unresolvedQuestion is required for escalate."
+        )
+      }
+      if (output.knownFacts.trim().length === 0) {
+        addIssue("knownFacts", "knownFacts is required for escalate.")
+      }
+      if (
+        !output.proofLocations.some(
+          (location) => location.role === "known_fact"
+        )
+      ) {
+        addIssue("proofLocations", "known_fact proof is required for escalate.")
       }
     }
+  })
+
+export const reviewDecisionOutputSchema = z.object({
+  id: z.string().min(1),
+  decision: z.enum(["accept", "reject"]),
+  findingIndex: z.number().int().nonnegative().nullable(),
+  ...reviewProofFields,
+  failedCondition: z.string(),
+})
+
+export const reviewDecisionSchema = reviewDecisionOutputSchema.superRefine(
+  (output, validation) => {
+    const addIssue = (path: string, message: string) =>
+      validation.addIssue({ code: "custom", path: [path], message })
     if (output.decision === "accept") {
       if (output.findingIndex === null) {
         validation.addIssue({
@@ -123,8 +181,7 @@ export const reviewDecisionSchema = z
           message: "Accepted candidates require a findingIndex.",
         })
       }
-      requireText("rootCause", output.rootCause)
-      requireText("failurePath", output.failurePath)
+      validateReviewProof({ proof: output, outcome: "accept", addIssue })
     } else {
       if (output.findingIndex !== null) {
         validation.addIssue({
@@ -133,9 +190,13 @@ export const reviewDecisionSchema = z
           message: "Rejected candidates must use a null findingIndex.",
         })
       }
-      requireText("failedCondition", output.failedCondition)
+      validateReviewProof({ proof: output, outcome: "reject", addIssue })
+      if (output.failedCondition.trim().length === 0) {
+        addIssue("failedCondition", "failedCondition is required for reject.")
+      }
     }
-  })
+  }
+)
 
 export const mainFindingSchema = reviewFindingSchema.extend({
   sourceCandidateIds: z.array(z.string().min(1)).min(1),
@@ -249,25 +310,23 @@ export const reviewMainDocsInstructions = `
 
 export const reviewVerifierInstructions = `Verify one candidate bug finding. Inspect the repository yourself. The candidate evidence is only a lead.
 
-Use this process:
-1. Identify the exact claim.
-2. Find the changed code that causes or exposes it.
-3. Trace the path from that code to the reported result.
-4. Confirm that the trigger can occur.
-5. Search for code that prevents or contradicts the claim.
-6. Decide if the result is harmful and worth fixing.
+Build a proof from code that you personally inspect:
+- entryPath: the supported caller and valid trigger that reach the behavior. A reachable explicit contract violation can serve as the entry path even if no current caller crashes.
+- actualResult: what the code does after the trigger.
+- expectedResult: what it must do, supported by a contract, caller, test, established behavior, documentation, or the pull request. Select that source in expectationSource.
+- changeLink: the exact changed code that introduces or exposes the mismatch. Its proofLocations entry must use role "change" and overlap a changed line.
+- counterEvidence: the prevention, cleanup, fallback, validation, or contradictory path you checked and why it does or does not defeat the claim.
+- usefulness: name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize from one test, fixture, example, provider, or support tool to other implementations. If only support code is affected, accept only when the defect breaks that code's stated purpose or can hide incorrect shipped behavior.
 
-Usefulness criteria for accept:
-- A supported caller can reach the trigger with valid input.
-- The result has a concrete effect that a user or maintainer would care about.
-- Fixing it is justified by that effect, not only by a theoretical possibility.
+Do not infer one proof field from another. Trace each premise in the repository. A theoretical possibility without a supported entry path or meaningful result is not enough to accept.
+A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. An accepted verdict must include changed-line proof with role "change".
 
 Verdicts:
-- accept: you found the root cause and proved a reachable path to a concrete adverse result that this pull request introduces or exposes. State briefly in usefulness who is affected, what happens, and why it is worth fixing.
-- reject: you found explicit code that contradicts an essential part of the claim. Give the contradiction and its exact location. Failure to find proof is not enough for rejection.
-- escalate: you found relevant facts but cannot prove the full claim and cannot disprove it. State the exact unresolved question. Use this when the answer depends on product intent, an external contract, or runtime behavior that available evidence cannot settle.
+- accept: every part of the proof above is established and the exact affected scope makes the finding useful. Cite the inspected code for every part.
+- reject: explicit inspected code disproves one essential condition, or proves that the true effect is limited to code whose purpose is not materially broken. State it in failedCondition and counterEvidence. Failure to find proof is not enough for rejection.
+- escalate: you cannot prove or disprove an essential condition. State the exact unresolved question, the known facts, and their locations.
 
-Return exactly one verdict for the supplied candidate id. Keep the result concise. Always return every output field. Use an empty string for text fields that do not apply to the selected verdict.`
+For each cited location, use proofLocations.role to state which proof field it supports. Return exactly one verdict for the supplied candidate id. Keep each field concise. Always return every output field. Use empty strings, an empty proofLocations array, and expectationSource "none" for fields that do not apply.`
 
 export const mainReviewAgentInstructions = `Review a pull request for actionable bugs. You are the final gate before the user.
 
@@ -284,18 +343,22 @@ Phase 2 - discover:
 - If a returned candidate shows that discovery missed a related area, call spawn_review_agents again with focused follow-up tasks. Do not create a new finding yourself. Send discovery work through subagents.
 
 Phase 3 - decide:
-- Use the same process for every candidate: identify the claim, trace the changed code to its result, confirm the trigger, search for prevention or contradiction, and decide if the result is harmful and worth fixing.
+- Build a separate proof for every candidate. Record the supported entry path and trigger, actual result, expected result and its source, exact pull-request change link, counter-evidence checked, and usefulness.
+- In usefulness, name the exact affected implementation and user. Do not generalize from one test, fixture, example, provider, or support tool to other implementations. If only support code is affected, accept only when the defect breaks that code's stated purpose or can hide incorrect shipped behavior.
+- Do not infer one proof field from another. Trace every premise in repository code that you personally inspect. A reachable explicit contract violation can be accepted even if no current caller crashes.
 - Inspect the code yourself. A candidate lead and verifier verdict cannot serve as your proof.
+- Decide the candidate's stated bug. Do not accept it by changing it into a different bug. Reject the original claim and send any different bug through follow-up discovery.
 - Return accept or reject for every candidate from every spawn_review_agents call.
-- Accept only when you independently prove a concrete, actionable adverse result introduced or exposed by the pull request.
-- Reject when an essential condition is false, not caused or exposed by the change, prevented by existing code, unreachable, or unable to cause a meaningful adverse result. State the failed condition.
+- Accept only when the full proof independently establishes a concrete, actionable adverse result introduced or exposed by the pull request.
+- Reject only when inspected code proves that an essential condition is false, not caused or exposed by the change, prevented, unreachable, unable to cause a meaningful result, or limited to a scope whose current purpose is not materially broken. State the failed condition and the code that proves it.
 - Decide escalated items yourself. Treat verifier accepts and rejects in the same independent way.
-- Merge duplicates by mapping several accepted candidate ids to the same final finding. Do not return a duplicate decision.
+- Merge duplicates only when one semantic code change fixes every mapped candidate. If the candidates need different edits, keep separate findings. Do not return a duplicate decision.
 
 Phase 4 - report:
-- Every decision must cite checkedLocations from code that you personally read.
+- A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. Every accepted decision must include changed-line proof with role "change".
+- Every proofLocations entry must refer to code that you personally read. The entry with role "change" must overlap a changed line.
 - Every accepted decision points to the final finding that represents it. Every final finding lists all sourceCandidateIds that it represents.
-- Always return every decision field. For accept, set failedCondition to an empty string. For reject, set findingIndex to null and set rootCause and failurePath to empty strings.
+- Always return every decision field. Use empty strings, an empty proofLocations array, and expectationSource "none" for fields that do not apply. For accept, set failedCondition to an empty string. For reject, set findingIndex to null.
 - You assign final severity, wording, and location. Discovery agents do not assign severity.
 - Do not add a finding with no source candidate. If you notice a missed issue, launch a follow-up discovery task before reporting.
 - Every final finding must point to a small changed line range: preferably 1-8 lines, never more than 30.
