@@ -15,6 +15,13 @@
       "when": 1784457132736,
       "tag": "0001_cynical_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786125996187,
+      "tag": "0002_round_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

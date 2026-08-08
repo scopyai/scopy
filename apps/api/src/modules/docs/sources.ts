@@ -317,12 +317,6 @@ export const docSourceConfigs: DocSourceConfig[] = [
     aliases: ["livekit-client", "livekit-server-sdk", "@livekit/components-react"],
   },
   {
-    slug: "ably",
-    name: "Ably",
-    llmsTxtUrl: "https://ably.com/llms.txt",
-    aliases: ["ably", "@ably-labs/react-hooks"],
-  },
-  {
     slug: "fal-ai",
     name: "fal.ai",
     llmsTxtUrl: "https://docs.fal.ai/llms.txt",

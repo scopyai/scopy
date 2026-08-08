@@ -2,7 +2,11 @@ import { execFile } from "node:child_process"
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
-import { buildRepositoryCodeIndex, type QdrantInferenceConfig } from "tools"
+import {
+  buildRepositoryCodeIndex,
+  type QdrantInferenceConfig,
+  type RepositoryCodeIndexProgress,
+} from "tools"
 import type { pullRequest, repository } from "../../db/schema"
 import { workerEnv as env } from "../../env"
 import { createGitHubInstallationAccessToken } from "../github/service"
@@ -49,7 +53,7 @@ export const getReviewRuntimePaths = ({
     env.REVIEW_WORKDIR,
     safeSegment(repositoryId),
     safeSegment(headSha),
-    safeSegment(reviewRunId),
+    safeSegment(reviewRunId)
   )
 
   return {
@@ -74,15 +78,25 @@ const createAskPassScript = async (runPath: string) => {
       "esac",
       "",
     ].join("\n"),
-    "utf8",
+    "utf8"
   )
   await chmod(scriptPath, 0o700)
   return scriptPath
 }
 
 const gitEnv = ({ askPass, token }: { askPass: string; token: string }) => {
-  const { PATH, HOME, TMPDIR, LANG, LC_ALL, SSL_CERT_FILE, SSL_CERT_DIR, HTTPS_PROXY, HTTP_PROXY, NO_PROXY } =
-    process.env
+  const {
+    PATH,
+    HOME,
+    TMPDIR,
+    LANG,
+    LC_ALL,
+    SSL_CERT_FILE,
+    SSL_CERT_DIR,
+    HTTPS_PROXY,
+    HTTP_PROXY,
+    NO_PROXY,
+  } = process.env
   return {
     PATH,
     HOME,
@@ -131,16 +145,24 @@ const cloneRepository = async ({
       `https://github.com/${repo.fullName}.git`,
       paths.repositoryPath,
     ],
-    options,
+    options
   )
-  await execFileAsync("git", ["fetch", "--quiet", "origin", pullRequest.baseRef], {
-    cwd: paths.repositoryPath,
-    ...options,
-  })
-  await execFileAsync("git", ["fetch", "--quiet", "origin", `pull/${pullRequest.number}/head`], {
-    cwd: paths.repositoryPath,
-    ...options,
-  })
+  await execFileAsync(
+    "git",
+    ["fetch", "--quiet", "origin", pullRequest.baseRef],
+    {
+      cwd: paths.repositoryPath,
+      ...options,
+    }
+  )
+  await execFileAsync(
+    "git",
+    ["fetch", "--quiet", "origin", `pull/${pullRequest.number}/head`],
+    {
+      cwd: paths.repositoryPath,
+      ...options,
+    }
+  )
   await execFileAsync("git", ["checkout", "--quiet", pullRequest.headSha], {
     cwd: paths.repositoryPath,
     ...options,
@@ -157,16 +179,51 @@ const revParse = async (repositoryPath: string, ref: string) => {
   return stdout.trim()
 }
 
-const serializeCodeIndex = (index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>) => ({
-  repository: index.repository,
-  repositoryFiles: index.repositoryFiles,
-  discoveredFiles: index.discoveredFiles,
-  ignoredFiles: index.ignoredFiles,
-  detectedLanguages: index.detectedLanguages,
-  files: index.files,
-  graph: index.graph,
-  diagnostics: index.diagnostics,
-})
+export const serializeCodeIndexArtifact = (
+  index: Awaited<ReturnType<typeof buildRepositoryCodeIndex>>
+) => {
+  const diagnosticCounts = index.diagnostics.reduce<Record<string, number>>(
+    (counts, diagnostic) => {
+      counts[diagnostic.kind] = (counts[diagnostic.kind] ?? 0) + 1
+      return counts
+    },
+    {}
+  )
+  return {
+    repository: index.repository,
+    repositoryFiles: index.repositoryFiles,
+    discoveredFiles: index.discoveredFiles,
+    ignoredFiles: index.ignoredFiles,
+    detectedLanguages: index.detectedLanguages,
+    cache: index.cache,
+    sourceBytes: [...index.sourceByFile.values()].reduce(
+      (total, source) => total + Buffer.byteLength(source, "utf8"),
+      0
+    ),
+    files: index.files.map((file) => ({
+      path: file.path,
+      language: file.language,
+      localScope: file.localScope,
+      scopes: file.scopes.length,
+      symbols: file.symbols.length,
+      calls: file.calls.length,
+      imports: file.imports.length,
+      diagnostics: file.diagnostics.length,
+    })),
+    graph: {
+      dependencies: index.graph.dependencies.length,
+      symbols: index.graph.symbols.length,
+      resolvedCalls: index.graph.edges.length,
+      unresolvedCalls: index.graph.unresolvedCalls.length,
+      diagnostics: index.graph.diagnostics.length,
+    },
+    diagnostics: {
+      total: index.diagnostics.length,
+      counts: diagnosticCounts,
+      samples: index.diagnostics.slice(0, 500),
+    },
+  }
+}
 
 const qdrantConfig = (): QdrantInferenceConfig | null => {
   if (!env.QDRANT_URL) return null
@@ -185,12 +242,14 @@ export const prepareReviewRuntime = async ({
   pullRequest,
   installationId,
   changedFiles,
+  onIndexProgress,
 }: {
   reviewRunId: string
   repo: Repository
   pullRequest: PullRequest
   installationId: string
   changedFiles?: string[]
+  onIndexProgress?: (progress: RepositoryCodeIndexProgress) => void
 }): Promise<PreparedReviewRuntime> => {
   const paths = getReviewRuntimePaths({
     repositoryId: repo.id,
@@ -205,27 +264,69 @@ export const prepareReviewRuntime = async ({
     paths,
   })
 
-  const baseSha = await revParse(paths.repositoryPath, `origin/${pullRequest.baseRef}`)
+  const baseSha = await revParse(
+    paths.repositoryPath,
+    `origin/${pullRequest.baseRef}`
+  )
   const codeIndex = await buildRepositoryCodeIndex({
     repository: paths.repositoryPath,
     changedFiles,
+    cache: {
+      directory: path.resolve(env.REVIEW_WORKDIR, "ast-cache"),
+      namespace: repo.fullName,
+      snapshotKey: `${repo.id}:${pullRequest.headSha}`,
+    },
+    onProgress: (progress) =>
+      onIndexProgress?.({
+        ...progress,
+        details: { target: "head", ...progress.details },
+      }),
   })
   let basePromise: ReturnType<PreparedReviewRuntime["loadBase"]> | null = null
   const loadBase: PreparedReviewRuntime["loadBase"] = () =>
     (basePromise ??= (async () => {
-      await execFileAsync("git", ["worktree", "add", "--quiet", "--detach", paths.baseRepositoryPath, baseSha], {
-        cwd: paths.repositoryPath,
-        env: cloneEnv,
-        maxBuffer: GIT_MAX_BUFFER,
-        timeout: GIT_TIMEOUT_MS,
-      })
+      await execFileAsync(
+        "git",
+        [
+          "worktree",
+          "add",
+          "--quiet",
+          "--detach",
+          paths.baseRepositoryPath,
+          baseSha,
+        ],
+        {
+          cwd: paths.repositoryPath,
+          env: cloneEnv,
+          maxBuffer: GIT_MAX_BUFFER,
+          timeout: GIT_TIMEOUT_MS,
+        }
+      )
       const index = await buildRepositoryCodeIndex({
         repository: paths.baseRepositoryPath,
+        cache: {
+          directory: path.resolve(env.REVIEW_WORKDIR, "ast-cache"),
+          namespace: repo.fullName,
+          snapshotKey: `${repo.id}:${baseSha}`,
+        },
+        onProgress: (progress) =>
+          onIndexProgress?.({
+            ...progress,
+            details: { target: "base", ...progress.details },
+          }),
       })
-      await writeFile(paths.baseIndexPath, JSON.stringify(serializeCodeIndex(index), null, 2), "utf8")
+      await writeFile(
+        paths.baseIndexPath,
+        JSON.stringify(serializeCodeIndexArtifact(index), null, 2),
+        "utf8"
+      )
       return { repositoryPath: paths.baseRepositoryPath, index }
     })())
-  await writeFile(paths.indexPath, JSON.stringify(serializeCodeIndex(codeIndex), null, 2), "utf8")
+  await writeFile(
+    paths.indexPath,
+    JSON.stringify(serializeCodeIndexArtifact(codeIndex), null, 2),
+    "utf8"
+  )
   await writeFile(
     paths.metadataPath,
     JSON.stringify(
@@ -241,9 +342,9 @@ export const prepareReviewRuntime = async ({
         preparedAt: new Date().toISOString(),
       },
       null,
-      2,
+      2
     ),
-    "utf8",
+    "utf8"
   )
 
   return {

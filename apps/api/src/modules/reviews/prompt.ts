@@ -8,7 +8,6 @@ export const reviewFindingSchema = z.object({
   endLine: z.number().int().positive(),
   title: z.string().min(1),
   body: z.string().min(1),
-  confidence: z.number().min(0).max(1),
 })
 
 export type ReviewFinding = z.infer<typeof reviewFindingSchema> & {
@@ -41,18 +40,24 @@ export const reviewSubagentOutputSchema = z.object({
 export const reviewVerifierVerdictSchema = z.object({
   id: z.string().min(1),
   verdict: z.enum(["approve", "reject", "escalate"]),
-  confidence: z.number().min(0).max(1),
   reason: z.string().min(1),
+  evidence: z.string().min(1),
 })
 
-export const reviewVerifierOutputSchema = z.object({
-  verdicts: z.array(reviewVerifierVerdictSchema),
+export const reviewVerifierOutputSchema = reviewVerifierVerdictSchema
+
+export const mainRejectionChallengeSchema = z.object({
+  id: z.string().min(1),
+  verdict: z.enum(["uphold_rejection", "return_to_main"]),
+  reason: z.string().min(1),
+  evidence: z.string().min(1),
 })
 
 export const reviewDecisionSchema = z.object({
   id: z.string().min(1),
   decision: z.enum(["accept", "reject", "duplicate"]),
   reason: z.string().min(1),
+  evidence: z.string().min(1),
   findingIndex: z.number().int().nonnegative().nullable(),
 })
 
@@ -62,7 +67,6 @@ export const naturalLanguageLinterFindingSchema = z.object({
   endLine: z.number().int().positive(),
   title: z.string().min(1),
   body: z.string().min(1),
-  confidence: z.number().min(0).max(1),
 })
 
 export const naturalLanguageLinterOutputSchema = z.object({
@@ -122,80 +126,100 @@ export type ReviewReport = Omit<
 export const safePathSegment = (value: string) =>
   value.replace(/[^A-Za-z0-9_.-]/g, "_")
 
-export const reviewSubagentInstructions = `Explore the assigned area of a pull request and report every plausible bug as a finding.
+export const reviewSubagentInstructions = `Explore the assigned area of a pull request and generate every plausible bug hypothesis you can find.
 
-Optimize aggressively for recall, not precision. Follow data and control flow across the repository instead of limiting yourself to one changed file.
+You are a hypothesis generator, not the final judge. Optimize aggressively for recall. Search broadly and deeply across the repository instead of limiting yourself to one changed file.
 
 Rules:
-- Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
-- Include speculative findings and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another finding.
+- Report uncertain and incomplete possibilities. Do not discard a possibility because it is difficult to prove, seems unlikely, has limited impact, or overlaps another finding.
 - A single line or call site can host several independent defects. Report each distinct defect as its own finding, even when they share the exact same lines; reporting one defect at a location does not cover the others.
 - If the prompt lists already reported findings, do not re-report them or variants sharing their root cause. They are handled; your value is in what they miss. The files they live in are proven bug-dense, so re-inspect those files for different defects instead of avoiding them.
-- Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
-- Explore the assigned area evenly. Changed files that look routine, mechanical, or uninteresting get the same scrutiny as the obviously risky ones; do not conclude the area is clean while any of its changed files remains uninspected.
+- Inspect as much relevant code as needed to understand the change and its effects.
+- Explore the assigned area evenly. Do not conclude it is clean while any part remains uninspected.
+- Finding one issue is not a stopping condition. Continue searching for distinct issues until you have fully explored the assigned area.
+- Make several fresh passes over the area. In each pass, challenge your earlier view and look for paths or assumptions you have not considered yet.
 - For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario. Keep the line range small and actionable: preferably 1-8 lines, never more than 30. Approved findings are published with your exact range, and ranges that cannot be anchored to the diff are discarded.
-- severity is the worst-case impact if the finding is real: critical (data loss, security breach, or outage), high (serious user-facing or data defect), medium (real defect with limited blast radius), low (minor or edge-case defect). Critical and high findings are routed directly to an expensive reviewer, so do not inflate severity; base it on impact, not on your certainty.
-- confidence from 0 to 1 is how likely the finding is real given what you inspected. Uncertain findings belong in the output with low confidence, not omitted.
-- evidence: the decisive code excerpts you already inspected, quoted verbatim with repository-relative file paths and line numbers, plus the control- or data-flow connection between them. If you could not settle the finding yourself, name the specific fact that would prove or refute it. Downstream reviewers judge from this packet without re-reading the repository, so make it self-contained.
+- severity describes the potential impact if the hypothesis is real. Base it on impact, not certainty.
+- evidence is the strongest starting evidence you found, with repository-relative paths and line numbers. If the hypothesis remains uncertain, state the exact unresolved fact. Later agents will inspect the repository themselves.
 - Return an empty findings array only after thoroughly exploring the assigned area and finding no plausible failure.`
 
 export const reviewSubagentDocsInstructions = `
 - search_docs queries the indexed documentation of libraries this pull request uses. When the diff relies on how a library behaves - its defaults, semantics, guarantees, or failure behavior - search the docs for that behavior instead of assuming the code's usage is correct; a mismatch between documented behavior and the code's assumption is a finding. Do not use it to generally familiarize yourself with a library. Never assert how a listed library executes or performs without first confirming that execution model in its docs; a finding whose mechanism the documentation contradicts is a false positive.`
 
 export const reviewVerifierDocsInstructions = `
-- lookup_docs answers one focused question about an available library's documented behavior, with citations. If a candidate's verdict depends on the documented behavior of an available library, check the docs before ruling: documentation confirming the claimed behavior counts as verifying that premise, and a candidate whose factual claim or causal mechanism the documentation contradicts is rejected. A residual concern that survives the disproven mechanism ("still many reads", "could be slow anyway") does not rescue the candidate unless the code approaches a documented limit or failure mode you can name. State the documented behavior in the verdict reason so later reviewers inherit it.
+- lookup_docs answers one focused question about an available library's documented behavior, with citations. If a candidate's verdict depends on the documented behavior of an available library, check the docs before ruling. Documentation confirming the claimed behavior counts as verifying that premise, while documentation contradicting the claimed mechanism counts against it. State the documented behavior in the verdict reason so later reviewers inherit it.
 - Exception: when the documentation refutes the candidate's stated mechanism but names a different concrete failure mode for the same code, escalate instead of rejecting, and state the documented failure mode in your reason so the final reviewer can publish a corrected finding.
 - Claims about what a library does at runtime cannot be settled by repository search alone: repository evidence shows what the code declares, not what the framework provides implicitly. Settle such claims with lookup_docs before approving or rejecting.`
 
 export const reviewMainDocsInstructions = `
-- lookup_docs answers one focused question about the documented behavior of a library this repository uses, with citations. It is slow and shares a small per-review budget with the verifier, so use it only when a queue item's accept/reject hinges on documented library behavior that neither the evidence packet nor the verifierNote settles, and count it toward the per-item tool-call cap. Never accept a finding whose causal mechanism the documentation or a verifierNote contradicts, even if the finding sounds plausible.
-- A wrong mechanism does not always mean no defect. When the documentation refutes a queue item's stated mechanism but names a different concrete failure mode for the same code, reject the item and publish your own corrected finding for that failure mode - you already have the authority to determine final wording, severity, and confidence. Silently dropping the location because the candidate misdescribed it loses a real defect the documentation just confirmed.`
+- lookup_docs answers one focused question about the documented behavior of a library this repository uses, with citations. It is slow and shares a small per-review budget with the verifier, so use it only when a queue item's accept/reject decision hinges on library behavior that the available evidence does not settle. Never accept a finding whose claimed mechanism the documentation contradicts.
+- A wrong mechanism does not always mean no defect. When the documentation refutes a queue item's stated mechanism but names a different concrete failure mode for the same code, reject the item and publish your own corrected finding for that failure mode - you already have the authority to determine final wording and severity. Silently dropping the location because the candidate misdescribed it loses a real defect the documentation just confirmed.`
 
-export const reviewVerifierInstructions = `Verify candidate bug findings for an AI pull request review.
+export const reviewVerifierInstructions = `Verify one candidate bug finding for an AI pull request review.
 
-Each candidate was produced by a recall-heavy explorer agent and carries an evidence packet. Use repository tools to inspect the files, definitions, callers, and related flows needed to prove or disprove each candidate, then return exactly one verdict per candidate id.
+The candidate was produced by a recall-heavy explorer and carries an evidence packet. Inspect the repository yourself. Try to prove the complete finding, not merely that one suspicious line exists.
 
 Verdicts:
-- approve: direct repository evidence confirms the factual claim and the described harm is concrete, actionable, and introduced or exposed by this pull request. Approved findings are published as-is, so approve only findings whose title, body, and line range are accurate.
-- reject: direct repository evidence disproves the candidate - the claimed missing guard exists, the behavior is unreachable, it is not introduced or exposed by this pull request, or it cannot cause an adverse outcome. Rejection requires disproving evidence; never reject a candidate merely because you did not finish proving it.
-- escalate: the candidate remains materially uncertain after inspection, or it depends on product intent, ambiguous external contracts, or runtime behavior you cannot inspect. Escalated candidates go to an expensive reviewer, so escalate sparingly - but prefer escalate over reject whenever the factual claim stands unrefuted.
+- approve: repository evidence proves that this pull request introduced or exposed the behavior, a real path reaches it, the trigger can occur, existing handling does not prevent it, and the resulting harm is concrete and worth fixing.
+- reject: the claim is false, unreachable, pre-existing and unchanged, already handled, harmless, or an essential part of its trigger, path, or impact remains unsupported after focused inspection.
+- escalate: the code evidence is real but the final decision depends on product intent, an external contract, or runtime behavior that the repository cannot settle. Do not escalate merely because the candidate sounds plausible or because you stopped researching.
 
 Rules:
-- Return exactly one verdict for every supplied candidate id. Do not add, omit, or duplicate ids.
-- confidence from 0 to 1 is your confidence in the verdict itself, and it must reflect the weakest premise in the scenario, not the strength of the code mechanism.
-- Distinguish the trigger from the premise. A finding may rest on an unproven trigger condition (a request fails, an attacker supplies input, a slow endpoint stalls), but not on an unproven premise about how the code, its callers, or its data actually behave ("callers were written around the old value", "this cache goes stale over time"). If the failure scenario needs a fact about the repository you have not verified, verify it with the tools; if the premise cannot be verified, do not approve on plausibility - escalate or reject.
-- Route-level authentication is not authorization. Do not reject a missing-ownership or missing-scoping candidate because the endpoint requires an authenticated session; either quote the resource-level check that scopes access or treat the factual claim as confirmed.
-- If inspection confirms the factual claim - for example a guard, check, or handling the candidate says is missing is indeed absent - choose approve or escalate, never reject.`
+- Return exactly one verdict for the supplied candidate id.
+- Approval requires the whole causal chain: changed code -> reachable production path -> realistic trigger -> missing mitigation -> concrete harm. A possible scenario is not proof.
+- Actively search for repository evidence that could make the finding wrong or unimportant.
+- If a required repository premise cannot be proven after focused inspection, reject. Reserve escalation for facts that cannot be decided from this repository.
+- evidence must quote the decisive paths and lines that support the verdict. reason must explain why that evidence proves approval, rejection, or escalation.`
 
-export const mainReviewAgentInstructions = `Review a pull request for actionable bugs by delegating exploration to cheaper agents and judging what they escalate.
+export const mainReviewAgentInstructions = `Review a pull request for actionable bugs by delegating exploration to cheaper agents and then reaching your own decisions.
 
-You are the central reviewer. Your prompt contains a changed-files overview instead of full patches; exploration belongs to subagents, and your own tool calls are reserved for settling decisive facts. Work in phases.
+You are the final gate before the user. Subagents and verifiers are workers whose output helps you investigate; their conclusions never prove a finding by themselves. Work in phases.
 
 Phase 1 - delegate immediately:
-- From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents as your first action. Do not read patches or files before delegating.
-- Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
-- You may call spawn_review_agents again for follow-up batches when earlier results reveal an uncovered direction.
-- spawn_review_agents returns uncoveredFiles: changed files no subagent has read or reported a finding in yet. A file looking boring is not evidence it is safe; when uncovered files could plausibly hide a defect, cover them with a follow-up batch before reporting.
+- From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents exactly once as your first action. Pass every exploration task in that one call. Do not read patches or files before delegating.
+- Give subagents specific areas or flows to explore, not bug types, checklists, or individual files by default. Ensure the combined tasks cover every materially affected direction and every changed file.
+- Order tasks deliberately. The tool runs them in consecutive waves with limited concurrency, and every later wave receives the findings from all earlier waves so it can search for different defects instead of repeating them.
 
 Phase 2 - decide the review queue:
-- spawn_review_agents deduplicates subagent findings, auto-verifies the low-severity ones with a cheaper verifier, and returns two lists: approvedFindings and reviewQueue.
-- approvedFindings are already verified and will be published automatically unless you veto them in phase 3. Do not re-verify them with tools, do not include them in your findings, and do not accept a queue item whose root cause they already cover.
-- reviewQueue contains the high-severity findings and the verifier's escalations. Decide every queue item yourself: accept, reject, or duplicate. Each item carries an evidence packet - quoted code with locations and flow reasoning. Judge from the packet by default.
-- Queue items carry a verifierNote with the verifier's analysis: for escalations, what it established and why it could neither approve nor reject; for high-severity items, an advisory verdict it reached before routing to you. Treat it as a colleague's verified analysis - you may overrule it, but when it disproves part of the candidate's claimed mechanism, do not accept a finding that restates that mechanism, and when it advises reject, name the evidence that outweighs it.
-- Use a tool only when a packet leaves a decisive fact unresolved. Name that fact first, then fetch the smallest thing that settles it: read_patch for one changed file's diff, or read_file, get_symbol_definition, get_symbol_callers, locate_text for repository state. Batch independent lookups into one step and spend at most two tool calls per item.
-- Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
-- Accept an item only when it is concrete, harmful, actionable, and introduced or exposed by this pull request. Mark it duplicate only when an accepted item or an approvedFinding covers the same root cause and fix. Mark it reject only when its factual claim is false or the described behavior cannot cause an adverse outcome.
-- A supportingTaskIds list with more than one entry means independent subagents flagged the same location; treat that agreement as evidence worth extra scrutiny before rejecting.
+- spawn_review_agents verifies every subagent finding independently and returns all of them in reviewQueue, including verifier approvals, rejections, and escalations.
+- Decide every reviewQueue item yourself: accept, reject, or duplicate. Nothing is published without your explicit accept decision. A verifier result is evidence, not the final decision.
+- After delegation returns, you must inspect repository code with the provided tools before making any queue decision. Build your own view of the code; do not copy a verifier's evidence and call it your own proof.
+- Group related queue items when one repository read can help decide several of them. Continue inspecting until you can explain each decision from code you personally examined.
+- Prove escalated findings yourself. You may overrule an approval or rejection, but address the verifier's evidence directly and never accept a claim that its evidence disproves.
+- Accept an item only when it is concrete, harmful, actionable, and introduced or exposed by this pull request. Mark it duplicate only when an accepted finding covers the same root cause and fix. Mark it reject when its factual claim is false, it is not caused or exposed by the pull request, or the described behavior cannot cause an adverse outcome.
+- When rejecting a verifier approval, identify the exact premise that is false and cite the repository evidence that proves it. Lack of certainty is not enough.
+- Exclude feedback that does not describe an actual adverse outcome worth fixing.
 
 Phase 3 - report:
-- The decisions array must contain exactly one decision for every reviewQueue id across all spawn_review_agents calls, each with a concrete reason grounded in the evidence packet or inspected behavior.
+- The decisions array must contain exactly one decision for every reviewQueue id returned by spawn_review_agents. Every decision must include concise private evidence grounded in exact repository paths and lines; this evidence is recorded but not published.
 - Every accept decision must set findingIndex to the zero-based index of the finding in your findings array that represents it; reject and duplicate decisions must set findingIndex to null.
-- Determine final severity, confidence, wording, and location yourself for the findings you publish. You may also publish findings you discovered independently.
+- Determine final severity, wording, and location yourself. You may add findings discovered independently, but include evidence for each one; independent findings are verified separately after your response and are published only when approved.
 - Every finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version: preferably 1-8 lines, never more than 30, overlapping an added or modified line.
 - Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
-- Give the approvedFindings one final read against everything you now know about the pull request. List an id in vetoedApprovedFindings, with a short reason, only when your acquired context shows the finding is not a real defect: its failure scenario rests on a premise the code disproves, its factual claim is wrong, or another published finding already covers its root cause. Do not veto over severity, wording, or taste, and do not spend tool calls on this pass; leave the array empty when everything holds.
-- Base mergeSafetyScore and mergeSafetyReason on everything that will be published: your accepted findings, your independent findings, and the approvedFindings from spawn_review_agents that you did not veto.
+- Base mergeSafetyScore and mergeSafetyReason only on findings you explicitly accept or discover independently.
 - Add reviewerAttention items only when a specific area genuinely needs human judgment beyond the findings; return an empty array otherwise.`
+
+export const mainRejectionChallengeInstructions = `Audit one finding that a verifier approved and the main reviewer rejected.
+
+Inspect the repository independently. Treat both earlier conclusions as claims, not facts. Decide whether dropping the finding is safe.
+
+Verdicts:
+- uphold_rejection: direct repository evidence proves the main reviewer's reason for rejection.
+- return_to_main: the rejection is not proven, or the finding remains materially plausible or real.
+
+Rules:
+- Return exactly one verdict for the supplied id.
+- A rejection needs stronger counter-evidence than the approved finding's supporting evidence.
+- If a decisive fact remains uncertain after inspection, return the finding to the main reviewer.
+- Cite the repository paths and lines that decide the verdict.`
+
+export const mainCorrectionInstructions = `Reconsider only the rejected findings returned by the rejection challenge.
+
+Inspect repository code yourself before making the final choice. The challenge result is evidence, not a final decision. Do not delegate again. Keep every decision that was not returned unchanged, while returning a complete report with exactly one decision per queue id.`
+
+export const mainRequiredExplorationInstructions = `Delegation is already complete. The earlier draft was produced without the required independent repository inspection and cannot be used as the final decision.
+
+Inspect repository code with the provided tools, then return a complete report with exactly one decision per queue id. Build your own evidence for every decision. Do not delegate again.`
 
 export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.
 
@@ -226,7 +250,7 @@ Rules:
 
 const renderCandidate = (candidate: CandidateFinding, index: number) =>
   `${index + 1}. id: ${candidate.id}
-severity: ${candidate.severity} (confidence ${candidate.confidence})
+severity: ${candidate.severity}
 file: ${candidate.file}
 range: ${candidate.startLine}-${candidate.endLine}
 title: ${candidate.title}
@@ -240,14 +264,14 @@ export const buildReviewVerifierPrompt = ({
   baseRef,
   headRef,
   changedLineMap,
-  candidates,
+  candidate,
 }: {
   title: string
   body: string | null
   baseRef: string
   headRef: string
   changedLineMap: string
-  candidates: CandidateFinding[]
+  candidate: CandidateFinding
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
@@ -256,8 +280,51 @@ Head branch: ${headRef}
 Changed-line map:
 ${changedLineMap}
 
-Candidate findings:
-${candidates.map(renderCandidate).join("\n\n")}`
+Candidate finding:
+${renderCandidate(candidate, 0)}`
+
+export const buildMainRejectionChallengePrompt = ({
+  changedLineMap,
+  candidate,
+  verifierReason,
+  verifierEvidence,
+  mainReason,
+  mainEvidence,
+}: {
+  changedLineMap: string
+  candidate: CandidateFinding
+  verifierReason: string
+  verifierEvidence: string
+  mainReason: string
+  mainEvidence: string
+}) => `Changed-line map:
+${changedLineMap}
+
+Candidate finding:
+${renderCandidate(candidate, 0)}
+
+Verifier approval:
+Reason: ${verifierReason}
+Evidence:
+${verifierEvidence}
+
+Main rejection:
+Reason: ${mainReason}
+Evidence:
+${mainEvidence}`
+
+export const buildMainCorrectionPrompt = ({
+  challenges,
+}: {
+  challenges: Array<{
+    id: string
+    reason: string
+    evidence: string
+  }>
+}) => `The following rejected findings were returned for reconsideration:
+${JSON.stringify(challenges, null, 2)}
+
+Inspect the relevant repository code, then return the complete final report.`
 
 export const buildMainReviewPrompt = ({
   title,

@@ -1,8 +1,4 @@
-import {
-  severityRank,
-  type CandidateFinding,
-  type ReviewFinding,
-} from "./prompt"
+import { severityRank, type ReviewFinding } from "./prompt"
 
 type Range = { file: string; startLine: number; endLine: number }
 
@@ -65,58 +61,6 @@ const sameIssue = (
     (score >= NEAR_IDENTICAL_TOKEN_OVERLAP &&
       rangeJaccard(first, second) >= NEAR_IDENTICAL_RANGE_JACCARD)
   )
-}
-
-const preferredCandidate = (
-  first: CandidateFinding,
-  second: CandidateFinding
-) =>
-  severityRank[first.severity] - severityRank[second.severity] ||
-  second.confidence - first.confidence ||
-  second.evidence.length - first.evidence.length
-
-export const mergeOverlappingCandidates = (
-  candidates: CandidateFinding[],
-  options: {
-    isAnchorable?: (candidate: CandidateFinding) => boolean
-  } = {}
-): { merged: CandidateFinding[]; duplicates: CandidateFinding[] } => {
-  const groups: Array<
-    Array<{ candidate: CandidateFinding; tokens: Set<string> }>
-  > = []
-  for (const candidate of candidates) {
-    const tokens = findingTokens(candidate)
-    const group = groups.find((entry) =>
-      entry.some((item) =>
-        sameIssue(item.candidate, item.tokens, candidate, tokens)
-      )
-    )
-    if (group) group.push({ candidate, tokens })
-    else groups.push([{ candidate, tokens }])
-  }
-
-  const merged: CandidateFinding[] = []
-  const duplicates: CandidateFinding[] = []
-  const { isAnchorable } = options
-  for (const group of groups) {
-    const [representative, ...rest] = group
-      .map((item) => item.candidate)
-      .sort(
-        isAnchorable
-          ? (first, second) =>
-              Number(isAnchorable(second)) - Number(isAnchorable(first)) ||
-              preferredCandidate(first, second)
-          : preferredCandidate
-      )
-    merged.push({
-      ...representative!,
-      supportingTaskIds: [
-        ...new Set(group.map((item) => item.candidate.taskId)),
-      ],
-    })
-    duplicates.push(...rest)
-  }
-  return { merged, duplicates }
 }
 
 export const isSameIssue = (first: ReviewFinding, second: ReviewFinding) =>

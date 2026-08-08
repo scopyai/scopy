@@ -271,8 +271,6 @@ export const renderInlineReviewComment = (
     "",
     finding.body,
     "",
-    `Confidence: ${Math.round(finding.confidence * 100)}%`,
-    "",
     renderFixPrompt(finding),
     "",
     feedbackLink(finding, repoFullName),

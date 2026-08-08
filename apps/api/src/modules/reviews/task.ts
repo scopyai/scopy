@@ -544,7 +544,6 @@ export const executeReviewPullRequest = async (
             startLine: finding.startLine,
             endLine: finding.endLine,
             title: finding.title,
-            confidence: finding.confidence,
             language: languageForFile(finding.file),
           }))
         )

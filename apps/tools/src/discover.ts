@@ -89,3 +89,28 @@ export const discoverRepositoryFiles = async (
     throw new Error("Repository contains too many files")
   return existingFiles(repository, files)
 }
+
+export const discoverRepositoryGitBlobs = async (inputRepository: string) => {
+  const repository = await resolveRepositoryRoot(inputRepository)
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-files", "--cached", "--stage", "-z"],
+      {
+        cwd: repository,
+        encoding: "buffer",
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 2 * 60 * 1000,
+      }
+    )
+    const blobs = new Map<string, string>()
+    for (const record of stdout.toString("utf8").split("\0")) {
+      if (!record) continue
+      const match = record.match(/^\d+ ([0-9a-f]+) 0\t([\s\S]+)$/)
+      if (match) blobs.set(match[2]!, match[1]!)
+    }
+    return blobs
+  } catch {
+    return new Map<string, string>()
+  }
+}
