@@ -205,6 +205,7 @@ const errorMessage = (error: unknown) =>
 
 type QueueItem = CandidateFinding & {
   verifierVerdict: "accept" | "reject" | "escalate"
+  verifierFailedCondition?: string
   unresolvedQuestion?: string
 }
 
@@ -1413,6 +1414,9 @@ ${task.area}`
         const item: QueueItem = {
           ...candidate,
           verifierVerdict: verdict.verdict,
+          ...(verdict.verdict === "reject"
+            ? { verifierFailedCondition: verdict.failedCondition }
+            : {}),
           ...(verdict.verdict === "escalate"
             ? { unresolvedQuestion: verdict.unresolvedQuestion }
             : {}),
@@ -2043,12 +2047,45 @@ ${task.area}`
     },
     { accept: 0, reject: 0 }
   )
+  const verifierDecisionsById = new Map(
+    findingDecisions
+      .filter((decision) => decision.stage === "verifier")
+      .map((decision) => [decision.id, decision.decision] as const)
+  )
+  const verifierMainTransitions: Record<string, number> = {}
+  let settledVerifierDecisions = 0
+  let settledVerifierAgreements = 0
+  for (const decision of mainOutput.decisions) {
+    const verifierDecision = verifierDecisionsById.get(decision.id) ?? "missing"
+    const transition = `${verifierDecision}->${decision.decision}`
+    verifierMainTransitions[transition] =
+      (verifierMainTransitions[transition] ?? 0) + 1
+    if (verifierDecision === "accept" || verifierDecision === "reject") {
+      settledVerifierDecisions += 1
+      if (verifierDecision === decision.decision) {
+        settledVerifierAgreements += 1
+      }
+    }
+  }
+  const verifierMainComparison = {
+    settled: settledVerifierDecisions,
+    agreed: settledVerifierAgreements,
+    disagreed: settledVerifierDecisions - settledVerifierAgreements,
+    agreementRate:
+      settledVerifierDecisions === 0
+        ? null
+        : settledVerifierAgreements / settledVerifierDecisions,
+    acceptToReject: verifierMainTransitions["accept->reject"] ?? 0,
+    rejectToAccept: verifierMainTransitions["reject->accept"] ?? 0,
+    transitions: verifierMainTransitions,
+  }
   logger.info("Main review decisions completed", {
     ...context,
     queueItems: mainQueue.length,
     finalFindings: mainOutput.findings.length,
     decisions: mainDecisionCounts,
     inspectedFiles: mainInspectedFiles.size,
+    verifierMainComparison,
   })
   await recorder.appendEvent("main.decisions.completed", {
     queueItems: mainQueue.length,
@@ -2059,6 +2096,7 @@ ${task.area}`
       repositoryToolCalls: mainRepositoryToolCalls,
       files: [...mainInspectedFiles],
     },
+    verifierMainComparison,
   })
 
   await recorder.writeJson("main-agent-output.json", {
@@ -2237,6 +2275,7 @@ ${task.area}`
     mainQueueCount: mainQueueIds.size,
     verifierAcceptedCount,
     decisionCounts,
+    verifierMainComparison,
     publishedFindingCount: finalReport.findings.length,
     mainFindings: mainFindings.length,
     naturalLanguageLinterFindings: linterFindings.length,

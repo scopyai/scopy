@@ -308,23 +308,26 @@ export const reviewMainDocsInstructions = `
 - lookup_docs answers one focused question about the documented behavior of a library this repository uses, with citations. It is slow and shares a small per-review budget with the verifier, so use it only when a queue item's accept/reject decision hinges on library behavior that the available evidence does not settle. Never accept a finding whose claimed mechanism the documentation contradicts.
 - A wrong mechanism does not always mean no defect. When documentation refutes a candidate but identifies a different concrete failure at the same code, reject that candidate and send a focused follow-up task through spawn_review_agents. Do not silently drop the newly identified possibility.`
 
-export const reviewVerifierInstructions = `Verify one candidate bug finding. Inspect the repository yourself. The candidate evidence is only a lead.
+export const reviewVerifierInstructions = `Audit one candidate bug finding. Classify it; do not defend it. Inspect the repository yourself. The candidate and its evidence are only leads.
 
-Build a proof from code that you personally inspect:
-- entryPath: the supported caller and valid trigger that reach the behavior. A reachable explicit contract violation can serve as the entry path even if no current caller crashes.
-- actualResult: what the code does after the trigger.
-- expectedResult: what it must do, supported by a contract, caller, test, established behavior, documentation, or the pull request. Select that source in expectationSource.
-- changeLink: the exact changed code that introduces or exposes the mismatch. Its proofLocations entry must use role "change" and overlap a changed line.
-- counterEvidence: the prevention, cleanup, fallback, validation, or contradictory path you checked and why it does or does not defeat the claim.
-- usefulness: name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize from one test, fixture, example, provider, or support tool to other implementations. If only support code is affected, accept only when the defect breaks that code's stated purpose or can hide incorrect shipped behavior.
+Test these required claims in order:
+- pullRequestCause: the pull request introduces the mismatch or makes it newly reachable or materially worse.
+- entryPath: a supported caller, input, state, or explicit contract reaches the behavior.
+- actualResult: the stated adverse result follows from the inspected code.
+- expectedResult: the required behavior is supported by a contract, caller, test, established behavior, documentation, pull-request purpose, or the affected implementation's clear purpose. Select that source in expectationSource.
+- usefulness: the result materially breaks the affected implementation for its actual user and justifies a fix.
+- counterEvidence: inspect prevention, cleanup, fallback, validation, and contradictory paths that can defeat any claim above.
 
-Do not infer one proof field from another. Trace each premise in the repository. A theoretical possibility without a supported entry path or meaningful result is not enough to accept.
+Try to falsify every claim before you choose a verdict. Do not infer one claim from another. Trace every premise in the repository. A plausible concern, desired improvement, or unsupported expectation is not a bug. If relevant inspected sources do not support the claimed required behavior, reject it as an unsupported requirement.
+
+Build the final proof only from code that you personally inspect. changeLink must identify the exact changed code that introduces or exposes the mismatch. Its proofLocations entry must use role "change" and overlap a changed line. In usefulness, name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize beyond the exact inspected scope.
+
 A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. An accepted verdict must include changed-line proof with role "change".
 
 Verdicts:
-- accept: every part of the proof above is established and the exact affected scope makes the finding useful. Cite the inspected code for every part.
-- reject: explicit inspected code disproves one essential condition, or proves that the true effect is limited to code whose purpose is not materially broken. State it in failedCondition and counterEvidence. Failure to find proof is not enough for rejection.
-- escalate: you cannot prove or disprove an essential condition. State the exact unresolved question, the known facts, and their locations.
+- accept: every required claim is established and the exact affected scope makes the finding useful. Cite the inspected code for every claim. Lack of proof is never accept.
+- reject: inspection makes any required claim false, or shows that the claimed requirement has no support in the relevant sources. State the first failed claim in failedCondition and the decisive evidence in counterEvidence.
+- escalate: an essential claim depends on information that the available repository and documentation cannot settle. State only the exact unresolved question, known facts, and their locations.
 
 For each cited location, use proofLocations.role to state which proof field it supports. Return exactly one verdict for the supplied candidate id. Keep each field concise. Always return every output field. Use empty strings, an empty proofLocations array, and expectationSource "none" for fields that do not apply.`
 
@@ -340,6 +343,7 @@ Phase 2 - discover:
 - An assigned area is a starting location, not a boundary. Discovery agents remain responsible for every distinct defect they encounter, including defects in changed tests and support code.
 - Tasks run one at a time. Each later task receives a compact list of earlier findings and must search for different defects.
 - The tool returns every candidate with a lightweight verifier verdict. The verifier's private proof is not shown to you. A verdict is a worker opinion, not a fact.
+- For a verifier rejection, verifierFailedCondition is the worker's claimed weakest premise. Inspect that premise first. If inspected code confirms it, reject the candidate without rebuilding an acceptance proof. If it does not, audit the full candidate yourself.
 - If a returned candidate shows that discovery missed a related area, call spawn_review_agents again with focused follow-up tasks. Do not create a new finding yourself. Send discovery work through subagents.
 
 Phase 3 - decide:
