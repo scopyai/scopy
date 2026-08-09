@@ -6,7 +6,7 @@ import { enqueueDueDocSourceCrawls } from "./modules/docs/service"
 const hatchet = createHatchetClient()
 const jobs = createHatchetJobs(hatchet)
 const worker = await hatchet.worker("scopy-worker", {
-  slots: 5,
+  slots: 20,
   handleKill: false,
 })
 await worker.registerWorkflows(jobs.workflows)

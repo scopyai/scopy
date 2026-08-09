@@ -24,6 +24,7 @@ const dispatchSchema = z.object({ dispatchId: z.uuid() })
 const retryPolicy = {
   retries: 1,
   backoff: { factor: 2, maxSeconds: 60 },
+  scheduleTimeout: "2h",
 } as const
 const idempotency = {
   strategy: "ttl" as const,
