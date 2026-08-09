@@ -1,3 +1,4 @@
+DROP SCHEMA IF EXISTS "graphile_worker" CASCADE;--> statement-breakpoint
 CREATE TYPE "public"."doc_source_status" AS ENUM('idle', 'crawling', 'error');--> statement-breakpoint
 CREATE TYPE "public"."provider_account_type" AS ENUM('user', 'organization');--> statement-breakpoint
 CREATE TYPE "public"."pull_request_state" AS ENUM('open', 'closed', 'merged');--> statement-breakpoint
