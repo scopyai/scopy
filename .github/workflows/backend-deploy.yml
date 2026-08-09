@@ -2,6 +2,16 @@ name: Backend deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Service to deploy
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - api
+          - worker
 
 permissions:
   contents: read
@@ -14,10 +24,6 @@ jobs:
   build-and-push:
     name: Build and Push Backend Image
     runs-on: blacksmith-4vcpu-ubuntu-2404
-
-    outputs:
-      image: ${{ steps.image.outputs.image }}
-      worker-image: ${{ steps.image.outputs.worker-image }}
 
     steps:
       - name: Checkout
@@ -48,6 +54,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push API image
+        if: inputs.target != 'worker'
         uses: useblacksmith/build-push-action@v2
         with:
           context: .
@@ -59,6 +66,7 @@ jobs:
             ${{ steps.image.outputs.image }}:${{ github.sha }}
 
       - name: Build and push worker image
+        if: inputs.target != 'api'
         uses: useblacksmith/build-push-action@v2
         with:
           context: .
@@ -93,7 +101,7 @@ jobs:
           ping: cosmopolitan.tail7c717c.ts.net
 
       - name: Call webhook
-        if: ${{ env.DOKPLOY_WEBHOOK_URL != '' }}
+        if: ${{ inputs.target != 'worker' && env.DOKPLOY_WEBHOOK_URL != '' }}
         run: |
           curl --fail --silent --show-error \
             --request POST \
@@ -103,7 +111,7 @@ jobs:
             "$DOKPLOY_WEBHOOK_URL"
 
       - name: Call worker webhook
-        if: ${{ env.DOKPLOY_WORKER_WEBHOOK_URL != '' }}
+        if: ${{ inputs.target != 'api' && env.DOKPLOY_WORKER_WEBHOOK_URL != '' }}
         run: |
           curl --fail --silent --show-error \
             --request POST \
@@ -113,9 +121,9 @@ jobs:
             "$DOKPLOY_WORKER_WEBHOOK_URL"
 
       - name: Skip redeploy
-        if: ${{ env.DOKPLOY_WEBHOOK_URL == '' }}
+        if: ${{ inputs.target != 'worker' && env.DOKPLOY_WEBHOOK_URL == '' }}
         run: echo "DOKPLOY_BACKEND_WEBHOOK_URL is not configured; image was pushed but redeploy was skipped."
 
       - name: Skip worker redeploy
-        if: ${{ env.DOKPLOY_WORKER_WEBHOOK_URL == '' }}
+        if: ${{ inputs.target != 'api' && env.DOKPLOY_WORKER_WEBHOOK_URL == '' }}
         run: echo "DOKPLOY_BACKEND_WORKER_WEBHOOK_URL is not configured; worker image was pushed but redeploy was skipped."
