@@ -17,5 +17,23 @@ export default defineConfig({
     "tree-sitter-rust",
     "tree-sitter-typescript",
   ],
-  noExternal: ["tools", "@workspace/billing"],
+  noExternal: [
+    "tools",
+    "@workspace/billing",
+    "@hatchet-dev/typescript-sdk/v1",
+  ],
+  esbuildPlugins: [
+    {
+      name: "hatchet-v1-entry",
+      setup(build) {
+        build.onResolve(
+          { filter: /^@hatchet-dev\/typescript-sdk\/v1$/ },
+          () => ({
+            path: "@hatchet-dev/typescript-sdk/v1/index.js",
+            external: true,
+          })
+        )
+      },
+    },
+  ],
 })
