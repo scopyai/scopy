@@ -1,5 +1,31 @@
+import { randomUUID } from "node:crypto"
+import { sql, type SQL } from "drizzle-orm"
 import { z } from "zod"
-import { enqueueJob, type JobExecutor } from "./queue"
+
+export type JobExecutor = {
+  execute: (query: SQL) => Promise<unknown>
+}
+
+const enqueueJob = (
+  executor: JobExecutor,
+  jobName: string,
+  payload: Record<string, unknown>,
+  idempotencyKey: string
+) => {
+  const id = randomUUID()
+  return executor.execute(sql`
+    insert into job_outbox (id, job_name, payload, idempotency_key)
+    values (${id}, ${jobName}, ${JSON.stringify(payload)}::jsonb, ${idempotencyKey})
+    on conflict (idempotency_key) where published_at is null do nothing
+  `)
+}
+
+export const jobNames = {
+  processGitHubWebhook: "process-github-webhook",
+  reviewPullRequest: "review-pull-request",
+  crawlDocSource: "crawl-doc-source",
+  distillReviewMemory: "distill-review-memory",
+} as const
 
 export const jobPayloadSchemas = {
   processGitHubWebhook: z.object({
@@ -21,40 +47,49 @@ export const jobs = {
   processGitHubWebhook: {
     enqueue: (
       executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.processGitHubWebhook>,
+      payload: z.infer<typeof jobPayloadSchemas.processGitHubWebhook>
     ) =>
-      enqueueJob(executor, "process_github_webhook", payload, {
-        jobKey: `github-webhook:${payload.webhookEventId}`,
-      }),
+      enqueueJob(
+        executor,
+        jobNames.processGitHubWebhook,
+        payload,
+        `github-webhook:${payload.webhookEventId}`
+      ),
   },
   reviewPullRequest: {
     enqueue: (
       executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.reviewPullRequest>,
+      payload: z.infer<typeof jobPayloadSchemas.reviewPullRequest>
     ) =>
-      enqueueJob(executor, "review_pull_request", payload, {
-        jobKey: `pull-request-review:${payload.reviewRunId}`,
-        maxAttempts: 5,
-      }),
+      enqueueJob(
+        executor,
+        jobNames.reviewPullRequest,
+        payload,
+        `pull-request-review:${payload.reviewRunId}`
+      ),
   },
   crawlDocSource: {
     enqueue: (
       executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.crawlDocSource>,
+      payload: z.infer<typeof jobPayloadSchemas.crawlDocSource>
     ) =>
-      enqueueJob(executor, "crawl_doc_source", payload, {
-        jobKey: `docs-crawl:${payload.sourceId}`,
-        maxAttempts: 3,
-      }),
+      enqueueJob(
+        executor,
+        jobNames.crawlDocSource,
+        payload,
+        `docs-crawl:${payload.sourceId}`
+      ),
   },
   distillReviewMemory: {
     enqueue: (
       executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.distillReviewMemory>,
+      payload: z.infer<typeof jobPayloadSchemas.distillReviewMemory>
     ) =>
-      enqueueJob(executor, "distill_review_memory", payload, {
-        jobKey: `review-memory:${payload.commentId}`,
-        maxAttempts: 3,
-      }),
+      enqueueJob(
+        executor,
+        jobNames.distillReviewMemory,
+        payload,
+        `review-memory:${payload.commentId}`
+      ),
   },
 }

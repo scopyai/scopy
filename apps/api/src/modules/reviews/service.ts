@@ -118,6 +118,5 @@ export const schedulePullRequestReview = async (
     pullRequestId,
     headSha,
     triggerSource,
-    maxAttempts: 5,
   })
 }

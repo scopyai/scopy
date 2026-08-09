@@ -66,6 +66,19 @@ export const getReviewRuntimePaths = ({
   }
 }
 
+export const cleanupReviewRuntime = async (input: {
+  repositoryId: string
+  headSha: string
+  reviewRunId: string
+}) => {
+  if (env.APP_ENV !== "prod") return false
+  await rm(getReviewRuntimePaths(input).runPath, {
+    recursive: true,
+    force: true,
+  })
+  return true
+}
+
 const createAskPassScript = async (runPath: string) => {
   const scriptPath = path.join(runPath, "git-askpass.sh")
   await writeFile(

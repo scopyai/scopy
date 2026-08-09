@@ -1,1 +1,0 @@
-ALTER TABLE "review_finding" DROP COLUMN "confidence";

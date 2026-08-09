@@ -9,92 +9,66 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppConnectRouteImport } from './routes/_app.connect'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppWorkspaceSlugRouteImport } from './routes/_app.$workspaceSlug'
-import { Route as AppOnboardingWelcomeRouteImport } from './routes/_app.onboarding.welcome'
-import { Route as AppOnboardingUsageRouteImport } from './routes/_app.onboarding.usage'
-import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
-import { Route as AppOnboardingOverviewRouteImport } from './routes/_app.onboarding.overview'
-import { Route as AppOnboardingConnectRouteImport } from './routes/_app.onboarding.connect'
-import { Route as AppFeedbackFindingRouteImport } from './routes/_app.feedback.finding'
-import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
-import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
-import { Route as AppWorkspaceSlugMemoriesRouteImport } from './routes/_app.$workspaceSlug.memories'
-import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
-import { Route as AppWorkspaceSlugBillingRouteImport } from './routes/_app.$workspaceSlug.billing'
+import { Route as AppConnectRouteImport } from './routes/_app.connect'
 import { Route as AppWorkspaceSlugAnalyticsRouteImport } from './routes/_app.$workspaceSlug.analytics'
+import { Route as AppWorkspaceSlugBillingRouteImport } from './routes/_app.$workspaceSlug.billing'
+import { Route as AppWorkspaceSlugManageTeamRouteImport } from './routes/_app.$workspaceSlug.manage-team'
+import { Route as AppWorkspaceSlugMemoriesRouteImport } from './routes/_app.$workspaceSlug.memories'
+import { Route as AppWorkspaceSlugRepositoriesRouteImport } from './routes/_app.$workspaceSlug.repositories'
+import { Route as AppWorkspaceSlugSettingsRouteImport } from './routes/_app.$workspaceSlug.settings'
+import { Route as AppFeedbackFindingRouteImport } from './routes/_app.feedback.finding'
+import { Route as AppOnboardingConnectRouteImport } from './routes/_app.onboarding.connect'
+import { Route as AppOnboardingOverviewRouteImport } from './routes/_app.onboarding.overview'
+import { Route as AppOnboardingRepositoriesRouteImport } from './routes/_app.onboarding.repositories'
+import { Route as AppOnboardingUsageRouteImport } from './routes/_app.onboarding.usage'
+import { Route as AppOnboardingWelcomeRouteImport } from './routes/_app.onboarding.welcome'
+import { Route as AppWorkspaceSlugBillingSuccessRouteImport } from './routes/_app.$workspaceSlug.billing.success'
 import { Route as AppWorkspaceSlugRepositoriesIndexRouteImport } from './routes/_app.$workspaceSlug.repositories.index'
 import { Route as AppWorkspaceSlugRepositoriesRepositoryIdRouteImport } from './routes/_app.$workspaceSlug.repositories.$repositoryId'
-import { Route as AppWorkspaceSlugBillingSuccessRouteImport } from './routes/_app.$workspaceSlug.billing.success'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AppConnectRoute = AppConnectRouteImport.update({
-  id: '/connect',
-  path: '/connect',
-  getParentRoute: () => AppRoute,
 } as any)
 const AppWorkspaceSlugRoute = AppWorkspaceSlugRouteImport.update({
   id: '/$workspaceSlug',
   path: '/$workspaceSlug',
   getParentRoute: () => AppRoute,
 } as any)
-const AppOnboardingWelcomeRoute = AppOnboardingWelcomeRouteImport.update({
-  id: '/onboarding/welcome',
-  path: '/onboarding/welcome',
+const AppConnectRoute = AppConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => AppRoute,
 } as any)
-const AppOnboardingUsageRoute = AppOnboardingUsageRouteImport.update({
-  id: '/onboarding/usage',
-  path: '/onboarding/usage',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppOnboardingRepositoriesRoute =
-  AppOnboardingRepositoriesRouteImport.update({
-    id: '/onboarding/repositories',
-    path: '/onboarding/repositories',
-    getParentRoute: () => AppRoute,
-  } as any)
-const AppOnboardingOverviewRoute = AppOnboardingOverviewRouteImport.update({
-  id: '/onboarding/overview',
-  path: '/onboarding/overview',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppOnboardingConnectRoute = AppOnboardingConnectRouteImport.update({
-  id: '/onboarding/connect',
-  path: '/onboarding/connect',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFeedbackFindingRoute = AppFeedbackFindingRouteImport.update({
-  id: '/feedback/finding',
-  path: '/feedback/finding',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppWorkspaceSlugSettingsRoute =
-  AppWorkspaceSlugSettingsRouteImport.update({
-    id: '/settings',
-    path: '/settings',
+const AppWorkspaceSlugAnalyticsRoute =
+  AppWorkspaceSlugAnalyticsRouteImport.update({
+    id: '/analytics',
+    path: '/analytics',
     getParentRoute: () => AppWorkspaceSlugRoute,
   } as any)
-const AppWorkspaceSlugRepositoriesRoute =
-  AppWorkspaceSlugRepositoriesRouteImport.update({
-    id: '/repositories',
-    path: '/repositories',
+const AppWorkspaceSlugBillingRoute = AppWorkspaceSlugBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AppWorkspaceSlugRoute,
+} as any)
+const AppWorkspaceSlugManageTeamRoute =
+  AppWorkspaceSlugManageTeamRouteImport.update({
+    id: '/manage-team',
+    path: '/manage-team',
     getParentRoute: () => AppWorkspaceSlugRoute,
   } as any)
 const AppWorkspaceSlugMemoriesRoute =
@@ -103,22 +77,54 @@ const AppWorkspaceSlugMemoriesRoute =
     path: '/memories',
     getParentRoute: () => AppWorkspaceSlugRoute,
   } as any)
-const AppWorkspaceSlugManageTeamRoute =
-  AppWorkspaceSlugManageTeamRouteImport.update({
-    id: '/manage-team',
-    path: '/manage-team',
+const AppWorkspaceSlugRepositoriesRoute =
+  AppWorkspaceSlugRepositoriesRouteImport.update({
+    id: '/repositories',
+    path: '/repositories',
     getParentRoute: () => AppWorkspaceSlugRoute,
   } as any)
-const AppWorkspaceSlugBillingRoute = AppWorkspaceSlugBillingRouteImport.update({
-  id: '/billing',
-  path: '/billing',
-  getParentRoute: () => AppWorkspaceSlugRoute,
-} as any)
-const AppWorkspaceSlugAnalyticsRoute =
-  AppWorkspaceSlugAnalyticsRouteImport.update({
-    id: '/analytics',
-    path: '/analytics',
+const AppWorkspaceSlugSettingsRoute =
+  AppWorkspaceSlugSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
     getParentRoute: () => AppWorkspaceSlugRoute,
+  } as any)
+const AppFeedbackFindingRoute = AppFeedbackFindingRouteImport.update({
+  id: '/feedback/finding',
+  path: '/feedback/finding',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingConnectRoute = AppOnboardingConnectRouteImport.update({
+  id: '/onboarding/connect',
+  path: '/onboarding/connect',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingOverviewRoute = AppOnboardingOverviewRouteImport.update({
+  id: '/onboarding/overview',
+  path: '/onboarding/overview',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingRepositoriesRoute =
+  AppOnboardingRepositoriesRouteImport.update({
+    id: '/onboarding/repositories',
+    path: '/onboarding/repositories',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppOnboardingUsageRoute = AppOnboardingUsageRouteImport.update({
+  id: '/onboarding/usage',
+  path: '/onboarding/usage',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingWelcomeRoute = AppOnboardingWelcomeRouteImport.update({
+  id: '/onboarding/welcome',
+  path: '/onboarding/welcome',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWorkspaceSlugBillingSuccessRoute =
+  AppWorkspaceSlugBillingSuccessRouteImport.update({
+    id: '/success',
+    path: '/success',
+    getParentRoute: () => AppWorkspaceSlugBillingRoute,
   } as any)
 const AppWorkspaceSlugRepositoriesIndexRoute =
   AppWorkspaceSlugRepositoriesIndexRouteImport.update({
@@ -131,12 +137,6 @@ const AppWorkspaceSlugRepositoriesRepositoryIdRoute =
     id: '/$repositoryId',
     path: '/$repositoryId',
     getParentRoute: () => AppWorkspaceSlugRepositoriesRoute,
-  } as any)
-const AppWorkspaceSlugBillingSuccessRoute =
-  AppWorkspaceSlugBillingSuccessRouteImport.update({
-    id: '/success',
-    path: '/success',
-    getParentRoute: () => AppWorkspaceSlugBillingRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -277,11 +277,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -291,19 +291,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_app/connect': {
-      id: '/_app/connect'
-      path: '/connect'
-      fullPath: '/connect'
-      preLoaderRoute: typeof AppConnectRouteImport
-      parentRoute: typeof AppRoute
     }
     '/_app/$workspaceSlug': {
       id: '/_app/$workspaceSlug'
@@ -312,74 +305,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceSlugRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/onboarding/welcome': {
-      id: '/_app/onboarding/welcome'
-      path: '/onboarding/welcome'
-      fullPath: '/onboarding/welcome'
-      preLoaderRoute: typeof AppOnboardingWelcomeRouteImport
+    '/_app/connect': {
+      id: '/_app/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof AppConnectRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/onboarding/usage': {
-      id: '/_app/onboarding/usage'
-      path: '/onboarding/usage'
-      fullPath: '/onboarding/usage'
-      preLoaderRoute: typeof AppOnboardingUsageRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/onboarding/repositories': {
-      id: '/_app/onboarding/repositories'
-      path: '/onboarding/repositories'
-      fullPath: '/onboarding/repositories'
-      preLoaderRoute: typeof AppOnboardingRepositoriesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/onboarding/overview': {
-      id: '/_app/onboarding/overview'
-      path: '/onboarding/overview'
-      fullPath: '/onboarding/overview'
-      preLoaderRoute: typeof AppOnboardingOverviewRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/onboarding/connect': {
-      id: '/_app/onboarding/connect'
-      path: '/onboarding/connect'
-      fullPath: '/onboarding/connect'
-      preLoaderRoute: typeof AppOnboardingConnectRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/feedback/finding': {
-      id: '/_app/feedback/finding'
-      path: '/feedback/finding'
-      fullPath: '/feedback/finding'
-      preLoaderRoute: typeof AppFeedbackFindingRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/$workspaceSlug/settings': {
-      id: '/_app/$workspaceSlug/settings'
-      path: '/settings'
-      fullPath: '/$workspaceSlug/settings'
-      preLoaderRoute: typeof AppWorkspaceSlugSettingsRouteImport
-      parentRoute: typeof AppWorkspaceSlugRoute
-    }
-    '/_app/$workspaceSlug/repositories': {
-      id: '/_app/$workspaceSlug/repositories'
-      path: '/repositories'
-      fullPath: '/$workspaceSlug/repositories'
-      preLoaderRoute: typeof AppWorkspaceSlugRepositoriesRouteImport
-      parentRoute: typeof AppWorkspaceSlugRoute
-    }
-    '/_app/$workspaceSlug/memories': {
-      id: '/_app/$workspaceSlug/memories'
-      path: '/memories'
-      fullPath: '/$workspaceSlug/memories'
-      preLoaderRoute: typeof AppWorkspaceSlugMemoriesRouteImport
-      parentRoute: typeof AppWorkspaceSlugRoute
-    }
-    '/_app/$workspaceSlug/manage-team': {
-      id: '/_app/$workspaceSlug/manage-team'
-      path: '/manage-team'
-      fullPath: '/$workspaceSlug/manage-team'
-      preLoaderRoute: typeof AppWorkspaceSlugManageTeamRouteImport
+    '/_app/$workspaceSlug/analytics': {
+      id: '/_app/$workspaceSlug/analytics'
+      path: '/analytics'
+      fullPath: '/$workspaceSlug/analytics'
+      preLoaderRoute: typeof AppWorkspaceSlugAnalyticsRouteImport
       parentRoute: typeof AppWorkspaceSlugRoute
     }
     '/_app/$workspaceSlug/billing': {
@@ -389,12 +326,82 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceSlugBillingRouteImport
       parentRoute: typeof AppWorkspaceSlugRoute
     }
-    '/_app/$workspaceSlug/analytics': {
-      id: '/_app/$workspaceSlug/analytics'
-      path: '/analytics'
-      fullPath: '/$workspaceSlug/analytics'
-      preLoaderRoute: typeof AppWorkspaceSlugAnalyticsRouteImport
+    '/_app/$workspaceSlug/manage-team': {
+      id: '/_app/$workspaceSlug/manage-team'
+      path: '/manage-team'
+      fullPath: '/$workspaceSlug/manage-team'
+      preLoaderRoute: typeof AppWorkspaceSlugManageTeamRouteImport
       parentRoute: typeof AppWorkspaceSlugRoute
+    }
+    '/_app/$workspaceSlug/memories': {
+      id: '/_app/$workspaceSlug/memories'
+      path: '/memories'
+      fullPath: '/$workspaceSlug/memories'
+      preLoaderRoute: typeof AppWorkspaceSlugMemoriesRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
+    }
+    '/_app/$workspaceSlug/repositories': {
+      id: '/_app/$workspaceSlug/repositories'
+      path: '/repositories'
+      fullPath: '/$workspaceSlug/repositories'
+      preLoaderRoute: typeof AppWorkspaceSlugRepositoriesRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
+    }
+    '/_app/$workspaceSlug/settings': {
+      id: '/_app/$workspaceSlug/settings'
+      path: '/settings'
+      fullPath: '/$workspaceSlug/settings'
+      preLoaderRoute: typeof AppWorkspaceSlugSettingsRouteImport
+      parentRoute: typeof AppWorkspaceSlugRoute
+    }
+    '/_app/feedback/finding': {
+      id: '/_app/feedback/finding'
+      path: '/feedback/finding'
+      fullPath: '/feedback/finding'
+      preLoaderRoute: typeof AppFeedbackFindingRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/connect': {
+      id: '/_app/onboarding/connect'
+      path: '/onboarding/connect'
+      fullPath: '/onboarding/connect'
+      preLoaderRoute: typeof AppOnboardingConnectRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/overview': {
+      id: '/_app/onboarding/overview'
+      path: '/onboarding/overview'
+      fullPath: '/onboarding/overview'
+      preLoaderRoute: typeof AppOnboardingOverviewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/repositories': {
+      id: '/_app/onboarding/repositories'
+      path: '/onboarding/repositories'
+      fullPath: '/onboarding/repositories'
+      preLoaderRoute: typeof AppOnboardingRepositoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/usage': {
+      id: '/_app/onboarding/usage'
+      path: '/onboarding/usage'
+      fullPath: '/onboarding/usage'
+      preLoaderRoute: typeof AppOnboardingUsageRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding/welcome': {
+      id: '/_app/onboarding/welcome'
+      path: '/onboarding/welcome'
+      fullPath: '/onboarding/welcome'
+      preLoaderRoute: typeof AppOnboardingWelcomeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/$workspaceSlug/billing/success': {
+      id: '/_app/$workspaceSlug/billing/success'
+      path: '/success'
+      fullPath: '/$workspaceSlug/billing/success'
+      preLoaderRoute: typeof AppWorkspaceSlugBillingSuccessRouteImport
+      parentRoute: typeof AppWorkspaceSlugBillingRoute
     }
     '/_app/$workspaceSlug/repositories/': {
       id: '/_app/$workspaceSlug/repositories/'
@@ -409,13 +416,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/$workspaceSlug/repositories/$repositoryId'
       preLoaderRoute: typeof AppWorkspaceSlugRepositoriesRepositoryIdRouteImport
       parentRoute: typeof AppWorkspaceSlugRepositoriesRoute
-    }
-    '/_app/$workspaceSlug/billing/success': {
-      id: '/_app/$workspaceSlug/billing/success'
-      path: '/success'
-      fullPath: '/$workspaceSlug/billing/success'
-      preLoaderRoute: typeof AppWorkspaceSlugBillingSuccessRouteImport
-      parentRoute: typeof AppWorkspaceSlugBillingRoute
     }
   }
 }

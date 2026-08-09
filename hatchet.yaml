@@ -1,0 +1,11 @@
+dev:
+  runCmd: "pnpm --filter api exec tsx src/worker.ts"
+  files:
+    - "apps/api/src/**/*.ts"
+    - "packages/**/*.ts"
+    - "!**/.data/**"
+    - "!**/.git/**"
+    - "!**/node_modules/**"
+    - "!**/.turbo/**"
+    - "!**/dist/**"
+  reload: true

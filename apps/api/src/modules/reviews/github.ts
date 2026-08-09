@@ -201,7 +201,7 @@ export const reviewStartedBody =
   "Review started. I am analyzing the changes in this pull request."
 
 export const reviewFailedBody =
-  "I could not complete this review after several retries. Please mention me again later to retry."
+  "I could not complete this review after two attempts. Please mention me again later to retry."
 
 export const reviewCreditsBlockedBody = ({
   requiredCredits,
@@ -317,7 +317,28 @@ export const publishPullRequestReview = async ({
   }
 
   const octokit = await getOctokit(installationId)
-  const comments = buildPullRequestReviewComments(findings, repo.fullName)
+  const existingComments = await octokit.paginate(
+    "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+    {
+      owner: repo.owner,
+      repo: repo.name,
+      pull_number: pullRequestNumber,
+      per_page: 100,
+    }
+  )
+  const unpublishedFindings = findings.filter((finding) => {
+    const marker = renderFindingMarker(finding)
+    return !existingComments.some(
+      (comment) =>
+        typeof comment.body === "string" && comment.body.includes(marker)
+    )
+  })
+  if (unpublishedFindings.length === 0) return null
+
+  const comments = buildPullRequestReviewComments(
+    unpublishedFindings,
+    repo.fullName
+  )
   const createReview = (reviewComments: PullRequestReviewComment[]) =>
     octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
       owner: repo.owner,

@@ -61,8 +61,8 @@ EXPOSE 3001
 
 FROM runner-base AS api-runner
 
-CMD ["sh", "-c", "node dist/migrate.js && node dist/index.js"]
+CMD ["sh", "-c", "node dist/migrate.js && exec node dist/index.js"]
 
 FROM runner-base AS worker-runner
 
-CMD ["sh", "-c", "node dist/migrate.js && node dist/worker.js"]
+CMD ["node", "dist/worker.js"]

@@ -123,21 +123,20 @@ type RunInput = {
   preflight: ReviewPreflight
 }
 
-export type ReviewAgentResult = {
-  kind: "summary"
+export type ReviewAnalysisResult = {
+  kind: "analysis"
   summary?: string
+  report: ReviewReport
   triggerSource: string
   modelId: string
   subagentModelId: string
   verifierModelId: string
   fetchedFileCount: number
   filteredFileCount: number
+  reviewableAdditions: number
+  reviewableDeletions: number
   diffChangedLineCount: number
   commentId: number
-  reviewId?: number
-  reviewEvent?: PullRequestReviewEvent
-  inlineCommentCount?: number
-  inlineReviewPublishError?: string
   mergeSafetyScore?: number
   findings?: ReviewReport["findings"]
   usage?: Record<string, unknown>
@@ -162,6 +161,17 @@ export type ReviewAgentResult = {
   startedAt: string
   completedAt: string
   durationMs: number
+}
+
+export type ReviewAgentResult = Omit<
+  ReviewAnalysisResult,
+  "kind" | "report"
+> & {
+  kind: "summary"
+  reviewId?: number
+  reviewEvent?: PullRequestReviewEvent
+  inlineCommentCount?: number
+  inlineReviewPublishError?: string
 }
 
 const chunked = <T>(items: T[], size: number) => {
@@ -241,7 +251,7 @@ const validateProofLocations = ({
   return problems
 }
 
-export const runReviewAgent = async ({
+export const runReviewAnalysis = async ({
   pullRequest,
   reviewRunId,
   repository,
@@ -250,7 +260,7 @@ export const runReviewAgent = async ({
   triggerSource,
   logger,
   preflight,
-}: RunInput): Promise<ReviewAgentResult> => {
+}: RunInput): Promise<ReviewAnalysisResult> => {
   const startedAt = Date.now()
   const startedAtIso = new Date(startedAt).toISOString()
   const context = {
@@ -2243,9 +2253,151 @@ ${task.area}`
     ...generationStats,
   })
 
+  const llmCostMicrocents = Object.values(llmBilling).reduce<number>(
+    (total, value) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "costMicrocents" in value &&
+        typeof (value as { costMicrocents?: unknown }).costMicrocents ===
+          "number"
+      ) {
+        return total + (value as { costMicrocents: number }).costMicrocents
+      }
+      return total
+    },
+    0
+  )
+  const vectorWriteCostMicrocents = semanticEnabled
+    ? calculateVectorWriteCostMicrocents(qdrantLogicalWriteBytes)
+    : 0
+  const vectorQueryCostMicrocents = semanticEnabled
+    ? calculateVectorQueryCostMicrocents(vectorQueryBytes)
+    : 0
+  const vectorNetworkCostMicrocents = semanticEnabled
+    ? calculateVectorNetworkCostMicrocents(vectorNetworkBytes)
+    : 0
+  const totalCostMicrocents =
+    llmCostMicrocents +
+    vectorWriteCostMicrocents +
+    vectorQueryCostMicrocents +
+    vectorNetworkCostMicrocents
+  const billing = {
+    billingUnit: "micro_usd" as const,
+    llmCostMicroUsd: llmCostMicrocents,
+    llmCostMicrocents,
+    vectorWriteBytes: qdrantLogicalWriteBytes,
+    vectorQueryBytes,
+    vectorNetworkBytes,
+    vectorQueryCount,
+    vectorWriteCostMicroUsd: vectorWriteCostMicrocents,
+    vectorWriteCostMicrocents,
+    vectorQueryCostMicroUsd: vectorQueryCostMicrocents,
+    vectorQueryCostMicrocents,
+    vectorNetworkCostMicroUsd: vectorNetworkCostMicrocents,
+    vectorNetworkCostMicrocents,
+    totalCostMicroUsd: totalCostMicrocents,
+    totalCostMicrocents,
+    llm: llmBilling,
+  }
+  const result = {
+    kind: "analysis" as const,
+    summary: renderedReport,
+    report: finalReport,
+    triggerSource,
+    modelId: reviewModels.main,
+    subagentModelId: reviewModels.subagent,
+    verifierModelId: reviewModels.verifier,
+    fetchedFileCount,
+    filteredFileCount: filteredFiles.length,
+    reviewableAdditions: additions,
+    reviewableDeletions: deletions,
+    diffChangedLineCount,
+    commentId,
+    ...generationStats,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
+    findings: finalReport.findings,
+    usage: generationUsage as unknown as Record<string, unknown>,
+    billing,
+    startedAt: startedAtIso,
+    completedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAt,
+  }
+  await recorder.writeJson("analysis-result.json", result)
+  await recorder.writeJson("summary.json", {
+    status: "analyzed",
+    reviewRunId,
+    repository: repository.fullName,
+    pullRequestNumber: pullRequest.number,
+    modelId: reviewModels.main,
+    subagentModelId: reviewModels.subagent,
+    verifierModelId: reviewModels.verifier,
+    fetchedFileCount,
+    filteredFileCount: filteredFiles.length,
+    diffChangedLineCount,
+    ...runtimeStats,
+    ...generationStats,
+    mergeSafetyScore: finalReport.mergeSafetyScore,
+    confirmedFindings: finalReport.findings.length,
+    billing,
+    counts: recorder.counts(),
+    durationMs: result.durationMs,
+  })
+  logger.info("Review agent stage completed", {
+    ...context,
+    stage: "analysis",
+    commentId,
+    durationMs: result.durationMs,
+  })
+  await recorder.appendEvent("stage.completed", {
+    stage: "analysis",
+    commentId,
+    durationMs: result.durationMs,
+  })
+  await recorder.appendEvent("review.analyzed", result)
+  return result
+}
+
+export const publishReviewAnalysis = async ({
+  pullRequest,
+  reviewRunId,
+  repository,
+  installationId,
+  triggerSource,
+  logger,
+  analysis,
+}: Pick<
+  RunInput,
+  | "pullRequest"
+  | "reviewRunId"
+  | "repository"
+  | "installationId"
+  | "triggerSource"
+  | "logger"
+> & {
+  analysis: ReviewAnalysisResult
+}): Promise<ReviewAgentResult> => {
+  const context = {
+    pullRequestId: pullRequest.id,
+    repository: repository.fullName,
+    headSha: pullRequest.headSha,
+    triggerSource,
+  }
+  const reviewCommentRunId =
+    triggerSource === "mention" ? reviewRunId : undefined
+  const recorder = await createReviewRunRecorder({
+    reviewRunId,
+    repo: repository,
+    pullRequest,
+    triggerSource,
+    modelId: analysis.modelId,
+  })
+  const finalReport = analysis.report
+  const commentId = analysis.commentId
+  let publishedReport = analysis.summary ?? "## Review summary"
+
   logger.info("Review agent stage started", { ...context, stage: "publish" })
   await recorder.appendEvent("stage.started", { stage: "publish" })
-  let publishedReport = renderedReport
   await updateReviewComment({
     repo: repository,
     installationId,
@@ -2254,6 +2406,7 @@ ${task.area}`
     reviewRunId: reviewCommentRunId,
     body: publishedReport,
   })
+
   let reviewId: number | undefined
   let reviewEvent: PullRequestReviewEvent | undefined
   let inlineCommentCount: number | undefined
@@ -2321,10 +2474,7 @@ ${task.area}`
       })
       publishedReport = renderReviewSummaryComment({
         report: finalReport,
-        inlineReview: {
-          kind: "failed",
-          error: inlineReviewPublishError,
-        },
+        inlineReview: { kind: "failed", error: inlineReviewPublishError },
       })
       try {
         await updateReviewComment({
@@ -2354,112 +2504,21 @@ ${task.area}`
       )
     }
   }
-  const llmCostMicrocents = Object.values(llmBilling).reduce<number>(
-    (total, value) => {
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        "costMicrocents" in value &&
-        typeof (value as { costMicrocents?: unknown }).costMicrocents ===
-          "number"
-      ) {
-        return total + (value as { costMicrocents: number }).costMicrocents
-      }
-      return total
-    },
-    0
-  )
-  const vectorWriteCostMicrocents = semanticEnabled
-    ? calculateVectorWriteCostMicrocents(qdrantLogicalWriteBytes)
-    : 0
-  const vectorQueryCostMicrocents = semanticEnabled
-    ? calculateVectorQueryCostMicrocents(vectorQueryBytes)
-    : 0
-  const vectorNetworkCostMicrocents = semanticEnabled
-    ? calculateVectorNetworkCostMicrocents(vectorNetworkBytes)
-    : 0
-  const totalCostMicrocents =
-    llmCostMicrocents +
-    vectorWriteCostMicrocents +
-    vectorQueryCostMicrocents +
-    vectorNetworkCostMicrocents
-  const billing = {
-    billingUnit: "micro_usd" as const,
-    llmCostMicroUsd: llmCostMicrocents,
-    llmCostMicrocents,
-    vectorWriteBytes: qdrantLogicalWriteBytes,
-    vectorQueryBytes,
-    vectorNetworkBytes,
-    vectorQueryCount,
-    vectorWriteCostMicroUsd: vectorWriteCostMicrocents,
-    vectorWriteCostMicrocents,
-    vectorQueryCostMicroUsd: vectorQueryCostMicrocents,
-    vectorQueryCostMicrocents,
-    vectorNetworkCostMicroUsd: vectorNetworkCostMicrocents,
-    vectorNetworkCostMicrocents,
-    totalCostMicroUsd: totalCostMicrocents,
-    totalCostMicrocents,
-    llm: llmBilling,
-  }
-  const result = {
-    kind: "summary" as const,
+
+  const { report: _report, ...analysisResult } = analysis
+  const result: ReviewAgentResult = {
+    ...analysisResult,
+    kind: "summary",
     summary: publishedReport,
-    triggerSource,
-    modelId: reviewModels.main,
-    subagentModelId: reviewModels.subagent,
-    verifierModelId: reviewModels.verifier,
-    fetchedFileCount,
-    filteredFileCount: filteredFiles.length,
-    diffChangedLineCount,
-    commentId,
     reviewId,
     reviewEvent,
     inlineCommentCount,
     inlineReviewPublishError,
-    ...generationStats,
-    mergeSafetyScore: finalReport.mergeSafetyScore,
-    findings: finalReport.findings,
-    usage: generationUsage as unknown as Record<string, unknown>,
-    billing,
-    startedAt: startedAtIso,
     completedAt: new Date().toISOString(),
-    durationMs: Date.now() - startedAt,
+    durationMs: Date.now() - Date.parse(analysis.startedAt),
   }
   await recorder.writeJson("result.json", result)
-  await recorder.writeJson("summary.json", {
-    status: "completed",
-    reviewRunId,
-    repository: repository.fullName,
-    pullRequestNumber: pullRequest.number,
-    modelId: reviewModels.main,
-    subagentModelId: reviewModels.subagent,
-    verifierModelId: reviewModels.verifier,
-    fetchedFileCount,
-    filteredFileCount: filteredFiles.length,
-    diffChangedLineCount,
-    ...runtimeStats,
-    ...generationStats,
-    mergeSafetyScore: finalReport.mergeSafetyScore,
-    confirmedFindings: finalReport.findings.length,
-    inlineCommentCount,
-    reviewId,
-    reviewEvent,
-    inlineReviewPublishError,
-    billing,
-    counts: recorder.counts(),
-    durationMs: result.durationMs,
-  })
   await recorder.writeText("published-comment.md", publishedReport)
-  logger.info("Review agent stage completed", {
-    ...context,
-    stage: "publish",
-    commentId,
-    reviewId,
-    reviewEvent,
-    inlineCommentCount,
-    inlineReviewPublishError,
-    durationMs: result.durationMs,
-  })
   await recorder.appendEvent("stage.completed", {
     stage: "publish",
     commentId,
@@ -2469,7 +2528,6 @@ ${task.area}`
     inlineReviewPublishError,
     durationMs: result.durationMs,
   })
-  await recorder.appendEvent("review.completed", result)
   return result
 }
 

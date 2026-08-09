@@ -85,6 +85,38 @@ export const docSourceStatus = pgEnum("doc_source_status", [
   "error",
 ])
 
+export const jobOutbox = pgTable(
+  "job_outbox",
+  {
+    id: text("id").primaryKey(),
+    jobName: text("job_name").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    availableAt: timestamp("available_at").defaultNow().notNull(),
+    lockedAt: timestamp("locked_at"),
+    publishedAt: timestamp("published_at"),
+    failedAt: timestamp("failed_at"),
+    hatchetRunId: text("hatchet_run_id"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("job_outbox_dispatch_idx").on(
+      table.publishedAt,
+      table.availableAt,
+      table.createdAt
+    ),
+    uniqueIndex("job_outbox_pending_idempotency_idx")
+      .on(table.idempotencyKey)
+      .where(sql`${table.publishedAt} is null and ${table.failedAt} is null`),
+  ]
+)
+
 export type ProviderActor = {
   id: string
   login: string
