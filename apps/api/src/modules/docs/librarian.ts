@@ -8,6 +8,7 @@ import { createReviewLlm, repairedJsonOutput } from "../reviews/llm"
 import { resolveDocSource, searchDocSourceChunks } from "./search"
 
 const MAX_TOC_ENTRIES = 500
+const DEFAULT_TOOL_BYTES = 8_000
 const MAX_TOOL_BYTES = 20_000
 const MAX_STEPS = 8
 
@@ -48,7 +49,7 @@ export type LibrarianOptions = {
   diagnostics?: boolean
 }
 
-const toolText = (text: string, maxBytes = MAX_TOOL_BYTES) => {
+const toolText = (text: string, maxBytes = DEFAULT_TOOL_BYTES) => {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
   let output = text
   while (Buffer.byteLength(output, "utf8") > maxBytes) {
@@ -115,8 +116,14 @@ export const queryDocsLibrarian = async (
       inputSchema: z.object({
         url: z.string().min(1),
         heading: z.string().min(1).optional(),
+        maxBytes: z
+          .number()
+          .int()
+          .min(2_000)
+          .max(MAX_TOOL_BYTES)
+          .optional(),
       }),
-      execute: async ({ url, heading }) => {
+      execute: async ({ url, heading, maxBytes = DEFAULT_TOOL_BYTES }) => {
         const page = await db.query.docPage.findFirst({
           columns: { id: true, title: true },
           where: activePage(url),
@@ -141,7 +148,8 @@ export const queryDocsLibrarian = async (
               title: page.title,
               heading: chunks[matchIndex]!.heading,
               content: toolText(
-                window.map((chunk) => chunk.contentMd).join("\n\n")
+                window.map((chunk) => chunk.contentMd).join("\n\n"),
+                maxBytes
               ),
             }
           }
@@ -149,7 +157,8 @@ export const queryDocsLibrarian = async (
         return {
           title: page.title,
           content: toolText(
-            chunks.map((chunk) => chunk.contentMd).join("\n\n")
+            chunks.map((chunk) => chunk.contentMd).join("\n\n"),
+            maxBytes
           ),
         }
       },
@@ -159,12 +168,14 @@ export const queryDocsLibrarian = async (
         "Full-text search across all documentation sections of this library. Best for exact API names, method signatures, config keys, and error strings. Returns matching sections (url + heading + snippet); pass url and heading to read_doc_page to read a section in full.",
       inputSchema: z.object({
         query: z.string().min(1),
+        limit: z.number().int().positive().max(10).optional(),
       }),
-      execute: async ({ query }) => {
+      execute: async ({ query, limit = 4 }) => {
         const results = await searchDocSourceChunks({
           sourceId: source.id,
           activeCrawlId,
           query,
+          limit,
         })
         if (results.length === 0) {
           return { results: [], note: "no matches; try different terms" }

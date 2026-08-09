@@ -178,13 +178,13 @@ const createRepositoryTools = ({
 }) => ({
   read_file: tool({
     description:
-      "Returns numbered lines from a repository file by repo-relative path. Use for a small explicit range when summarizing architecture needs source context.",
+      "Returns numbered repository lines. Reads 120 lines by default and up to 800; request more only when needed.",
     inputSchema: z.object({
       file: z.string().min(1),
       startLine: z.number().int().positive().optional(),
-      maxLines: z.number().int().positive().max(200).optional(),
+      maxLines: z.number().int().positive().max(800).optional(),
     }),
-    execute: async ({ file, startLine, maxLines }) => {
+    execute: async ({ file, startLine, maxLines = 120 }) => {
       const input = { file, startLine, maxLines }
       const output = await readRepositoryFile({
         repository: repositoryPath,
@@ -202,16 +202,27 @@ const createRepositoryTools = ({
   }),
   get_symbol_definition: tool({
     description:
-      "Returns matching symbol definitions with signature, file/line range, enclosing scope metadata, and definition source.",
+      "Returns bounded symbol definitions and source. Returns 3 definitions by default; use offset, limit, or maxSourceBytes to request more.",
     inputSchema: z.object({
       symbol: z.string().min(1),
+      offset: z.number().int().nonnegative().optional(),
+      limit: z.number().int().positive().max(20).optional(),
+      maxSourceBytes: z
+        .number()
+        .int()
+        .min(1_000)
+        .max(40_000)
+        .optional(),
     }),
-    execute: async ({ symbol }) => {
-      const input = { symbol }
+    execute: async ({ symbol, offset, limit, maxSourceBytes }) => {
+      const input = { symbol, offset, limit, maxSourceBytes }
       const result = await getSymbolDefinition({
         repository: repositoryPath,
         index,
         symbol,
+        offset,
+        limit,
+        maxSourceBytes,
       })
       const output = { ...result.json, stats: result.stats }
       await recorder.recordToolCall({
@@ -224,16 +235,20 @@ const createRepositoryTools = ({
   }),
   get_symbol_callers: tool({
     description:
-      "Returns direct call locations and enclosing caller metadata for a symbol.",
+      "Returns direct callers in pages. Returns 8 callers by default; use offset and limit to request more.",
     inputSchema: z.object({
       symbol: z.string().min(1),
+      offset: z.number().int().nonnegative().max(199).optional(),
+      limit: z.number().int().positive().max(50).optional(),
     }),
-    execute: async ({ symbol }) => {
-      const input = { symbol }
+    execute: async ({ symbol, offset, limit }) => {
+      const input = { symbol, offset, limit }
       const result = await getSymbolCallers({
         repository: repositoryPath,
         index,
         symbol,
+        offset,
+        limit,
       })
       const output = { ...result.json, stats: result.stats }
       await recorder.recordToolCall({
@@ -246,21 +261,22 @@ const createRepositoryTools = ({
   }),
   locate_text: tool({
     description:
-      "Finds exact strings, identifiers, route paths, config keys, table names, imports, or error strings across indexed repository files.",
+      "Finds exact strings and identifiers. Returns 12 matches by default; request up to 50 with limit.",
     inputSchema: z.object({
       query: z.string().min(1),
+      limit: z.number().int().positive().max(50).optional(),
     }),
-    execute: async ({ query }) => {
-      const input = { query }
+    execute: async ({ query, limit = 12 }) => {
+      const input = { query, limit }
       const result = await searchRepositoryText({
         repository: repositoryPath,
         index,
         query,
-        maxResults: 50,
+        maxResults: limit,
       })
       const output = {
         ...result.stats,
-        markdown: truncateText(result.markdown, 90_000),
+        markdown: truncateText(result.markdown, 12_000),
       }
       await recorder.recordToolCall({
         name: "repository_context.locate_text",

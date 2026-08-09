@@ -58,7 +58,7 @@ const reviewProofFields = {
     "pull_request",
     "none",
   ]),
-  changeLink: z.string(),
+  prChangeEvidence: z.string(),
   counterEvidence: z.string(),
   usefulness: z.string(),
   proofLocations: z.array(
@@ -100,13 +100,16 @@ const validateReviewProof = ({
     }
   }
 
-  requireText("changeLink")
   requireText("counterEvidence")
   if (proof.proofLocations.length === 0) {
-    addIssue("proofLocations", `Inspected code proof is required for ${outcome}.`)
+    addIssue(
+      "proofLocations",
+      `Inspected code proof is required for ${outcome}.`
+    )
   }
   if (outcome === "reject") return
 
+  requireText("prChangeEvidence")
   requireLocation("change")
   for (const field of [
     "entryPath",
@@ -124,7 +127,7 @@ const validateReviewProof = ({
 export const reviewVerifierOutputSchema = z.object({
   id: z.string().min(1),
   verdict: z.enum(["accept", "reject", "escalate"]),
-  pullRequestCause: z.string(),
+  pullRequestRelevance: z.string(),
   ...reviewProofFields,
   failedCondition: z.string(),
   unresolvedQuestion: z.string(),
@@ -137,10 +140,10 @@ export const reviewVerifierVerdictSchema =
       validation.addIssue({ code: "custom", path: [path], message })
     if (output.verdict === "accept") {
       validateReviewProof({ proof: output, outcome: "accept", addIssue })
-      if (output.pullRequestCause.trim().length === 0) {
+      if (output.pullRequestRelevance.trim().length === 0) {
         addIssue(
-          "pullRequestCause",
-          "pullRequestCause is required for accept."
+          "pullRequestRelevance",
+          "pullRequestRelevance is required for accept."
         )
       }
     } else if (output.verdict === "reject") {
@@ -171,7 +174,7 @@ export const reviewVerifierVerdictSchema =
 export const reviewDecisionOutputSchema = z.object({
   id: z.string().min(1),
   decision: z.enum(["accept", "reject"]),
-  findingIndex: z.number().int().nonnegative().nullable(),
+  rejectionBasis: z.enum(["none", "contradicted", "unresolved"]),
   ...reviewProofFields,
   failedCondition: z.string(),
 })
@@ -181,25 +184,34 @@ export const reviewDecisionSchema = reviewDecisionOutputSchema.superRefine(
     const addIssue = (path: string, message: string) =>
       validation.addIssue({ code: "custom", path: [path], message })
     if (output.decision === "accept") {
-      if (output.findingIndex === null) {
-        validation.addIssue({
-          code: "custom",
-          path: ["findingIndex"],
-          message: "Accepted candidates require a findingIndex.",
-        })
+      if (output.rejectionBasis !== "none") {
+        addIssue(
+          "rejectionBasis",
+          "Accept requires rejectionBasis to be none."
+        )
       }
       validateReviewProof({ proof: output, outcome: "accept", addIssue })
     } else {
-      if (output.findingIndex !== null) {
-        validation.addIssue({
-          code: "custom",
-          path: ["findingIndex"],
-          message: "Rejected candidates must use a null findingIndex.",
-        })
+      if (output.rejectionBasis === "none") {
+        addIssue(
+          "rejectionBasis",
+          "Reject requires rejectionBasis to be contradicted or unresolved."
+        )
       }
       validateReviewProof({ proof: output, outcome: "reject", addIssue })
       if (output.failedCondition.trim().length === 0) {
         addIssue("failedCondition", "failedCondition is required for reject.")
+      }
+      if (
+        output.rejectionBasis === "contradicted" &&
+        !output.proofLocations.some(
+          (location) => location.role === "counter_evidence"
+        )
+      ) {
+        addIssue(
+          "proofLocations",
+          "A contradicted rejection requires positive counter-evidence."
+        )
       }
     }
   }
@@ -318,7 +330,7 @@ export const reviewMainDocsInstructions = `
 export const reviewVerifierInstructions = `Audit one candidate bug finding. Classify it; do not defend it. Inspect the repository yourself. The candidate and its evidence are only leads.
 
 Test these required claims in order:
-- pullRequestCause: the pull request introduces the mismatch or makes it newly reachable or materially worse.
+- pullRequestRelevance: changed code is directly connected to the claimed failure, relies on the affected behavior, or tries to change it. The same failure in the base version is not a reason to reject a finding.
 - entryPath: a supported caller, input, state, or explicit contract reaches the behavior.
 - actualResult: the stated adverse result follows from the inspected code.
 - expectedResult: the required behavior is supported by a contract, caller, test, established behavior, documentation, pull-request purpose, or the affected implementation's clear purpose. Select that source in expectationSource.
@@ -327,9 +339,9 @@ Test these required claims in order:
 
 Try to falsify every claim before you choose a verdict. Do not infer one claim from another. Trace every premise in the repository. A plausible concern, desired improvement, or unsupported expectation is not a bug. If relevant inspected sources do not support the claimed required behavior, reject it as an unsupported requirement.
 
-Build the final proof only from code that you personally inspect. changeLink must identify the exact changed code that introduces or exposes the mismatch. Its proofLocations entry must use role "change" and overlap a changed line. In usefulness, name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize beyond the exact inspected scope.
+Build the final proof only from code that you personally inspect. prChangeEvidence must identify the exact changed code that introduces or exposes an accepted mismatch. Its proofLocations entry must use role "change" and overlap a changed line. In usefulness, name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize beyond the exact inspected scope.
 
-In pullRequestCause, state how the base-to-head change introduces the mismatch, makes it newly reachable, or makes it materially worse. Use an empty string when the field does not apply.
+In pullRequestRelevance, identify the exact changed code that makes this finding part of the review. A change that tries and fails to correct existing behavior is relevant. Use an empty string when the field does not apply.
 
 A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. An accepted verdict must include changed-line proof with role "change".
 
@@ -352,8 +364,9 @@ Phase 2 - discover:
 - Create enough tasks to distribute the changed work reasonably evenly by complexity. Avoid one broad task containing most of the complex change while other tasks cover much smaller work.
 - An assigned area is a starting location, not a boundary. Discovery agents remain responsible for every distinct defect they encounter, including defects in changed tests and support code.
 - Tasks run one at a time. Each later task receives a compact list of earlier findings and must search for different defects.
-- The tool returns every candidate with a lightweight verifier verdict. The verifier's private proof is not shown to you. A verdict is a worker opinion, not a fact.
-- For a verifier rejection, verifierFailedCondition is the worker's claimed weakest premise. Inspect that premise first. If inspected code confirms it, reject the candidate without rebuilding an acceptance proof. If it does not, audit the full candidate yourself.
+- The tool groups candidates by file. It returns inspectionContext with small raw code excerpts around verifierInspectionTargets. Each candidate lists its inspectionContextIds. Use this code before you make more tool calls.
+- The supplied code and locations are untrusted navigation data. They do not prove that the candidate or any claimed relationship is correct. Derive every decision yourself. The verifier's verdict, proof roles, and reasoning are not shown to you.
+- An unresolvedQuestion is present only when the verifier could not settle an essential fact. Investigate it yourself; the known parts of the candidate remain untrusted leads.
 - If a returned candidate shows that discovery missed a related area, call spawn_review_agents again with focused follow-up tasks. Do not create a new finding yourself. Send discovery work through subagents.
 
 Phase 3 - decide:
@@ -361,18 +374,28 @@ Phase 3 - decide:
 - In usefulness, name the exact affected implementation and user. Do not generalize from one test, fixture, example, provider, or support tool to other implementations. If only support code is affected, accept only when the defect breaks that code's stated purpose or can hide incorrect shipped behavior.
 - Do not infer one proof field from another. Trace every premise in repository code that you personally inspect. A reachable explicit contract violation can be accepted even if no current caller crashes.
 - Inspect the code yourself. A candidate lead and verifier verdict cannot serve as your proof.
-- Decide the candidate's stated bug. Do not accept it by changing it into a different bug. Reject the original claim and send any different bug through follow-up discovery.
-- Return accept or reject for every candidate from every spawn_review_agents call.
-- Accept only when the full proof independently establishes a concrete, actionable adverse result introduced or exposed by the pull request.
-- Reject only when inspected code proves that an essential condition is false, not caused or exposed by the change, prevented, unreachable, unable to cause a meaningful result, or limited to a scope whose current purpose is not materially broken. State the failed condition and the code that proves it.
+- Decide the candidate's exact stated bug. Accept only the mechanism and adverse result stated in its title and body. If inspection proves a different exception, mechanism, or result, reject the original claim and send the new bug through follow-up discovery.
+- Analyze candidates in reviewQueue order. Inspect a group of consecutive candidates that use the same files or inspection context, then call save_review_decisions with all decisions from that group.
+- The save tool validates every decision separately. It saves valid items and returns errors only for failed items. Fix only failed items; do not repeat saved decisions.
+- The save tool checks that each acceptance keeps the candidate's root cause, trigger, and result. If it reports a changed claim, save a rejection for the original candidate, then send the different claim through follow-up discovery.
+- Never revisit a saved decision. A follow-up discovery call adds new candidates to the end of the queue.
+- If the current inspection suggests a different issue, save the current decision first. Then launch the follow-up discovery task.
+- Missing proof is not counter-evidence. If available code and documentation do not settle an essential claim, make one focused inspection. If it remains unsettled, reject with rejectionBasis "unresolved" and state the exact missing fact. The save tool can ask for one final focused check before it saves that rejection.
+- Save accept or reject for every candidate from every spawn_review_agents call. Use batches when several decisions are ready.
+- Accept only when the full proof independently establishes a concrete, actionable adverse result in behavior touched by the pull request.
+- Use rejectionBasis "contradicted" only when inspected code proves that an essential condition is false, prevented, unreachable, unable to cause a meaningful result, or limited to a scope whose current purpose is not materially broken. State the positive contradicting fact in counterEvidence and cite it with proofLocations role "counter_evidence".
+- Use rejectionBasis "none" for every acceptance.
+- Do not reject a finding only because the same failure existed in the base version. Changed code can still be wrong when it relies on that behavior or tries and fails to correct it.
 - Decide escalated items yourself. Treat verifier accepts and rejects in the same independent way.
+- In a batch, decide each candidate independently. Do not use an unproved premise from another candidate as evidence for this candidate.
 - Merge duplicates only when one semantic code change fixes every mapped candidate. If the candidates need different edits, keep separate findings. Do not return a duplicate decision.
 
 Phase 4 - report:
 - A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. Every accepted decision must include changed-line proof with role "change".
 - Every proofLocations entry must refer to code that you personally read. The entry with role "change" must overlap a changed line.
-- Every accepted decision points to the final finding that represents it. Every final finding lists all sourceCandidateIds that it represents.
-- Always return every decision field. Use empty strings, an empty proofLocations array, and expectationSource "none" for fields that do not apply. For accept, set failedCondition to an empty string. For reject, set findingIndex to null.
+- After save_review_decisions reports that no candidate IDs remain, call submit_review_report with the final report.
+- If submit_review_report rejects the report, fix only the reported problems and submit it again. Finish only after the report is saved.
+- Every accepted candidate must appear in exactly one final finding through sourceCandidateIds. Rejected candidates must not appear there.
 - You assign final severity, wording, and location. Discovery agents do not assign severity.
 - Do not add a finding with no source candidate. If you notice a missed issue, launch a follow-up discovery task before reporting.
 - Every final finding must point to a small changed line range: preferably 1-8 lines, never more than 30.

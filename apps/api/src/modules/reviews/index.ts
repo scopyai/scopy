@@ -205,8 +205,22 @@ const errorMessage = (error: unknown) =>
 
 type QueueItem = CandidateFinding & {
   verifierVerdict: "accept" | "reject" | "escalate"
-  verifierFailedCondition?: string
+  verifierInspectionTargets: Array<{
+    file: string
+    startLine: number
+    endLine: number
+    role: ReviewProof["proofLocations"][number]["role"]
+  }>
+  inspectionContextIds: string[]
   unresolvedQuestion?: string
+}
+
+type MainInspectionContext = {
+  id: string
+  file: string
+  startLine: number
+  endLine: number
+  content: string
 }
 
 type FindingDecision = {
@@ -214,7 +228,6 @@ type FindingDecision = {
   stage: "verifier" | "main"
   decision: "reject" | "escalate" | "accept" | "failed_open"
   details: unknown
-  findingIndex?: number | null
 }
 
 const validateProofLocations = ({
@@ -388,6 +401,7 @@ export const runReviewAnalysis = async ({
   const usages: Record<string, unknown[]> = {
     subagents: [],
     verification: [],
+    claimChecks: [],
     naturalLanguageLinter: [],
     reportComposer: [],
     docsLookups: [],
@@ -683,14 +697,23 @@ export const runReviewAnalysis = async ({
     const base = {
       read_patch: tool({
         description:
-          "Read the full diff patch for one changed file in this pull request.",
-        inputSchema: z.object({ file: z.string().min(1) }),
-        execute: async ({ file }) => {
+          "Read a changed-file patch. Returns at most 12 KB by default; request up to 40 KB when the omitted patch is required.",
+        inputSchema: z.object({
+          file: z.string().min(1),
+          maxBytes: z.number().int().min(2_000).max(40_000).optional(),
+        }),
+        execute: async ({ file, maxBytes = 12_000 }) => {
           onUse?.()
           const entry = filteredFiles.find((item) => item.filename === file)
           const omitted = omittedFiles.find((item) => item.filename === file)
           const output = entry
-            ? { file, patch: truncateText(serializePullRequestFiles([entry])) }
+            ? {
+                file,
+                patch: truncateText(
+                  serializePullRequestFiles([entry]),
+                  maxBytes
+                ),
+              }
             : omitted
               ? { file, patch: omitted.omittedReason ?? "Patch omitted." }
               : {
@@ -700,7 +723,7 @@ export const runReviewAnalysis = async ({
                 }
           await recorder.recordToolCall({
             name: `${scope}.read_patch`,
-            input: { file },
+            input: { file, maxBytes },
             output,
           })
           return output
@@ -708,13 +731,13 @@ export const runReviewAnalysis = async ({
       }),
       read_file: tool({
         description:
-          "Read numbered lines from any repository file. Reads 300 lines by default and up to 800; prefer one large read over paging through a file in small chunks.",
+          "Read numbered repository lines. Reads 120 lines by default and up to 800. Request a larger maxLines only when the next range is required.",
         inputSchema: z.object({
           file: z.string().min(1),
           startLine: z.number().int().positive().optional(),
           maxLines: z.number().int().positive().max(800).optional(),
         }),
-        execute: async ({ file, startLine, maxLines }) => {
+        execute: async ({ file, startLine, maxLines = 120 }) => {
           onUse?.()
           const input = { file, startLine, maxLines }
           const output = await readRepositoryFile({
@@ -734,14 +757,28 @@ export const runReviewAnalysis = async ({
       }),
       get_symbol_definition: tool({
         description:
-          "Get symbol definitions, signatures, locations, scopes, and source.",
-        inputSchema: z.object({ symbol: z.string().min(1) }),
-        execute: async ({ symbol }) => {
+          "Get symbol definitions, locations, and bounded source. Returns 3 definitions by default; use offset, limit, or maxSourceBytes to request more.",
+        inputSchema: z.object({
+          symbol: z.string().min(1),
+          offset: z.number().int().nonnegative().optional(),
+          limit: z.number().int().positive().max(20).optional(),
+          maxSourceBytes: z
+            .number()
+            .int()
+            .min(1_000)
+            .max(40_000)
+            .optional(),
+        }),
+        execute: async ({ symbol, offset, limit, maxSourceBytes }) => {
           onUse?.()
+          const input = { symbol, offset, limit, maxSourceBytes }
           const result = await getSymbolDefinition({
             repository: runtime.paths.repositoryPath,
             index: runtime.codeIndex,
             symbol,
+            offset,
+            limit,
+            maxSourceBytes,
           })
           for (const definition of result.json.definitions) {
             if (definition.source) onFileRead?.(definition.file)
@@ -749,49 +786,61 @@ export const runReviewAnalysis = async ({
           const output = { ...result.json, stats: result.stats }
           await recorder.recordToolCall({
             name: `${scope}.get_symbol_definition`,
-            input: { symbol },
+            input,
             output,
           })
           return output
         },
       }),
       get_symbol_callers: tool({
-        description: "Get direct call locations and enclosing caller metadata.",
-        inputSchema: z.object({ symbol: z.string().min(1) }),
-        execute: async ({ symbol }) => {
+        description:
+          "Get direct callers in pages. Returns 8 callers by default; use offset and limit to request more.",
+        inputSchema: z.object({
+          symbol: z.string().min(1),
+          offset: z.number().int().nonnegative().max(199).optional(),
+          limit: z.number().int().positive().max(50).optional(),
+        }),
+        execute: async ({ symbol, offset, limit }) => {
           onUse?.()
+          const input = { symbol, offset, limit }
           const result = await getSymbolCallers({
             repository: runtime.paths.repositoryPath,
             index: runtime.codeIndex,
             symbol,
+            offset,
+            limit,
           })
           const output = { ...result.json, stats: result.stats }
           await recorder.recordToolCall({
             name: `${scope}.get_symbol_callers`,
-            input: { symbol },
+            input,
             output,
           })
           return output
         },
       }),
       locate_text: tool({
-        description: "Search exact text across repository files.",
-        inputSchema: z.object({ query: z.string().min(1) }),
-        execute: async ({ query }) => {
+        description:
+          "Search exact text across repository files. Returns 12 matches by default; request up to 50 with limit.",
+        inputSchema: z.object({
+          query: z.string().min(1),
+          limit: z.number().int().positive().max(50).optional(),
+        }),
+        execute: async ({ query, limit = 12 }) => {
           onUse?.()
           const result = await searchRepositoryText({
             repository: runtime.paths.repositoryPath,
             index: runtime.codeIndex,
             query,
-            maxResults: 50,
+            maxResults: limit,
           })
           const output = {
             ...result.stats,
-            markdown: truncateText(result.markdown),
+            markdown: truncateText(result.markdown, 12_000),
           }
           await recorder.recordToolCall({
             name: `${scope}.locate_text`,
-            input: { query },
+            input: { query, limit },
             output,
           })
           return output
@@ -807,8 +856,9 @@ export const runReviewAnalysis = async ({
         inputSchema: z.object({
           query: z.string().min(1),
           limit: z.number().int().positive().max(20).optional(),
+          maxBytes: z.number().int().min(2_000).max(40_000).optional(),
         }),
-        execute: async ({ query, limit = 10 }) => {
+        execute: async ({ query, limit = 6, maxBytes = 12_000 }) => {
           onUse?.()
           if (!runtime.qdrant)
             return {
@@ -829,11 +879,11 @@ export const runReviewAnalysis = async ({
           vectorQueryCount += result.stats.queryUnits
           const output = {
             ...result.stats,
-            markdown: truncateText(result.markdown),
+            markdown: truncateText(result.markdown, maxBytes),
           }
           await recorder.recordToolCall({
             name: `${scope}.search_code`,
-            input: { query, limit },
+            input: { query, limit, maxBytes },
             output,
           })
           return output
@@ -875,8 +925,10 @@ export const runReviewAnalysis = async ({
         inputSchema: z.object({
           library: librarySlugEnum(diffDocLibraries),
           query: z.string().min(1).max(200),
+          limit: z.number().int().positive().max(10).optional(),
+          maxWords: z.number().int().min(20).max(100).optional(),
         }),
-        execute: async ({ library, query }) => {
+        execute: async ({ library, query, limit = 4, maxWords = 40 }) => {
           let output: { results: unknown[]; note?: string }
           try {
             const source = await resolveDocSourceCached(library)
@@ -887,9 +939,9 @@ export const runReviewAnalysis = async ({
                 sourceId: source.id,
                 activeCrawlId: source.activeCrawlId,
                 query,
-                limit: 6,
+                limit,
                 maxFragments: 1,
-                maxWords: 50,
+                maxWords,
               })
               output =
                 results.length > 0
@@ -901,7 +953,7 @@ export const runReviewAnalysis = async ({
           }
           await recorder.recordToolCall({
             name: `${scope}.search_docs`,
-            input: { library, query },
+            input: { library, query, limit, maxWords },
             output,
           })
           return output
@@ -914,10 +966,28 @@ export const runReviewAnalysis = async ({
   const docsLibrarianModelId =
     env.DOCS_LIBRARIAN_MODEL ?? env.REVIEW_VERIFIER_MODEL
   let docsLookupsUsed = 0
+  type DocsLookupOutput = {
+    found: boolean
+    answer: string
+    citations: Array<{ url: string; title: string; excerpt: string }>
+  }
   const docsLookupCache = new Map<
     string,
-    { found: boolean; answer: string; citations: unknown[] }
+    DocsLookupOutput
   >()
+  const limitDocsLookupOutput = (
+    output: DocsLookupOutput,
+    maxAnswerBytes: number,
+    citationLimit: number
+  ) => ({
+    ...output,
+    answer: truncateText(output.answer, maxAnswerBytes),
+    citations: output.citations.slice(0, citationLimit).map((citation) => ({
+      ...citation,
+      excerpt: truncateText(citation.excerpt, 1_500),
+    })),
+    moreCitations: output.citations.length > citationLimit,
+  })
   const createDocsLookupTool = (scope: string): ToolSet => {
     if (availableDocLibraries.length === 0) return {}
     return {
@@ -926,11 +996,29 @@ export const runReviewAnalysis = async ({
         inputSchema: z.object({
           library: librarySlugEnum(availableDocLibraries),
           question: z.string().min(1).max(500),
+          maxAnswerBytes: z
+            .number()
+            .int()
+            .min(2_000)
+            .max(20_000)
+            .optional(),
+          citationLimit: z.number().int().positive().max(10).optional(),
         }),
-        execute: async ({ library, question }) => {
+        execute: async ({
+          library,
+          question,
+          maxAnswerBytes = 6_000,
+          citationLimit = 4,
+        }) => {
           const cacheKey = `${library}::${question.trim().toLowerCase()}`
           const cached = docsLookupCache.get(cacheKey)
-          if (cached) return cached
+          if (cached) {
+            return limitDocsLookupOutput(
+              cached,
+              maxAnswerBytes,
+              citationLimit
+            )
+          }
           if (docsLookupsUsed >= DOCS_LOOKUP_BUDGET) {
             return {
               found: false,
@@ -940,7 +1028,7 @@ export const runReviewAnalysis = async ({
             }
           }
           docsLookupsUsed += 1
-          let output: { found: boolean; answer: string; citations: unknown[] }
+          let output: DocsLookupOutput
           let lookupFailed = false
           try {
             const result = await queryDocsLibrarian({
@@ -974,10 +1062,20 @@ export const runReviewAnalysis = async ({
             }
           }
           if (!lookupFailed) docsLookupCache.set(cacheKey, output)
+          const limitedOutput = limitDocsLookupOutput(
+            output,
+            maxAnswerBytes,
+            citationLimit
+          )
           await recorder.recordToolCall({
             name: `${scope}.lookup_docs`,
-            input: { library, question },
-            output,
+            input: {
+              library,
+              question,
+              maxAnswerBytes,
+              citationLimit,
+            },
+            output: limitedOutput,
           })
           await recorder.appendEvent("docs.lookup", {
             scope,
@@ -986,7 +1084,7 @@ export const runReviewAnalysis = async ({
             used: docsLookupsUsed,
             budget: DOCS_LOOKUP_BUDGET,
           })
-          return output
+          return limitedOutput
         },
       }),
     }
@@ -996,9 +1094,23 @@ export const runReviewAnalysis = async ({
   const candidatesById = new Map<string, CandidateFinding>()
   const discoveredCandidates: CandidateFinding[] = []
   const mainQueue: QueueItem[] = []
-  const mainQueueIds = new Set<string>()
   let verifierAcceptedCount = 0
   const findingDecisions: FindingDecision[] = []
+  const savedMainDecisions = new Map<
+    string,
+    z.infer<typeof reviewDecisionOutputSchema>
+  >()
+  const retriedUnresolvedRejections = new Set<string>()
+  const claimCheckSchema = z.object({
+    sameClaim: z.boolean(),
+    difference: z.string(),
+  })
+  let claimCheckCount = 0
+  const publicQueueItem = ({
+    taskId: _taskId,
+    verifierVerdict: _verifierVerdict,
+    ...item
+  }: QueueItem) => item
   const subagentCoveredFiles = new Set<string>()
   const getUncoveredChangedFiles = () =>
     filteredFiles
@@ -1014,6 +1126,126 @@ export const runReviewAnalysis = async ({
   const mainInspectedFiles = new Set<string>()
   let mainRepositoryToolCalls = 0
   let mainPatchReads = 0
+
+  const buildMainInspectionContext = async (items: QueueItem[]) => {
+    const contextEntries: MainInspectionContext[] = []
+    const itemsById = new Map(items.map((item) => [item.id, item]))
+
+    const ranges = items
+      .flatMap((item) =>
+        item.verifierInspectionTargets.map((target) => ({
+          file: target.file,
+          startLine: Math.max(1, target.startLine - 6),
+          endLine: target.endLine + 6,
+          candidateIds: new Set([item.id]),
+        }))
+      )
+      .sort((a, b) => a.file.localeCompare(b.file) || a.startLine - b.startLine)
+    const merged: typeof ranges = []
+    for (const range of ranges) {
+      const previous = merged.at(-1)
+      const mergedEnd = previous
+        ? Math.max(previous.endLine, range.endLine)
+        : range.endLine
+      if (
+        previous &&
+        previous.file === range.file &&
+        range.startLine <= previous.endLine + 1 &&
+        mergedEnd - previous.startLine < 60
+      ) {
+        previous.endLine = mergedEnd
+        for (const id of range.candidateIds) previous.candidateIds.add(id)
+      } else {
+        merged.push(range)
+      }
+    }
+
+    for (const range of merged) {
+      try {
+        const excerpt = await readRepositoryFile({
+          repository: runtime.paths.repositoryPath,
+          file: range.file,
+          startLine: range.startLine,
+          maxLines: range.endLine - range.startLine + 1,
+        })
+        const id = `code:${range.file}:${excerpt.startLine}-${excerpt.endLine}`
+        contextEntries.push({
+          id,
+          file: range.file,
+          startLine: excerpt.startLine,
+          endLine: excerpt.endLine,
+          content: truncateText(excerpt.content, 4_000),
+        })
+        mainInspectedFiles.add(range.file)
+        for (const candidateId of range.candidateIds) {
+          itemsById.get(candidateId)?.inspectionContextIds.push(id)
+        }
+      } catch (error) {
+        await recorder.appendEvent("main.inspection_context.failed", {
+          file: range.file,
+          startLine: range.startLine,
+          endLine: range.endLine,
+          error: errorMessage(error),
+        })
+      }
+    }
+
+    return contextEntries
+  }
+
+  const checkAcceptedClaim = async (
+    candidate: CandidateFinding,
+    decision: z.infer<typeof reviewDecisionOutputSchema>
+  ) => {
+    claimCheckCount += 1
+    const agent = new ToolLoopAgent({
+      model: agentLayers.composer.model,
+      instructions: `Compare two bug claims. Do not judge whether either claim is correct.
+
+Return sameClaim=true only when both claims have the same root cause, trigger, and adverse result. Different wording, detail, and severity are allowed. Return false when the accepted proof changes the exception, mechanism, trigger, or result. Keep difference short.`,
+      tools: {},
+      providerOptions: agentLayers.composer.providerOptions,
+      output: repairedJsonOutput(
+        Output.object({
+          schema: claimCheckSchema,
+          name: "claim_check",
+          description:
+            "Whether an accepted proof preserves the candidate claim",
+        })
+      ),
+      stopWhen: stepCountIs(1),
+      maxRetries: 2,
+      onStepFinish: async (step) => recorder.recordStep(step),
+    })
+    const generation = await agent.generate({
+      prompt: `Original candidate:
+Title: ${candidate.title}
+Body: ${candidate.body}
+
+Accepted proof:
+Entry path: ${decision.entryPath}
+Actual result: ${decision.actualResult}
+Pull-request evidence: ${decision.prChangeEvidence}
+Usefulness: ${decision.usefulness}`,
+    })
+    usages.claimChecks!.push(generation.totalUsage)
+    await recordBilling("claim_check", agentLayers.composer.modelId, generation)
+    const output = claimCheckSchema.parse(generation.output)
+    await recorder.writeJson(
+      `claim-check/${String(claimCheckCount).padStart(2, "0")}-${safePathSegment(candidate.id)}.json`,
+      {
+        candidate: {
+          id: candidate.id,
+          title: candidate.title,
+          body: candidate.body,
+        },
+        decision,
+        output,
+        usage: generation.totalUsage,
+      }
+    )
+    return output
+  }
 
   const runVerifier = async (candidate: CandidateFinding) => {
     const safeId = safePathSegment(candidate.id)
@@ -1140,7 +1372,7 @@ export const runReviewAnalysis = async ({
     return {
       id: candidate.id,
       verdict: "escalate" as const,
-      pullRequestCause: "",
+      pullRequestRelevance: "",
       unresolvedQuestion: reason,
       knownFacts: "No verifier result was produced.",
       locations: [],
@@ -1439,20 +1671,38 @@ ${task.area}`
         if (verdict.verdict === "accept") {
           verifierAcceptedCount += 1
         }
+        const verifierInspectionTargets =
+          "proofLocations" in verdict
+            ? [
+                ...new Map(
+                  verdict.proofLocations.map(
+                    ({ file, startLine, endLine, role }) => [
+                      `${file}:${startLine}:${endLine}`,
+                      { file, startLine, endLine, role },
+                    ]
+                  )
+                ).values(),
+              ]
+            : []
         const item: QueueItem = {
           ...candidate,
           verifierVerdict: verdict.verdict,
-          ...(verdict.verdict === "reject"
-            ? { verifierFailedCondition: verdict.failedCondition }
-            : {}),
+          verifierInspectionTargets,
+          inspectionContextIds: [],
           ...(verdict.verdict === "escalate"
             ? { unresolvedQuestion: verdict.unresolvedQuestion }
             : {}),
         }
-        mainQueue.push(item)
         newQueue.push(item)
-        mainQueueIds.add(candidate.id)
       }
+      newQueue.sort(
+        (a, b) =>
+          a.file.localeCompare(b.file) ||
+          a.startLine - b.startLine ||
+          a.id.localeCompare(b.id)
+      )
+      const inspectionContext = await buildMainInspectionContext(newQueue)
+      mainQueue.push(...newQueue)
 
       const output = {
         tasks: taskResults.map((result) =>
@@ -1464,7 +1714,8 @@ ${task.area}`
                 findings: result.candidates.length,
               }
         ),
-        reviewQueue: newQueue.map(({ taskId: _taskId, ...item }) => item),
+        reviewQueue: newQueue.map(publicQueueItem),
+        inspectionContext,
         uncoveredFiles,
         stats: {
           call,
@@ -1820,9 +2071,12 @@ ${task.area}`
   )
   const readPatch = tool({
     description:
-      "Read the full diff patch for one changed file in this pull request.",
-    inputSchema: z.object({ file: z.string().min(1) }),
-    execute: async ({ file }) => {
+      "Read a changed-file patch. Returns at most 12 KB by default; request up to 40 KB when the omitted patch is required.",
+    inputSchema: z.object({
+      file: z.string().min(1),
+      maxBytes: z.number().int().min(2_000).max(40_000).optional(),
+    }),
+    execute: async ({ file, maxBytes = 12_000 }) => {
       const entry = patchesByFile.get(file)
       const omitted = omittedByFile.get(file)
       if (entry || omitted) {
@@ -1830,7 +2084,10 @@ ${task.area}`
         mainInspectedFiles.add(file)
       }
       const output = entry
-        ? { file, patch: truncateText(serializePullRequestFiles([entry])) }
+        ? {
+            file,
+            patch: truncateText(serializePullRequestFiles([entry]), maxBytes),
+          }
         : omitted
           ? { file, patch: omitted.omittedReason ?? "Patch omitted." }
           : {
@@ -1840,10 +2097,130 @@ ${task.area}`
             }
       await recorder.recordToolCall({
         name: "main.read_patch",
-        input: { file },
+        input: { file, maxBytes },
         output,
       })
       return output
+    },
+  })
+  const saveReviewDecisions = tool({
+    description:
+      "Validate and save one or more final candidate decisions. Submit related queue items together in queue order.",
+    inputSchema: z.object({
+      decisions: z.array(reviewDecisionOutputSchema).min(1),
+    }),
+    execute: async ({ decisions }) => {
+      const pending = mainQueue.filter(
+        (item) => !savedMainDecisions.has(item.id)
+      )
+      const expectedIds = pending
+        .slice(0, decisions.length)
+        .map((item) => item.id)
+      if (
+        decisions.length > pending.length ||
+        decisions.some((decision, index) => decision.id !== expectedIds[index])
+      ) {
+        return {
+          savedIds: [],
+          errors: [
+            {
+              id: decisions[0]?.id ?? "",
+              error: `Submit the next queue items in order: ${expectedIds.join(", ")}`,
+            },
+          ],
+          remainingIds: pending.map((item) => item.id),
+        }
+      }
+
+      const savedIds: string[] = []
+      const errors: Array<{ id: string; error: string }> = []
+      for (const [index, input] of decisions.entries()) {
+        const current = pending[index]!
+        const parsed = reviewDecisionSchema.safeParse(input)
+        const problems = parsed.success
+          ? validateProofLocations({
+              proof: parsed.data,
+              inspectedFiles: mainInspectedFiles,
+              changedLinesByFile: proofLinesByFile,
+            })
+          : parsed.error.issues.map((issue) => issue.message)
+        if (!parsed.success || problems.length > 0) {
+          errors.push({ id: input.id, error: problems.join("; ") })
+          continue
+        }
+
+        const decision = parsed.data
+        if (
+          decision.decision === "reject" &&
+          decision.rejectionBasis === "unresolved" &&
+          current.verifierVerdict === "accept" &&
+          !retriedUnresolvedRejections.has(decision.id)
+        ) {
+          retriedUnresolvedRejections.add(decision.id)
+          const targets = current.verifierInspectionTargets
+            .map(
+              ({ file, startLine, endLine, role }) =>
+                `${role}: ${file}:${startLine}-${endLine}`
+            )
+            .join(", ")
+          await recorder.appendEvent("main.decision.unresolved_retry", {
+            id: decision.id,
+            inspectionContextIds: current.inspectionContextIds,
+            verifierInspectionTargets: current.verifierInspectionTargets,
+          })
+          errors.push({
+            id: decision.id,
+            error: `This rejection is unresolved, not disproved. Make one focused check using candidate contexts ${current.inspectionContextIds.join(", ")} and these untrusted locations: ${targets || "none"}. Then resubmit accept, contradicted reject, or unresolved reject.`,
+          })
+          continue
+        }
+        if (decision.decision === "accept") {
+          const claimCheck = await checkAcceptedClaim(current, decision)
+          if (!claimCheck.sameClaim) {
+            await recorder.appendEvent("main.decision.claim_changed", {
+              id: decision.id,
+              difference: claimCheck.difference,
+            })
+            logger.info("Main review decision changed the candidate claim", {
+              ...context,
+              id: decision.id,
+              difference: claimCheck.difference,
+            })
+            errors.push({
+              id: decision.id,
+              error: `Acceptance changes the candidate claim: ${claimCheck.difference}. Reject the original candidate and send the different claim through follow-up discovery.`,
+            })
+            continue
+          }
+        }
+
+        savedMainDecisions.set(decision.id, decision)
+        findingDecisions.push({
+          id: decision.id,
+          stage: "main",
+          decision: decision.decision,
+          details: decision,
+        })
+        savedIds.push(decision.id)
+        await recorder.appendEvent("main.decision.saved", {
+          id: decision.id,
+          decision: decision.decision,
+        })
+      }
+
+      await recorder.writeJson("finding-decisions.json", findingDecisions)
+      const remainingIds = mainQueue
+        .filter((item) => !savedMainDecisions.has(item.id))
+        .map((item) => item.id)
+      logger.info("Main review decisions saved", {
+        ...context,
+        savedIds,
+        failedIds: errors.map((error) => error.id),
+        completed: savedMainDecisions.size,
+        total: mainQueue.length,
+        remaining: remainingIds.length,
+      })
+      return { savedIds, errors, remainingIds }
     },
   })
   const mainPrompt = buildMainReviewPrompt({
@@ -1867,38 +2244,11 @@ ${task.area}`
   })
   const mainResponseSchema = mainReviewReportSchema.extend({
     findings: z.array(mainFindingSchema),
-    decisions: z.array(reviewDecisionOutputSchema),
   })
-  const mainOutputSchema = mainResponseSchema
-    .extend({ decisions: z.array(reviewDecisionSchema) })
-    .superRefine((output, validation) => {
-      const seen = new Set<string>()
+  const mainOutputSchema = mainResponseSchema.superRefine(
+    (output, validation) => {
       const problems: string[] = []
-      for (const decision of output.decisions) {
-        if (!mainQueueIds.has(decision.id))
-          problems.push(`unknown ${decision.id}`)
-        if (seen.has(decision.id)) problems.push(`duplicate ${decision.id}`)
-        seen.add(decision.id)
-        if (
-          decision.decision === "accept" &&
-          (decision.findingIndex === null ||
-            decision.findingIndex >= output.findings.length)
-        ) {
-          problems.push(
-            `accepted ${decision.id} must reference an existing findingIndex`
-          )
-        }
-        for (const problem of validateProofLocations({
-          proof: decision,
-          inspectedFiles: mainInspectedFiles,
-          changedLinesByFile: proofLinesByFile,
-        })) {
-          problems.push(`${decision.id}: ${problem}`)
-        }
-      }
-      for (const id of mainQueueIds) {
-        if (!seen.has(id)) problems.push(`missing ${id}`)
-      }
+      const sourceCounts = new Map<string, number>()
       for (const [findingIndex, finding] of output.findings.entries()) {
         if (!mainInspectedFiles.has(finding.file)) {
           problems.push(
@@ -1912,39 +2262,63 @@ ${task.area}`
           )
         }
         for (const id of uniqueSources) {
-          const decision = output.decisions.find((item) => item.id === id)
-          if (
-            !decision ||
-            decision.decision !== "accept" ||
-            decision.findingIndex !== findingIndex
-          ) {
+          const decision = savedMainDecisions.get(id)
+          if (!decision || decision.decision !== "accept") {
             problems.push(
-              `finding ${findingIndex} source ${id} does not map back to it`
+              `finding ${findingIndex} source ${id} was not accepted`
             )
           }
+          sourceCounts.set(id, (sourceCounts.get(id) ?? 0) + 1)
         }
       }
-      for (const decision of output.decisions) {
-        if (
-          decision.decision === "accept" &&
-          decision.findingIndex !== null &&
-          !output.findings[decision.findingIndex]?.sourceCandidateIds.includes(
-            decision.id
-          )
-        ) {
-          problems.push(
-            `accepted ${decision.id} is missing from finding ${decision.findingIndex} sourceCandidateIds`
-          )
+      for (const decision of savedMainDecisions.values()) {
+        if (decision.decision !== "accept") continue
+        if (sourceCounts.get(decision.id) !== 1) {
+          problems.push(`accepted ${decision.id} must map to one finding`)
         }
       }
       if (problems.length > 0) {
         validation.addIssue({
           code: "custom",
-          path: ["decisions"],
-          message: `Return exactly one decision per reviewQueue id. Problems: ${problems.join(", ")}.`,
+          path: ["findings"],
+          message: problems.join(", "),
         })
       }
-    })
+    }
+  )
+  let submittedMainReport: z.infer<typeof mainResponseSchema> | undefined
+  const submitReviewReport = tool({
+    description:
+      "Validate and save the final review report. Fix the returned errors and submit again until it is saved.",
+    inputSchema: mainResponseSchema,
+    execute: async (report) => {
+      const missingDecisionIds = mainQueue
+        .filter((item) => !savedMainDecisions.has(item.id))
+        .map((item) => item.id)
+      if (missingDecisionIds.length > 0) {
+        return {
+          saved: false,
+          errors: [
+            `Save decisions before submitting the report: ${missingDecisionIds.join(", ")}`,
+          ],
+        }
+      }
+
+      const parsed = mainOutputSchema.safeParse(report)
+      if (!parsed.success) {
+        const errors = parsed.error.issues.map((issue) => issue.message)
+        await recorder.appendEvent("main.report.rejected", { errors })
+        return { saved: false, errors }
+      }
+
+      submittedMainReport = parsed.data
+      await recorder.appendEvent("main.report.saved", {
+        findings: parsed.data.findings.length,
+      })
+      return { saved: true }
+    },
+  })
+  const mainCompletionSchema = z.object({ completed: z.boolean() })
   const mainAgent = new ToolLoopAgent({
     model: agentLayers.main.model,
     instructions: `${mainReviewAgentInstructions}${
@@ -1962,15 +2336,16 @@ ${task.area}`
       ),
       read_patch: readPatch,
       spawn_review_agents: spawnReviewAgents,
+      save_review_decisions: saveReviewDecisions,
+      submit_review_report: submitReviewReport,
       ...createDocsLookupTool("main"),
     },
     providerOptions: agentLayers.main.providerOptions,
     output: repairedJsonOutput(
       Output.object({
-        schema: mainResponseSchema,
-        name: "review_report",
-        description:
-          "Final review findings and exactly one decision per reviewQueue id",
+        schema: mainCompletionSchema,
+        name: "review_complete",
+        description: "Confirmation that a valid review report was submitted",
       })
     ),
     stopWhen: stepCountIs(reviewAgentConfig.main.maxSteps),
@@ -1987,7 +2362,7 @@ ${task.area}`
   )
   if (!subagentRunStarted) {
     await recorder.appendEvent("main.delegation_skipped", {
-      findings: mainGeneration.output?.findings?.length ?? 0,
+      completed: mainGeneration.output?.completed ?? false,
     })
     throw new Error(
       "Main agent returned a report without running the required subagent pipeline"
@@ -2007,66 +2382,37 @@ ${task.area}`
     )
   }
 
-  const rawMainOutput = mainResponseSchema.parse(mainGeneration.output)
-  const returnedIds = new Set(rawMainOutput.decisions.map(({ id }) => id))
-  const unknownDecisions = rawMainOutput.decisions.filter(
-    ({ id }) => !mainQueueIds.has(id)
-  )
-  const missingIds = [...mainQueueIds].filter((id) => !returnedIds.has(id))
-  const correctedId =
-    unknownDecisions.length === 1 && missingIds.length === 1
-      ? { from: unknownDecisions[0]!.id, to: missingIds[0]! }
-      : null
-  const normalizedMainOutput = correctedId
-    ? {
-        ...rawMainOutput,
-        findings: rawMainOutput.findings.map((finding) => ({
-          ...finding,
-          sourceCandidateIds: finding.sourceCandidateIds.map((id) =>
-            id === correctedId.from ? correctedId.to : id
-          ),
-        })),
-        decisions: rawMainOutput.decisions.map((decision) =>
-          decision.id === correctedId.from
-            ? { ...decision, id: correctedId.to }
-            : decision
-        ),
-      }
-    : rawMainOutput
-  if (correctedId) {
-    await recorder.appendEvent("main.decision_id.corrected", correctedId)
-    logger.info("Corrected one unambiguous main decision id", {
-      ...context,
-      ...correctedId,
-    })
-  }
-  const parsedMainOutput = mainOutputSchema.safeParse(normalizedMainOutput)
-  if (!parsedMainOutput.success) {
+  const missingDecisionIds = mainQueue
+    .filter((item) => !savedMainDecisions.has(item.id))
+    .map((item) => item.id)
+  if (missingDecisionIds.length > 0) {
     await recorder.writeJson("main-agent-validation-error.json", {
-      issues: parsedMainOutput.error.issues,
-      output: normalizedMainOutput,
+      missingDecisionIds,
+      savedDecisionIds: [...savedMainDecisions.keys()],
+      output: mainGeneration.output,
     })
     throw new Error(
-      `Main report failed contract validation: ${parsedMainOutput.error.issues.map((issue) => issue.message).join("; ")}`
+      `Main agent stopped before saving all decisions: ${missingDecisionIds.join(", ")}`
     )
   }
-  const mainOutput = parsedMainOutput.data
+
+  if (!submittedMainReport) {
+    await recorder.writeJson("main-agent-validation-error.json", {
+      issue: "The main agent did not submit a valid final report.",
+      output: mainGeneration.output,
+    })
+    throw new Error(
+      "Main agent stopped before submitting a valid final review report"
+    )
+  }
+  const mainOutput = submittedMainReport
   const finalMainGenerationMetadata = {
     finishReason: mainGeneration.finishReason,
     totalUsage: mainGeneration.totalUsage,
     providerMetadata: mainGeneration.providerMetadata,
   }
-  for (const decision of mainOutput.decisions) {
-    findingDecisions.push({
-      id: decision.id,
-      stage: "main",
-      decision: decision.decision,
-      details: decision,
-      findingIndex:
-        decision.decision === "accept" ? decision.findingIndex : undefined,
-    })
-  }
-  const mainDecisionCounts = mainOutput.decisions.reduce<
+  const mainDecisions = [...savedMainDecisions.values()]
+  const mainDecisionCounts = mainDecisions.reduce<
     Record<"accept" | "reject", number>
   >(
     (counts, decision) => {
@@ -2083,7 +2429,7 @@ ${task.area}`
   const verifierMainTransitions: Record<string, number> = {}
   let settledVerifierDecisions = 0
   let settledVerifierAgreements = 0
-  for (const decision of mainOutput.decisions) {
+  for (const decision of mainDecisions) {
     const verifierDecision = verifierDecisionsById.get(decision.id) ?? "missing"
     const transition = `${verifierDecision}->${decision.decision}`
     verifierMainTransitions[transition] =
@@ -2300,7 +2646,7 @@ ${task.area}`
     subagentWaves: subagentWaveCount,
     subagentConcurrency: reviewAgentConfig.subagent.concurrency,
     rawFindingCount: allCandidateIds.size,
-    mainQueueCount: mainQueueIds.size,
+    mainQueueCount: mainQueue.length,
     verifierAcceptedCount,
     decisionCounts,
     verifierMainComparison,
