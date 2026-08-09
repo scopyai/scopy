@@ -1,6 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { createGateway, type ToolLoopAgentSettings } from "ai"
-import { workerEnv as env } from "../../env"
+import { workerEnv as env } from "../../env-worker"
 import {
   resolveGatewayGenerationCost,
   resolveOpenRouterGenerationCost,

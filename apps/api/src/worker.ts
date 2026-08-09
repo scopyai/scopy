@@ -1,14 +1,7 @@
 import { pool } from "./db/client"
 import { createHatchetClient, createHatchetJobs } from "./jobs/hatchet"
+import { workerEnv } from "./env-worker"
 import { enqueueDueDocSourceCrawls } from "./modules/docs/service"
-import { workerEnv } from "./env"
-
-await enqueueDueDocSourceCrawls({
-  logger: {
-    info: (message, details) => console.log(message, details ?? {}),
-  },
-  intervalHours: workerEnv.DOCS_RECRAWL_INTERVAL_HOURS,
-}).catch((error) => console.error("Startup docs sweep failed", error))
 
 const hatchet = createHatchetClient()
 const jobs = createHatchetJobs(hatchet)
@@ -19,6 +12,14 @@ const worker = await hatchet.worker("scopy-worker", {
 await worker.registerWorkflows(jobs.workflows)
 
 const workerRun = worker.start()
+await worker.waitUntilReady()
+await enqueueDueDocSourceCrawls({
+  logger: {
+    info: (message, details) => console.log(message, details ?? {}),
+  },
+  intervalHours: workerEnv.DOCS_RECRAWL_INTERVAL_HOURS,
+}).catch((error) => console.error("Startup docs sweep failed", error))
+
 let shuttingDown = false
 const shutdown = async () => {
   if (shuttingDown) return

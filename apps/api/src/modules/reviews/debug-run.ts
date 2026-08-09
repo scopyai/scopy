@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { pullRequest, repository } from "../../db/schema"
-import { workerEnv as env } from "../../env"
+import { workerEnv as env } from "../../env-worker"
 
 type Repository = typeof repository.$inferSelect
 type PullRequest = typeof pullRequest.$inferSelect

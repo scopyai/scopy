@@ -1,5 +1,5 @@
 import { Octokit } from "octokit"
-import { apiEnv as env } from "../../env"
+import { apiEnv as env } from "../../env-api"
 import { requireGitHubConfig } from "./service"
 
 const requireGitHubUserAuthConfig = () => {

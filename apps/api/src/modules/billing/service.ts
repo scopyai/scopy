@@ -15,7 +15,7 @@ import {
   workspace,
   workspaceCharge,
 } from "../../db/schema"
-import { apiEnv as env } from "../../env"
+import { apiEnv as env } from "../../env-api"
 import { creem } from "./creem"
 import {
   getMonthlyAllowance,

@@ -3,7 +3,7 @@ import { createAuthMiddleware } from "better-auth/api"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { db } from "../../db/client"
 import * as schema from "../../db/schema"
-import { apiEnv as env } from "../../env"
+import { apiEnv as env } from "../../env-api"
 import { isLoginPath, notifyUserLogin, notifyUserSignup } from "./notifications"
 
 export const auth = betterAuth({

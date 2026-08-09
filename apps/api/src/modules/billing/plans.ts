@@ -1,4 +1,4 @@
-import { apiEnv as env } from "../../env"
+import { apiEnv as env } from "../../env-api"
 import {
   ENTERPRISE_BILLING_PLAN,
   PREMIUM_BILLING_PLAN,

@@ -1,6 +1,6 @@
 import { app } from "./app"
 import { pool } from "./db/client"
-import { apiEnv as env } from "./env"
+import { apiEnv as env } from "./env-api"
 import { createHatchetClient, createHatchetJobs } from "./jobs/hatchet"
 import { dispatchOutbox } from "./jobs/outbox"
 

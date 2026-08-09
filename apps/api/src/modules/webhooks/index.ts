@@ -1,6 +1,6 @@
 import { Elysia } from "elysia"
 import { Webhooks } from "@octokit/webhooks"
-import { apiEnv } from "../../env"
+import { apiEnv } from "../../env-api"
 import { parseCreemWebhook, verifyCreemWebhookSignature } from "../billing/creem"
 import { applyCreemWebhook } from "../billing/service"
 import { persistGitHubWebhookEvent, type GitHubWebhookPayload } from "./service"
