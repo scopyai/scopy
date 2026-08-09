@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useCallback, useRef, useState } from "react"
-import { GitPullRequestIcon, Settings2Icon } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { ArrowLeftIcon, GitPullRequestIcon, Settings2Icon } from "lucide-react"
 import { z } from "zod"
+import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useRepositories } from "@/hooks/use-repositories"
@@ -17,7 +18,9 @@ const searchSchema = z.object({
   view: z.enum(["pull-requests", "settings"]).default("pull-requests"),
 })
 
-export const Route = createFileRoute("/_app/$workspaceSlug/repositories/$repositoryId")({
+export const Route = createFileRoute(
+  "/_app/$workspaceSlug/repositories/$repositoryId"
+)({
   validateSearch: searchSchema,
   component: RepositoryPage,
 })
@@ -25,6 +28,8 @@ export const Route = createFileRoute("/_app/$workspaceSlug/repositories/$reposit
 const MIN_LIST_WIDTH = 240
 const MAX_LIST_WIDTH = 600
 const DEFAULT_LIST_WIDTH = 320
+const MIN_DETAIL_WIDTH = 320
+const RESIZER_WIDTH = 16
 
 function RepositoryPage() {
   const { repositoryId } = Route.useParams()
@@ -37,20 +42,18 @@ function RepositoryPage() {
   const repository = repos?.find((r) => r.id === repositoryId)
 
   const selectedEntry = workspaces?.find(
-    (entry) => entry.workspace.id === selectedWorkspaceId,
+    (entry) => entry.workspace.id === selectedWorkspaceId
   )
   const canEditSettings =
     selectedEntry?.role === "owner" || selectedEntry?.role === "admin"
 
-  const { data: pullRequests, isPending: pullRequestsPending } = usePullRequests(
-    selectedWorkspaceId,
-    repositoryId,
-  )
+  const { data: pullRequests, isPending: pullRequestsPending } =
+    usePullRequests(selectedWorkspaceId, repositoryId)
 
   const { data: pullRequestDetail, isPending: detailPending } = usePullRequest(
     selectedWorkspaceId,
     repositoryId,
-    pullRequestId,
+    pullRequestId
   )
 
   const showSettings = view === "settings"
@@ -58,7 +61,44 @@ function RepositoryPage() {
 
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
   const containerRef = useRef<HTMLDivElement>(null)
+  const listPaneRef = useRef<HTMLDivElement>(null)
+  const backButtonRef = useRef<HTMLButtonElement>(null)
+  const previousDetailOpenRef = useRef(detailOpen)
+  const pullRequestToRestoreFocusRef = useRef<string | null>(null)
   const isResizing = useRef(false)
+
+  useEffect(() => {
+    const wasDetailOpen = previousDetailOpenRef.current
+    previousDetailOpenRef.current = detailOpen
+
+    if (
+      wasDetailOpen === detailOpen ||
+      window.matchMedia("(min-width: 64rem)").matches
+    ) {
+      return
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (detailOpen) {
+        backButtonRef.current?.focus()
+        return
+      }
+
+      const pullRequestIdToFocus = pullRequestToRestoreFocusRef.current
+      if (!pullRequestIdToFocus) return
+
+      const pullRequestButton = Array.from(
+        listPaneRef.current?.querySelectorAll<HTMLButtonElement>(
+          "[data-pull-request-id]"
+        ) ?? []
+      ).find((button) => button.dataset.pullRequestId === pullRequestIdToFocus)
+
+      pullRequestButton?.focus()
+      pullRequestToRestoreFocusRef.current = null
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [detailOpen])
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -68,9 +108,16 @@ function RepositoryPage() {
 
     const onMouseMove = (event: MouseEvent) => {
       if (!isResizing.current || !containerRef.current) return
-      const containerLeft = containerRef.current.getBoundingClientRect().left
+      const containerBounds = containerRef.current.getBoundingClientRect()
+      const containerLeft = containerBounds.left
       const newWidth = event.clientX - containerLeft
-      setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, newWidth)))
+      const availableListWidth =
+        containerBounds.width - MIN_DETAIL_WIDTH - RESIZER_WIDTH
+      const maxListWidth = Math.max(
+        MIN_LIST_WIDTH,
+        Math.min(MAX_LIST_WIDTH, availableListWidth)
+      )
+      setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(maxListWidth, newWidth)))
     }
 
     const onMouseUp = () => {
@@ -86,12 +133,14 @@ function RepositoryPage() {
   }, [])
 
   const handleSelectPullRequest = (id: string) => {
+    pullRequestToRestoreFocusRef.current = id
     navigate({
       search: (prev) => ({ ...prev, pullRequestId: id, view: "pull-requests" }),
     })
   }
 
   const handleCloseDetail = () => {
+    pullRequestToRestoreFocusRef.current = pullRequestId ?? null
     navigate({ search: (prev) => ({ ...prev, pullRequestId: undefined }) })
   }
 
@@ -107,48 +156,80 @@ function RepositoryPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {repository ? (
-            <>
-              <a
-                href={repository.htmlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-w-0 max-w-full truncate text-sm font-medium underline-offset-2 hover:underline"
-              >
-                {repository.fullName}
-              </a>
-              {repository.archived && (
-                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                  Archived
-                </span>
-              )}
-              {!repository.enabled && (
-                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                  Disabled
-                </span>
-              )}
-            </>
-          ) : (
-            <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+      <div className="flex shrink-0 flex-col gap-3 border-b border-border px-4 py-3 md:h-14 md:flex-row md:items-center md:gap-2 md:py-0">
+        <div
+          className={cn(
+            "relative flex w-full min-w-0 flex-1 items-center gap-2",
+            detailOpen && "pl-10 lg:pl-0"
           )}
+        >
+          {detailOpen && (
+            <div className="absolute top-1/2 -left-2 -translate-y-1/2 lg:hidden">
+              <Button
+                ref={backButtonRef}
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-10 active:not-aria-[haspopup]:translate-y-0"
+                onClick={handleCloseDetail}
+                aria-label="Back to pull requests"
+              >
+                <ArrowLeftIcon className="size-4" />
+              </Button>
+            </div>
+          )}
+
+          <div
+            className={cn(
+              "flex min-w-0 items-center gap-2",
+              detailOpen
+                ? "ml-auto justify-end lg:ml-0 lg:flex-1 lg:justify-start"
+                : "flex-1"
+            )}
+          >
+            {repository ? (
+              <>
+                <a
+                  href={repository.htmlUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="max-w-full min-w-0 truncate text-sm font-medium underline-offset-2 hover:underline"
+                >
+                  {repository.fullName}
+                </a>
+                {repository.archived && (
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                    Archived
+                  </span>
+                )}
+                {!repository.enabled && (
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                    Disabled
+                  </span>
+                )}
+              </>
+            ) : (
+              <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+            )}
+          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border p-0.5">
-          <RepositoryViewTab
-            active={!showSettings}
-            onClick={() => handleViewChange("pull-requests")}
-            icon={GitPullRequestIcon}
-            label="Pull requests"
-          />
-          <RepositoryViewTab
-            active={showSettings}
-            onClick={() => handleViewChange("settings")}
-            icon={Settings2Icon}
-            label="Settings"
-          />
-        </div>
+        {!detailOpen && (
+          <div className="flex w-full shrink-0 items-center gap-1 rounded-lg border border-border p-0.5 md:w-auto">
+            <RepositoryViewTab
+              active={!showSettings}
+              onClick={() => handleViewChange("pull-requests")}
+              icon={GitPullRequestIcon}
+              label="Pull requests"
+            />
+            <RepositoryViewTab
+              active={showSettings}
+              onClick={() => handleViewChange("settings")}
+              icon={Settings2Icon}
+              label="Settings"
+            />
+          </div>
+        )}
       </div>
 
       {showSettings && selectedWorkspaceId ? (
@@ -161,10 +242,19 @@ function RepositoryPage() {
       ) : (
         <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
           <div
-            style={detailOpen ? { width: listWidth } : undefined}
+            ref={listPaneRef}
+            style={
+              detailOpen
+                ? {
+                    width: listWidth,
+                    minWidth: MIN_LIST_WIDTH,
+                    maxWidth: `calc(100% - ${MIN_DETAIL_WIDTH + RESIZER_WIDTH}px)`,
+                  }
+                : undefined
+            }
             className={
               detailOpen
-                ? "flex shrink-0 flex-col overflow-hidden"
+                ? "hidden shrink-0 flex-col overflow-hidden lg:flex"
                 : "flex flex-1 flex-col overflow-hidden"
             }
           >
@@ -178,7 +268,7 @@ function RepositoryPage() {
 
           {detailOpen && (
             <div
-              className="group relative flex w-4 shrink-0 cursor-col-resize items-stretch justify-center"
+              className="group relative hidden w-4 shrink-0 cursor-col-resize items-stretch justify-center lg:flex"
               onMouseDown={startResize}
             >
               <div className="w-px bg-border transition-colors group-hover:bg-primary/50" />
@@ -186,7 +276,7 @@ function RepositoryPage() {
           )}
 
           {detailOpen && (
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden lg:min-w-80">
               <PullRequestDetail
                 pullRequest={pullRequestDetail}
                 isPending={detailPending}
@@ -216,10 +306,10 @@ function RepositoryViewTab({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+        "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors md:flex-none",
         active
           ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:text-foreground",
+          : "text-muted-foreground hover:text-foreground"
       )}
     >
       <Icon className="size-3.5" />

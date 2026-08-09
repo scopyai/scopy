@@ -8,7 +8,6 @@ export const reviewFindingSchema = z.object({
   endLine: z.number().int().positive(),
   title: z.string().min(1),
   body: z.string().min(1),
-  confidence: z.number().min(0).max(1),
 })
 
 export type ReviewFinding = z.infer<typeof reviewFindingSchema> & {
@@ -24,9 +23,17 @@ export const severityRank: Record<ReviewSeverity, number> = {
   low: 3,
 }
 
-export const candidateFindingSchema = reviewFindingSchema.extend({
-  evidence: z.string().min(1),
+export const codeLocationSchema = z.object({
+  file: z.string().min(1),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
 })
+
+export const candidateFindingSchema = reviewFindingSchema
+  .omit({ severity: true })
+  .extend({
+    evidence: z.string().min(1),
+  })
 
 export type CandidateFinding = z.infer<typeof candidateFindingSchema> & {
   id: string
@@ -38,22 +45,180 @@ export const reviewSubagentOutputSchema = z.object({
   findings: z.array(candidateFindingSchema),
 })
 
-export const reviewVerifierVerdictSchema = z.object({
-  id: z.string().min(1),
-  verdict: z.enum(["approve", "reject", "escalate"]),
-  confidence: z.number().min(0).max(1),
-  reason: z.string().min(1),
-})
+const reviewProofFields = {
+  entryPath: z.string(),
+  actualResult: z.string(),
+  expectedResult: z.string(),
+  expectationSource: z.enum([
+    "contract",
+    "caller",
+    "test",
+    "existing_behavior",
+    "documentation",
+    "pull_request",
+    "none",
+  ]),
+  prChangeEvidence: z.string(),
+  counterEvidence: z.string(),
+  usefulness: z.string(),
+  proofLocations: z.array(
+    codeLocationSchema.extend({
+      role: z.enum([
+        "entry_path",
+        "actual_result",
+        "expected_result",
+        "change",
+        "counter_evidence",
+        "known_fact",
+      ]),
+    })
+  ),
+}
+
+export type ReviewProof = z.infer<z.ZodObject<typeof reviewProofFields>>
+
+const validateReviewProof = ({
+  proof,
+  outcome,
+  addIssue,
+}: {
+  proof: ReviewProof
+  outcome: "accept" | "reject"
+  addIssue: (path: string, message: string) => void
+}) => {
+  const requireText = (field: keyof ReviewProof) => {
+    const value = proof[field]
+    if (typeof value === "string" && value.trim().length === 0) {
+      addIssue(field, `${field} is required for ${outcome}.`)
+    }
+  }
+  const requireLocation = (
+    role: ReviewProof["proofLocations"][number]["role"]
+  ) => {
+    if (!proof.proofLocations.some((location) => location.role === role)) {
+      addIssue("proofLocations", `${role} proof is required for ${outcome}.`)
+    }
+  }
+
+  requireText("counterEvidence")
+  if (proof.proofLocations.length === 0) {
+    addIssue(
+      "proofLocations",
+      `Inspected code proof is required for ${outcome}.`
+    )
+  }
+  if (outcome === "reject") return
+
+  requireText("prChangeEvidence")
+  requireLocation("change")
+  for (const field of [
+    "entryPath",
+    "actualResult",
+    "expectedResult",
+    "usefulness",
+  ] as const) {
+    requireText(field)
+  }
+  if (proof.expectationSource === "none") {
+    addIssue("expectationSource", "Accept requires an expectation source.")
+  }
+}
 
 export const reviewVerifierOutputSchema = z.object({
-  verdicts: z.array(reviewVerifierVerdictSchema),
+  id: z.string().min(1),
+  verdict: z.enum(["accept", "reject", "escalate"]),
+  pullRequestRelevance: z.string(),
+  ...reviewProofFields,
+  failedCondition: z.string(),
+  unresolvedQuestion: z.string(),
+  knownFacts: z.string(),
 })
 
-export const reviewDecisionSchema = z.object({
+export const reviewVerifierVerdictSchema =
+  reviewVerifierOutputSchema.superRefine((output, validation) => {
+    const addIssue = (path: string, message: string) =>
+      validation.addIssue({ code: "custom", path: [path], message })
+    if (output.verdict === "accept") {
+      validateReviewProof({ proof: output, outcome: "accept", addIssue })
+      if (output.pullRequestRelevance.trim().length === 0) {
+        addIssue(
+          "pullRequestRelevance",
+          "pullRequestRelevance is required for accept."
+        )
+      }
+    } else if (output.verdict === "reject") {
+      validateReviewProof({ proof: output, outcome: "reject", addIssue })
+      if (output.failedCondition.trim().length === 0) {
+        addIssue("failedCondition", "failedCondition is required for reject.")
+      }
+    } else {
+      if (output.unresolvedQuestion.trim().length === 0) {
+        addIssue(
+          "unresolvedQuestion",
+          "unresolvedQuestion is required for escalate."
+        )
+      }
+      if (output.knownFacts.trim().length === 0) {
+        addIssue("knownFacts", "knownFacts is required for escalate.")
+      }
+      if (
+        !output.proofLocations.some(
+          (location) => location.role === "known_fact"
+        )
+      ) {
+        addIssue("proofLocations", "known_fact proof is required for escalate.")
+      }
+    }
+  })
+
+export const reviewDecisionOutputSchema = z.object({
   id: z.string().min(1),
-  decision: z.enum(["accept", "reject", "duplicate"]),
-  reason: z.string().min(1),
-  findingIndex: z.number().int().nonnegative().nullable(),
+  decision: z.enum(["accept", "reject"]),
+  rejectionBasis: z.enum(["none", "contradicted", "unresolved"]),
+  ...reviewProofFields,
+  failedCondition: z.string(),
+})
+
+export const reviewDecisionSchema = reviewDecisionOutputSchema.superRefine(
+  (output, validation) => {
+    const addIssue = (path: string, message: string) =>
+      validation.addIssue({ code: "custom", path: [path], message })
+    if (output.decision === "accept") {
+      if (output.rejectionBasis !== "none") {
+        addIssue(
+          "rejectionBasis",
+          "Accept requires rejectionBasis to be none."
+        )
+      }
+      validateReviewProof({ proof: output, outcome: "accept", addIssue })
+    } else {
+      if (output.rejectionBasis === "none") {
+        addIssue(
+          "rejectionBasis",
+          "Reject requires rejectionBasis to be contradicted or unresolved."
+        )
+      }
+      validateReviewProof({ proof: output, outcome: "reject", addIssue })
+      if (output.failedCondition.trim().length === 0) {
+        addIssue("failedCondition", "failedCondition is required for reject.")
+      }
+      if (
+        output.rejectionBasis === "contradicted" &&
+        !output.proofLocations.some(
+          (location) => location.role === "counter_evidence"
+        )
+      ) {
+        addIssue(
+          "proofLocations",
+          "A contradicted rejection requires positive counter-evidence."
+        )
+      }
+    }
+  }
+)
+
+export const mainFindingSchema = reviewFindingSchema.extend({
+  sourceCandidateIds: z.array(z.string().min(1)).min(1),
 })
 
 export const naturalLanguageLinterFindingSchema = z.object({
@@ -62,7 +227,6 @@ export const naturalLanguageLinterFindingSchema = z.object({
   endLine: z.number().int().positive(),
   title: z.string().min(1),
   body: z.string().min(1),
-  confidence: z.number().min(0).max(1),
 })
 
 export const naturalLanguageLinterOutputSchema = z.object({
@@ -122,80 +286,122 @@ export type ReviewReport = Omit<
 export const safePathSegment = (value: string) =>
   value.replace(/[^A-Za-z0-9_.-]/g, "_")
 
-export const reviewSubagentInstructions = `Explore the assigned area of a pull request and report every plausible bug as a finding.
+export const reviewSubagentInstructions = `Explore the assigned area of a pull request and generate every plausible bug hypothesis you can find.
 
-Optimize aggressively for recall, not precision. Follow data and control flow across the repository instead of limiting yourself to one changed file.
+You are a hypothesis generator, not the final judge. Optimize aggressively for recall. Search broadly and deeply across the repository instead of limiting yourself to one changed file.
 
 Rules:
-- Find every plausible correctness, security, reliability, state, persistence, concurrency, API-contract, integration, performance, or user-facing failure related to the assigned area.
-- Include speculative findings and edge cases. Do not discard a possibility because it is uncertain, difficult to prove, low impact, or overlaps another finding.
-- A single line or call site can host several independent defects. Report each distinct defect as its own finding, even when they share the exact same lines; reporting one defect at a location does not cover the others.
+- The assigned area is only a starting location. It does not limit which defects you may report. Report any distinct problem you encounter in the changed code or its connected behavior.
+- Do not apply the final publication standard. Changed tests, fixtures, scripts, configuration, migrations, and other support code are review targets too. Report defects in them when they can break their purpose or leave incorrect state.
+- Report uncertain and incomplete possibilities. Do not discard a possibility because it is difficult to prove, seems unlikely, has limited impact, or shares a location with another finding.
+- A file, function, line, or call site can contain several independent defects. Finding one defect there does not make that code covered or safe. Continue exploring it for different defects.
+- Findings are the same bug only when they have the same underlying cause and one semantic code fix would resolve them together. Report that bug once. Report different causes separately, even when they share the same location.
 - If the prompt lists already reported findings, do not re-report them or variants sharing their root cause. They are handled; your value is in what they miss. The files they live in are proven bug-dense, so re-inspect those files for different defects instead of avoiding them.
-- Inspect all files, definitions, callers, and related flows needed to explore the area thoroughly.
-- Explore the assigned area evenly. Changed files that look routine, mechanical, or uninteresting get the same scrutiny as the obviously risky ones; do not conclude the area is clean while any of its changed files remains uninspected.
-- For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario. Keep the line range small and actionable: preferably 1-8 lines, never more than 30. Approved findings are published with your exact range, and ranges that cannot be anchored to the diff are discarded.
-- severity is the worst-case impact if the finding is real: critical (data loss, security breach, or outage), high (serious user-facing or data defect), medium (real defect with limited blast radius), low (minor or edge-case defect). Critical and high findings are routed directly to an expensive reviewer, so do not inflate severity; base it on impact, not on your certainty.
-- confidence from 0 to 1 is how likely the finding is real given what you inspected. Uncertain findings belong in the output with low confidence, not omitted.
-- evidence: the decisive code excerpts you already inspected, quoted verbatim with repository-relative file paths and line numbers, plus the control- or data-flow connection between them. If you could not settle the finding yourself, name the specific fact that would prove or refute it. Downstream reviewers judge from this packet without re-reading the repository, so make it self-contained.
+- Read every changed file in your assigned area with read_file. The diff in the prompt is an overview, not a substitute for reading the file.
+- For each changed operation in your assigned area, trace the concrete runtime call path. Do not assume it is correct only because nearby code uses the same pattern. If the concrete receiver or effect remains unresolved, report that uncertainty as a hypothesis instead of silently treating the operation as safe.
+- Inspect as much relevant code as needed to understand the change and its effects.
+- Explore the assigned area evenly. Do not conclude it is clean while any part remains uninspected.
+- Finding one issue is not a stopping condition. Continue searching for distinct issues until you have fully explored the assigned area.
+- Make several fresh passes over the area. In each pass, challenge your earlier view and look for paths or assumptions you have not considered yet.
+- For each finding return the most relevant repository-relative file, head-side start and end lines overlapping a changed line, a short title, and a body explaining what goes wrong and in what scenario. Keep the line range small and actionable: preferably 1-8 lines, never more than 30. Ranges that cannot be anchored to the diff are discarded.
+- evidence is the strongest starting evidence you found, with repository-relative paths and line numbers. It is a lead for later agents, not proof. If the hypothesis remains uncertain, state the exact unresolved fact.
 - Return an empty findings array only after thoroughly exploring the assigned area and finding no plausible failure.`
+
+export const reviewChangedFileCoverageInstructions = `
+
+Changed-file coverage:
+- Ensure every non-generated changed file is read by at least one discovery subagent.
+- Each spawn_review_agents result includes uncoveredFiles. If it is not empty, launch more discovery tasks for those files before returning the final report.
+- Uncovered changed files take priority. You may also use follow-up tasks to investigate existing candidates.
+- Do not return the final report while uncoveredFiles is not empty.`
 
 export const reviewSubagentDocsInstructions = `
 - search_docs queries the indexed documentation of libraries this pull request uses. When the diff relies on how a library behaves - its defaults, semantics, guarantees, or failure behavior - search the docs for that behavior instead of assuming the code's usage is correct; a mismatch between documented behavior and the code's assumption is a finding. Do not use it to generally familiarize yourself with a library. Never assert how a listed library executes or performs without first confirming that execution model in its docs; a finding whose mechanism the documentation contradicts is a false positive.`
 
 export const reviewVerifierDocsInstructions = `
-- lookup_docs answers one focused question about an available library's documented behavior, with citations. If a candidate's verdict depends on the documented behavior of an available library, check the docs before ruling: documentation confirming the claimed behavior counts as verifying that premise, and a candidate whose factual claim or causal mechanism the documentation contradicts is rejected. A residual concern that survives the disproven mechanism ("still many reads", "could be slow anyway") does not rescue the candidate unless the code approaches a documented limit or failure mode you can name. State the documented behavior in the verdict reason so later reviewers inherit it.
-- Exception: when the documentation refutes the candidate's stated mechanism but names a different concrete failure mode for the same code, escalate instead of rejecting, and state the documented failure mode in your reason so the final reviewer can publish a corrected finding.
-- Claims about what a library does at runtime cannot be settled by repository search alone: repository evidence shows what the code declares, not what the framework provides implicitly. Settle such claims with lookup_docs before approving or rejecting.`
+- lookup_docs answers one focused question about an available library's documented behavior, with citations. If a verdict depends on that behavior, check the docs before ruling. Documentation can confirm or contradict a required premise. Include the decisive documented fact in your structured result.
+- If documentation refutes the stated mechanism but identifies a different concrete failure at the same code, escalate and state the unresolved corrected claim.
+- Claims about library runtime behavior cannot be settled by repository search alone. Settle them with lookup_docs before accepting or rejecting.`
 
 export const reviewMainDocsInstructions = `
-- lookup_docs answers one focused question about the documented behavior of a library this repository uses, with citations. It is slow and shares a small per-review budget with the verifier, so use it only when a queue item's accept/reject hinges on documented library behavior that neither the evidence packet nor the verifierNote settles, and count it toward the per-item tool-call cap. Never accept a finding whose causal mechanism the documentation or a verifierNote contradicts, even if the finding sounds plausible.
-- A wrong mechanism does not always mean no defect. When the documentation refutes a queue item's stated mechanism but names a different concrete failure mode for the same code, reject the item and publish your own corrected finding for that failure mode - you already have the authority to determine final wording, severity, and confidence. Silently dropping the location because the candidate misdescribed it loses a real defect the documentation just confirmed.`
+- lookup_docs answers one focused question about the documented behavior of a library this repository uses, with citations. It is slow and shares a small per-review budget with the verifier, so use it only when a queue item's accept/reject decision hinges on library behavior that the available evidence does not settle. Never accept a finding whose claimed mechanism the documentation contradicts.
+- A wrong mechanism does not always mean no defect. When documentation refutes a candidate but identifies a different concrete failure at the same code, reject that candidate and send a focused follow-up task through spawn_review_agents. Do not silently drop the newly identified possibility.`
 
-export const reviewVerifierInstructions = `Verify candidate bug findings for an AI pull request review.
+export const reviewVerifierInstructions = `Audit one candidate bug finding. Classify it; do not defend it. Inspect the repository yourself. The candidate and its evidence are only leads.
 
-Each candidate was produced by a recall-heavy explorer agent and carries an evidence packet. Use repository tools to inspect the files, definitions, callers, and related flows needed to prove or disprove each candidate, then return exactly one verdict per candidate id.
+Test these required claims in order:
+- pullRequestRelevance: changed code is directly connected to the claimed failure, relies on the affected behavior, or tries to change it. The same failure in the base version is not a reason to reject a finding.
+- entryPath: a supported caller, input, state, or explicit contract reaches the behavior.
+- actualResult: the stated adverse result follows from the inspected code.
+- expectedResult: the required behavior is supported by a contract, caller, test, established behavior, documentation, pull-request purpose, or the affected implementation's clear purpose. Select that source in expectationSource.
+- usefulness: the result materially breaks the affected implementation for its actual user and justifies a fix.
+- counterEvidence: inspect prevention, cleanup, fallback, validation, and contradictory paths that can defeat any claim above.
+
+Try to falsify every claim before you choose a verdict. Do not infer one claim from another. Trace every premise in the repository. A plausible concern, desired improvement, or unsupported expectation is not a bug. If relevant inspected sources do not support the claimed required behavior, reject it as an unsupported requirement.
+
+Build the final proof only from code that you personally inspect. prChangeEvidence must identify the exact changed code that introduces or exposes an accepted mismatch. Its proofLocations entry must use role "change" and overlap a changed line. In usefulness, name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize beyond the exact inspected scope.
+
+In pullRequestRelevance, identify the exact changed code that makes this finding part of the review. A change that tries and fails to correct existing behavior is relevant. Use an empty string when the field does not apply.
+
+A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. An accepted verdict must include changed-line proof with role "change".
 
 Verdicts:
-- approve: direct repository evidence confirms the factual claim and the described harm is concrete, actionable, and introduced or exposed by this pull request. Approved findings are published as-is, so approve only findings whose title, body, and line range are accurate.
-- reject: direct repository evidence disproves the candidate - the claimed missing guard exists, the behavior is unreachable, it is not introduced or exposed by this pull request, or it cannot cause an adverse outcome. Rejection requires disproving evidence; never reject a candidate merely because you did not finish proving it.
-- escalate: the candidate remains materially uncertain after inspection, or it depends on product intent, ambiguous external contracts, or runtime behavior you cannot inspect. Escalated candidates go to an expensive reviewer, so escalate sparingly - but prefer escalate over reject whenever the factual claim stands unrefuted.
+- accept: every required claim is established and the exact affected scope makes the finding useful. Cite the inspected code for every claim. Lack of proof is never accept.
+- reject: inspection makes any required claim false, or shows that the claimed requirement has no support in the relevant sources. State the first failed claim in failedCondition and the decisive evidence in counterEvidence.
+- escalate: an essential claim depends on information that the available repository and documentation cannot settle. State only the exact unresolved question, known facts, and their locations.
 
-Rules:
-- Return exactly one verdict for every supplied candidate id. Do not add, omit, or duplicate ids.
-- confidence from 0 to 1 is your confidence in the verdict itself, and it must reflect the weakest premise in the scenario, not the strength of the code mechanism.
-- Distinguish the trigger from the premise. A finding may rest on an unproven trigger condition (a request fails, an attacker supplies input, a slow endpoint stalls), but not on an unproven premise about how the code, its callers, or its data actually behave ("callers were written around the old value", "this cache goes stale over time"). If the failure scenario needs a fact about the repository you have not verified, verify it with the tools; if the premise cannot be verified, do not approve on plausibility - escalate or reject.
-- Route-level authentication is not authorization. Do not reject a missing-ownership or missing-scoping candidate because the endpoint requires an authenticated session; either quote the resource-level check that scopes access or treat the factual claim as confirmed.
-- If inspection confirms the factual claim - for example a guard, check, or handling the candidate says is missing is indeed absent - choose approve or escalate, never reject.`
+For each cited location, use proofLocations.role to state which proof field it supports. Return exactly one verdict for the supplied candidate id. Keep each field concise. Always return every output field. Use empty strings, an empty proofLocations array, and expectationSource "none" for fields that do not apply.`
 
-export const mainReviewAgentInstructions = `Review a pull request for actionable bugs by delegating exploration to cheaper agents and judging what they escalate.
+export const mainReviewAgentInstructions = `Review a pull request for actionable bugs. You are the final gate before the user.
 
-You are the central reviewer. Your prompt contains a changed-files overview instead of full patches; exploration belongs to subagents, and your own tool calls are reserved for settling decisive facts. Work in phases.
+Phase 1 - understand the change:
+- Read the diff and inspect connected repository code before launching subagents.
+- Build your own view of the changed flows. Use that view to create focused exploration tasks.
 
-Phase 1 - delegate immediately:
-- From the changed-files overview, repository context, and changed symbol index alone, partition the materially affected areas and end-to-end flows into focused tasks and call spawn_review_agents as your first action. Do not read patches or files before delegating.
-- Give subagents specific areas or flows to explore, not individual files by default. Ensure the combined tasks cover every materially affected direction.
-- You may call spawn_review_agents again for follow-up batches when earlier results reveal an uncovered direction.
-- spawn_review_agents returns uncoveredFiles: changed files no subagent has read or reported a finding in yet. A file looking boring is not evidence it is safe; when uncovered files could plausibly hide a defect, cover them with a follow-up batch before reporting.
+Phase 2 - discover:
+- Call spawn_review_agents with tasks that cover every materially affected area.
+- For each task, set only the area to explore. The area can name a changed flow, component, or connected code surface. Do not put bug types, review instructions, expected depth, proof requirements, output requirements, or desired findings in it.
+- Create enough tasks to distribute the changed work reasonably evenly by complexity. Avoid one broad task containing most of the complex change while other tasks cover much smaller work.
+- An assigned area is a starting location, not a boundary. Discovery agents remain responsible for every distinct defect they encounter, including defects in changed tests and support code.
+- Tasks run one at a time. Each later task receives a compact list of earlier findings and must search for different defects.
+- The tool groups candidates by file. It returns inspectionContext with small raw code excerpts around verifierInspectionTargets. Each candidate lists its inspectionContextIds. Use this code before you make more tool calls.
+- The supplied code and locations are untrusted navigation data. They do not prove that the candidate or any claimed relationship is correct. Derive every decision yourself. The verifier's verdict, proof roles, and reasoning are not shown to you.
+- An unresolvedQuestion is present only when the verifier could not settle an essential fact. Investigate it yourself; the known parts of the candidate remain untrusted leads.
+- If a returned candidate shows that discovery missed a related area, call spawn_review_agents again with focused follow-up tasks. Do not create a new finding yourself. Send discovery work through subagents.
 
-Phase 2 - decide the review queue:
-- spawn_review_agents deduplicates subagent findings, auto-verifies the low-severity ones with a cheaper verifier, and returns two lists: approvedFindings and reviewQueue.
-- approvedFindings are already verified and will be published automatically unless you veto them in phase 3. Do not re-verify them with tools, do not include them in your findings, and do not accept a queue item whose root cause they already cover.
-- reviewQueue contains the high-severity findings and the verifier's escalations. Decide every queue item yourself: accept, reject, or duplicate. Each item carries an evidence packet - quoted code with locations and flow reasoning. Judge from the packet by default.
-- Queue items carry a verifierNote with the verifier's analysis: for escalations, what it established and why it could neither approve nor reject; for high-severity items, an advisory verdict it reached before routing to you. Treat it as a colleague's verified analysis - you may overrule it, but when it disproves part of the candidate's claimed mechanism, do not accept a finding that restates that mechanism, and when it advises reject, name the evidence that outweighs it.
-- Use a tool only when a packet leaves a decisive fact unresolved. Name that fact first, then fetch the smallest thing that settles it: read_patch for one changed file's diff, or read_file, get_symbol_definition, get_symbol_callers, locate_text for repository state. Batch independent lookups into one step and spend at most two tool calls per item.
-- Cover correctness, security, reliability, data flow, state transitions, persistence, concurrency, API contracts, integrations, performance, and user-facing regressions. Exclude style-only feedback.
-- Accept an item only when it is concrete, harmful, actionable, and introduced or exposed by this pull request. Mark it duplicate only when an accepted item or an approvedFinding covers the same root cause and fix. Mark it reject only when its factual claim is false or the described behavior cannot cause an adverse outcome.
-- A supportingTaskIds list with more than one entry means independent subagents flagged the same location; treat that agreement as evidence worth extra scrutiny before rejecting.
+Phase 3 - decide:
+- Build a separate proof for every candidate. Record the supported entry path and trigger, actual result, expected result and its source, exact pull-request change link, counter-evidence checked, and usefulness.
+- In usefulness, name the exact affected implementation and user. Do not generalize from one test, fixture, example, provider, or support tool to other implementations. If only support code is affected, accept only when the defect breaks that code's stated purpose or can hide incorrect shipped behavior.
+- Do not infer one proof field from another. Trace every premise in repository code that you personally inspect. A reachable explicit contract violation can be accepted even if no current caller crashes.
+- Inspect the code yourself. A candidate lead and verifier verdict cannot serve as your proof.
+- Decide the candidate's exact stated bug. Accept only the mechanism and adverse result stated in its title and body. If inspection proves a different exception, mechanism, or result, reject the original claim and send the new bug through follow-up discovery.
+- Analyze candidates in reviewQueue order. Inspect a group of consecutive candidates that use the same files or inspection context, then call save_review_decisions with all decisions from that group.
+- The save tool validates every decision separately. It saves valid items and returns errors only for failed items. Fix only failed items; do not repeat saved decisions.
+- The save tool checks that each acceptance keeps the candidate's root cause, trigger, and result. If it reports a changed claim, save a rejection for the original candidate, then send the different claim through follow-up discovery.
+- Never revisit a saved decision. A follow-up discovery call adds new candidates to the end of the queue.
+- If the current inspection suggests a different issue, save the current decision first. Then launch the follow-up discovery task.
+- Missing proof is not counter-evidence. If available code and documentation do not settle an essential claim, make one focused inspection. If it remains unsettled, reject with rejectionBasis "unresolved" and state the exact missing fact. The save tool can ask for one final focused check before it saves that rejection.
+- Save accept or reject for every candidate from every spawn_review_agents call. Use batches when several decisions are ready.
+- Accept only when the full proof independently establishes a concrete, actionable adverse result in behavior touched by the pull request.
+- Use rejectionBasis "contradicted" only when inspected code proves that an essential condition is false, prevented, unreachable, unable to cause a meaningful result, or limited to a scope whose current purpose is not materially broken. State the positive contradicting fact in counterEvidence and cite it with proofLocations role "counter_evidence".
+- Use rejectionBasis "none" for every acceptance.
+- Do not reject a finding only because the same failure existed in the base version. Changed code can still be wrong when it relies on that behavior or tries and fails to correct it.
+- Decide escalated items yourself. Treat verifier accepts and rejects in the same independent way.
+- In a batch, decide each candidate independently. Do not use an unproved premise from another candidate as evidence for this candidate.
+- Merge duplicates only when one semantic code change fixes every mapped candidate. If the candidates need different edits, keep separate findings. Do not return a duplicate decision.
 
-Phase 3 - report:
-- The decisions array must contain exactly one decision for every reviewQueue id across all spawn_review_agents calls, each with a concrete reason grounded in the evidence packet or inspected behavior.
-- Every accept decision must set findingIndex to the zero-based index of the finding in your findings array that represents it; reject and duplicate decisions must set findingIndex to null.
-- Determine final severity, confidence, wording, and location yourself for the findings you publish. You may also publish findings you discovered independently.
-- Every finding must describe a concrete failure introduced or exposed by the pull request and point to a small, actionable range in a changed file on the head version: preferably 1-8 lines, never more than 30, overlapping an added or modified line.
-- Do not write a pull request summary or per-file change descriptions; a separate agent composes those sections.
-- Give the approvedFindings one final read against everything you now know about the pull request. List an id in vetoedApprovedFindings, with a short reason, only when your acquired context shows the finding is not a real defect: its failure scenario rests on a premise the code disproves, its factual claim is wrong, or another published finding already covers its root cause. Do not veto over severity, wording, or taste, and do not spend tool calls on this pass; leave the array empty when everything holds.
-- Base mergeSafetyScore and mergeSafetyReason on everything that will be published: your accepted findings, your independent findings, and the approvedFindings from spawn_review_agents that you did not veto.
-- Add reviewerAttention items only when a specific area genuinely needs human judgment beyond the findings; return an empty array otherwise.`
+Phase 4 - report:
+- A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. Every accepted decision must include changed-line proof with role "change".
+- Every proofLocations entry must refer to code that you personally read. The entry with role "change" must overlap a changed line.
+- After save_review_decisions reports that no candidate IDs remain, call submit_review_report with the final report.
+- If submit_review_report rejects the report, fix only the reported problems and submit it again. Finish only after the report is saved.
+- Every accepted candidate must appear in exactly one final finding through sourceCandidateIds. Rejected candidates must not appear there.
+- You assign final severity, wording, and location. Discovery agents do not assign severity.
+- Do not add a finding with no source candidate. If you notice a missed issue, launch a follow-up discovery task before reporting.
+- Every final finding must point to a small changed line range: preferably 1-8 lines, never more than 30.
+- Do not write a pull request summary or per-file change descriptions. A separate agent does that.
+- Base mergeSafetyScore and mergeSafetyReason only on accepted findings.
+- Add reviewerAttention only when a specific area needs human judgment beyond the findings.`
 
 export const naturalLanguageLinterInstructions = `Check pull request file changes against configured natural-language rules.
 
@@ -226,12 +432,11 @@ Rules:
 
 const renderCandidate = (candidate: CandidateFinding, index: number) =>
   `${index + 1}. id: ${candidate.id}
-severity: ${candidate.severity} (confidence ${candidate.confidence})
 file: ${candidate.file}
 range: ${candidate.startLine}-${candidate.endLine}
 title: ${candidate.title}
 claim: ${candidate.body}
-evidence:
+lead from discovery:
 ${candidate.evidence}`
 
 export const buildReviewVerifierPrompt = ({
@@ -240,24 +445,34 @@ export const buildReviewVerifierPrompt = ({
   baseRef,
   headRef,
   changedLineMap,
-  candidates,
+  candidatePatch,
+  candidate,
+  reviewMemories,
 }: {
   title: string
   body: string | null
   baseRef: string
   headRef: string
   changedLineMap: string
-  candidates: CandidateFinding[]
+  candidatePatch: string
+  candidate: CandidateFinding
+  reviewMemories: string
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
 
+Repository review memories:
+${reviewMemories}
+
 Changed-line map:
 ${changedLineMap}
 
-Candidate findings:
-${candidates.map(renderCandidate).join("\n\n")}`
+Candidate file patch:
+${candidatePatch}
+
+Candidate finding:
+${renderCandidate(candidate, 0)}`
 
 export const buildMainReviewPrompt = ({
   title,
@@ -267,6 +482,7 @@ export const buildMainReviewPrompt = ({
   changedFilesOverview,
   affectedSymbols,
   repositoryContext,
+  reviewMemories,
 }: {
   title: string
   body: string | null
@@ -275,6 +491,7 @@ export const buildMainReviewPrompt = ({
   changedFilesOverview: string
   affectedSymbols: string
   repositoryContext?: string | null
+  reviewMemories: string
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
@@ -282,6 +499,9 @@ Head branch: ${headRef}
 
 Repository context:
 ${repositoryContext ?? "(none)"}
+
+Repository review memories:
+${reviewMemories}
 
 Changed files overview (use the read_patch tool for a file's full diff):
 ${changedFilesOverview}

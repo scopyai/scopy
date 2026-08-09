@@ -17,6 +17,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useInstallUrl } from "@/hooks/use-install-url"
+import { useRedirectLock } from "@/hooks/use-redirect-lock"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import {
   getWorkspaceSlug,
@@ -35,7 +36,9 @@ const statusVariant = {
 export function WorkspaceSwitcher() {
   const { selectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces, isPending: workspacesPending } = useWorkspaces()
-  const { refetch: fetchInstallUrl, isFetching: fetchingUrl } = useInstallUrl()
+  const { refetch: fetchInstallUrl } = useInstallUrl()
+  const { isRedirecting, startRedirect, cancelRedirect, redirectTo } =
+    useRedirectLock()
   const navigate = useNavigate()
 
   const active = getActiveWorkspaces(workspaces)
@@ -56,21 +59,27 @@ export function WorkspaceSwitcher() {
   }
 
   const handleAddOrg = async () => {
-    const result = await fetchInstallUrl()
-    if (result.error || !result.data?.url) {
-      toast.error(
-        "Failed to get GitHub install URL. Is the GitHub App configured?"
-      )
-      return
+    startRedirect()
+    try {
+      const result = await fetchInstallUrl()
+      if (result.error || !result.data?.url) {
+        toast.error(
+          "Failed to get GitHub install URL. Is the GitHub App configured?"
+        )
+        cancelRedirect()
+        return
+      }
+      redirectTo(result.data.url)
+    } catch {
+      cancelRedirect()
     }
-    window.location.href = result.data.url
   }
 
   if (workspacesPending) {
     return (
-      <div className="flex w-full items-center gap-2">
+      <div className="flex w-full items-center gap-2 px-2">
         <Skeleton className="size-6 rounded-full" />
-        <Skeleton className="h-4 flex-1" />
+        <Skeleton className="sidebar-copy h-4 flex-1" />
       </div>
     )
   }
@@ -78,7 +87,10 @@ export function WorkspaceSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-base transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+        <button
+          className="sidebar-trigger flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-base transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          title={selectedEntry?.workspace.name ?? "Select organization"}
+        >
           {selectedEntry ? (
             <>
               <Avatar size="sm">
@@ -93,7 +105,7 @@ export function WorkspaceSwitcher() {
                   {selectedEntry.workspace.name.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <span className="flex-1 truncate font-medium">
+              <span className="sidebar-copy flex-1 truncate font-medium">
                 {selectedEntry.workspace.name}
               </span>
             </>
@@ -102,21 +114,27 @@ export function WorkspaceSwitcher() {
               <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted">
                 <Plus className="size-3 text-muted-foreground" />
               </div>
-              <span className="flex-1 text-muted-foreground">
+              <span className="sidebar-copy flex-1 text-muted-foreground">
                 Select organization
               </span>
             </>
           )}
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+          <ChevronsUpDown className="sidebar-end-icon hidden size-3.5 shrink-0 text-muted-foreground md:block" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="bottom" align="start" sideOffset={4}>
+      <DropdownMenuContent
+        side="bottom"
+        align="start"
+        sideOffset={8}
+        collisionPadding={12}
+        className="max-h-[min(70svh,440px)] w-[min(92vw,320px)] overflow-y-auto md:w-72"
+      >
         {active.map(({ workspace, role }) => (
           <DropdownMenuItem
             key={workspace.id}
             onClick={() => handleSelectWorkspace(workspace.id)}
             className={cn(
-              "flex items-center gap-2",
+              "flex min-h-11 items-center gap-2 py-2 md:min-h-0",
               workspace.id === selectedWorkspaceId && "bg-accent"
             )}
           >
@@ -159,13 +177,13 @@ export function WorkspaceSwitcher() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleAddOrg}
-          disabled={fetchingUrl}
-          className="gap-2"
+          disabled={isRedirecting}
+          className="min-h-11 gap-2 md:min-h-0"
         >
           <div className="flex size-4 items-center justify-center rounded-sm border border-dashed border-border">
             <Plus className="size-3" />
           </div>
-          {fetchingUrl ? "Loading…" : "Add workspace"}
+          {isRedirecting ? "Loading…" : "Add workspace"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

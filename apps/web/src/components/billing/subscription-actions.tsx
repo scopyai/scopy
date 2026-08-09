@@ -15,6 +15,7 @@ import {
   useCancelBilling,
   usePortalBilling,
 } from "@/hooks/use-workspace-billing-mutations"
+import { isRedirectMutationPending } from "@/hooks/use-redirect-lock"
 
 type Account = {
   tier: "free" | "premium" | "ultra" | "enterprise"
@@ -47,19 +48,18 @@ export function SubscriptionActions({
         <Button
           variant="outline"
           size="sm"
-          disabled={portal.isPending}
+          disabled={isRedirectMutationPending(portal)}
           onClick={() => portal.mutate()}
         >
           <ExternalLinkIcon />
-          {portal.isPending ? "Opening…" : "Manage billing"}
+          {isRedirectMutationPending(portal) ? "Opening…" : "Manage billing"}
         </Button>
       )}
 
       {!account.cancelAtPeriodEnd && (
         <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:text-destructive"
+          variant="text"
+          className="hover:text-destructive"
           onClick={() => setCancelOpen(true)}
         >
           Cancel subscription

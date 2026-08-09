@@ -1,10 +1,7 @@
-import {
-  severityRank,
-  type CandidateFinding,
-  type ReviewFinding,
-} from "./prompt"
+import { severityRank, type ReviewFinding } from "./prompt"
 
 type Range = { file: string; startLine: number; endLine: number }
+type IssueShape = Range & { title: string; body: string }
 
 const overlaps = (first: Range, second: Range) =>
   first.file === second.file &&
@@ -29,7 +26,7 @@ const tokenOverlapScore = (first: Set<string>, second: Set<string>) => {
   return shared / Math.min(first.size, second.size)
 }
 
-const findingTokens = (finding: Pick<ReviewFinding, "title" | "body">) =>
+const findingTokens = (finding: Pick<IssueShape, "title" | "body">) =>
   new Set([
     ...meaningfulTokens(finding.title),
     ...meaningfulTokens(finding.body),
@@ -53,9 +50,9 @@ const rangeJaccard = (first: Range, second: Range) => {
 }
 
 const sameIssue = (
-  first: ReviewFinding,
+  first: IssueShape,
   firstTokens: Set<string>,
-  second: ReviewFinding,
+  second: IssueShape,
   secondTokens: Set<string>
 ) => {
   if (!overlaps(first, second)) return false
@@ -67,65 +64,10 @@ const sameIssue = (
   )
 }
 
-const preferredCandidate = (
-  first: CandidateFinding,
-  second: CandidateFinding
-) =>
-  severityRank[first.severity] - severityRank[second.severity] ||
-  second.confidence - first.confidence ||
-  second.evidence.length - first.evidence.length
-
-export const mergeOverlappingCandidates = (
-  candidates: CandidateFinding[],
-  options: {
-    isAnchorable?: (candidate: CandidateFinding) => boolean
-  } = {}
-): { merged: CandidateFinding[]; duplicates: CandidateFinding[] } => {
-  const groups: Array<
-    Array<{ candidate: CandidateFinding; tokens: Set<string> }>
-  > = []
-  for (const candidate of candidates) {
-    const tokens = findingTokens(candidate)
-    const group = groups.find((entry) =>
-      entry.some((item) =>
-        sameIssue(item.candidate, item.tokens, candidate, tokens)
-      )
-    )
-    if (group) group.push({ candidate, tokens })
-    else groups.push([{ candidate, tokens }])
-  }
-
-  const merged: CandidateFinding[] = []
-  const duplicates: CandidateFinding[] = []
-  const { isAnchorable } = options
-  for (const group of groups) {
-    const [representative, ...rest] = group
-      .map((item) => item.candidate)
-      .sort(
-        isAnchorable
-          ? (first, second) =>
-              Number(isAnchorable(second)) - Number(isAnchorable(first)) ||
-              preferredCandidate(first, second)
-          : preferredCandidate
-      )
-    merged.push({
-      ...representative!,
-      supportingTaskIds: [
-        ...new Set(group.map((item) => item.candidate.taskId)),
-      ],
-    })
-    duplicates.push(...rest)
-  }
-  return { merged, duplicates }
-}
-
-export const isSameIssue = (first: ReviewFinding, second: ReviewFinding) =>
+export const isSameIssue = (first: IssueShape, second: IssueShape) =>
   sameIssue(first, findingTokens(first), second, findingTokens(second))
 
-export const resemblesSameIssue = (
-  first: ReviewFinding,
-  second: ReviewFinding
-) =>
+export const resemblesSameIssue = (first: IssueShape, second: IssueShape) =>
   isSameIssue(first, second) ||
   tokenOverlapScore(findingTokens(first), findingTokens(second)) >=
     SAME_ISSUE_TOKEN_OVERLAP

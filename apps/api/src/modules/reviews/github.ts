@@ -2,7 +2,9 @@ import { env } from "../../env"
 import type { repository } from "../../db/schema"
 import { createGitHubApp } from "../github/service"
 import type { PullRequestFile } from "./diff"
+import { renderFindingMarker } from "./memories"
 import { findingLabel, type ReviewFinding } from "./prompt"
+import { replaceEmDashes } from "./text"
 
 type Repository = typeof repository.$inferSelect
 type PullRequestReviewComment = {
@@ -193,13 +195,13 @@ export const getReviewCommentMarker = ({
     : `<!-- reviewbot:summary:${encodeURIComponent(pullRequestId)} -->`
 
 const withMarker = (body: string, scope: ReviewCommentScope) =>
-  `${body}\n\n${getReviewCommentMarker(scope)}`
+  `${replaceEmDashes(body)}\n\n${getReviewCommentMarker(scope)}`
 
 export const reviewStartedBody =
   "Review started. I am analyzing the changes in this pull request."
 
 export const reviewFailedBody =
-  "I could not complete this review after several retries. Please mention me again later to retry."
+  "I could not complete this review after two attempts. Please mention me again later to retry."
 
 export const reviewCreditsBlockedBody = ({
   requiredCredits,
@@ -262,27 +264,29 @@ const feedbackLink = (finding: ReviewFinding, repoFullName: string) => {
 
 export const renderInlineReviewComment = (
   finding: ReviewFinding,
-  repoFullName: string
+  repoFullName: string,
+  headSha: string
 ) =>
-  [
+  replaceEmDashes([
     `**[${findingLabel(finding)}] ${finding.title}**`,
     "",
     finding.body,
     "",
-    `Confidence: ${Math.round(finding.confidence * 100)}%`,
-    "",
     renderFixPrompt(finding),
     "",
     feedbackLink(finding, repoFullName),
-  ].join("\n")
+    "",
+    renderFindingMarker({ ...finding, headSha }),
+  ].join("\n"))
 
 export const buildPullRequestReviewComments = (
   findings: ReviewFinding[],
-  repoFullName: string
+  repoFullName: string,
+  headSha: string
 ): PullRequestReviewComment[] =>
   findings.map((finding) => ({
     path: finding.file,
-    body: renderInlineReviewComment(finding, repoFullName),
+    body: renderInlineReviewComment(finding, repoFullName, headSha),
     line: finding.endLine,
     side: "RIGHT",
     ...(finding.startLine !== finding.endLine
@@ -315,7 +319,29 @@ export const publishPullRequestReview = async ({
   }
 
   const octokit = await getOctokit(installationId)
-  const comments = buildPullRequestReviewComments(findings, repo.fullName)
+  const existingComments = await octokit.paginate(
+    "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+    {
+      owner: repo.owner,
+      repo: repo.name,
+      pull_number: pullRequestNumber,
+      per_page: 100,
+    }
+  )
+  const unpublishedFindings = findings.filter((finding) => {
+    const marker = renderFindingMarker({ ...finding, headSha })
+    return !existingComments.some(
+      (comment) =>
+        typeof comment.body === "string" && comment.body.includes(marker)
+    )
+  })
+  if (unpublishedFindings.length === 0) return null
+
+  const comments = buildPullRequestReviewComments(
+    unpublishedFindings,
+    repo.fullName,
+    headSha
+  )
   const createReview = (reviewComments: PullRequestReviewComment[]) =>
     octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
       owner: repo.owner,

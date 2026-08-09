@@ -37,6 +37,7 @@ function formatRelativeTime(date: string | Date): string {
 }
 
 export function PullRequestListItem({
+  id,
   number,
   title,
   author,
@@ -53,31 +54,37 @@ export function PullRequestListItem({
   return (
     <button
       type="button"
+      data-pull-request-id={id}
       onClick={onClick}
       className={cn(
-        "w-full text-left px-3 py-2.5 rounded-md transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        isSelected && "bg-accent",
+        "w-full rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/60 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+        isSelected && "bg-accent"
       )}
     >
       <div className="flex items-start gap-2">
         <StateIcon className={cn("mt-0.5 size-4 shrink-0", stateClassName)} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
-            <p className="min-w-0 truncate text-sm font-medium leading-snug">
+            <p className="min-w-0 truncate text-sm leading-snug font-medium">
               {title}
               <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                 #{number}
               </span>
             </p>
             {draft && (
-              <Badge variant="outline" className="h-4 shrink-0 text-[10px] px-1 py-0">
+              <Badge
+                variant="outline"
+                className="h-4 shrink-0 px-1 py-0 text-[10px]"
+              >
                 Draft
               </Badge>
             )}
           </div>
-          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {author && (
-              <span className="text-xs text-muted-foreground">{author.login}</span>
+              <span className="text-xs text-muted-foreground">
+                {author.login}
+              </span>
             )}
             <span className="text-xs text-muted-foreground/60">·</span>
             <span className="text-xs text-muted-foreground">
@@ -87,13 +94,18 @@ export function PullRequestListItem({
               <Badge
                 key={label}
                 variant="outline"
-                className={tagToneClassName(label, "h-4 px-1.5 py-0 text-[10px]")}
+                className={tagToneClassName(
+                  label,
+                  "h-4 px-1.5 py-0 text-[10px]"
+                )}
               >
                 {label}
               </Badge>
             ))}
             {labels.length > 2 && (
-              <span className="text-xs text-muted-foreground">+{labels.length - 2}</span>
+              <span className="text-xs text-muted-foreground">
+                +{labels.length - 2}
+              </span>
             )}
           </div>
         </div>

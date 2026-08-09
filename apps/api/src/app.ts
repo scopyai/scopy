@@ -12,6 +12,7 @@ import { workspaceRoutes } from "./modules/workspaces"
 import { billingRoutes } from "./modules/billing"
 import { feedbackRoutes } from "./modules/feedback"
 import { docsRoutes, workspaceDocsRoutes } from "./modules/docs"
+import { memoryRoutes } from "./modules/memories"
 
 export const app = new Elysia({
   name: "api",
@@ -33,6 +34,7 @@ export const app = new Elysia({
   .use(workspaceRoutes)
   .use(billingRoutes)
   .use(feedbackRoutes)
+  .use(memoryRoutes)
   .use(docsRoutes)
   .use(workspaceDocsRoutes)
   .use(webhookRoutes)

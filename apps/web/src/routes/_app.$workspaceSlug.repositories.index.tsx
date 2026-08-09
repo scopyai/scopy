@@ -56,7 +56,7 @@ function RepositoriesIndexRoute() {
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader icon={GitForkIcon} title="Repositories" />
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6">
         <RepositoriesList
           workspaceId={selectedWorkspaceId}
           workspaceSlug={workspaceSlug}
@@ -150,7 +150,10 @@ function RepositoriesList({
           disabled={syncWorkspace.isPending}
         >
           <RefreshCwIcon
-            className={cn("size-3.5", syncWorkspace.isPending && "animate-spin")}
+            className={cn(
+              "size-3.5",
+              syncWorkspace.isPending && "animate-spin"
+            )}
           />
           {syncWorkspace.isPending ? "Syncing…" : "Sync"}
         </Button>
@@ -184,7 +187,10 @@ function RepositoriesList({
             title="Sync repositories"
           >
             <RefreshCwIcon
-              className={cn("size-3.5", syncWorkspace.isPending && "animate-spin")}
+              className={cn(
+                "size-3.5",
+                syncWorkspace.isPending && "animate-spin"
+              )}
             />
           </Button>
         </div>

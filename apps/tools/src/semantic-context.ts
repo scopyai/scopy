@@ -43,11 +43,18 @@ export type QdrantInferenceConfig = QdrantConfig & {
 
 export type IndexReviewCodebaseInput = {
   index: RepositoryCodeIndex
+  filePaths?: Iterable<string>
+  chunks?: CodeChunk[]
   repositoryId: string
   repositoryKey: string
   headSha: string
   reviewRunId: string
   qdrant: QdrantInferenceConfig
+  onProgress?: (progress: {
+    status: "started" | "progress" | "completed"
+    totalChunks: number
+    writtenChunks: number
+  }) => void
 }
 
 export type SearchReviewCodeInput = {
@@ -130,6 +137,28 @@ const logicalVectorBytes = (chunk: ReviewCodeChunk, vectorSize: number) =>
   Buffer.byteLength(JSON.stringify(chunk), "utf8") +
   vectorSize * 4
 
+type IndexedSource = {
+  lines: string[]
+  prefixBytes: number[]
+}
+
+const indexSourceLines = (source: string): IndexedSource => {
+  const lines = source.split(/\r?\n/)
+  const prefixBytes = new Array<number>(lines.length + 1)
+  prefixBytes[0] = 0
+  for (let index = 0; index < lines.length; index += 1) {
+    prefixBytes[index + 1] =
+      prefixBytes[index]! + Buffer.byteLength(lines[index]!, "utf8") + 1
+  }
+  return { lines, prefixBytes }
+}
+
+const sliceBytes = (
+  source: IndexedSource,
+  startIndex: number,
+  endIndex: number
+) => source.prefixBytes[endIndex]! - source.prefixBytes[startIndex]! - 1
+
 const fileChunkFor = ({
   repositoryKey,
   file,
@@ -139,11 +168,14 @@ const fileChunkFor = ({
   repositoryKey: string
   file: string
   language: string
-  source: string
+  source: IndexedSource
 }): CodeChunk | undefined => {
-  const lines = source.split(/\r?\n/)
-  const content = lines.slice(0, MAX_CHUNK_LINES).join("\n")
-  if (Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES) return undefined
+  const selected = boundedLineSlice(
+    source,
+    1,
+    Math.min(source.lines.length, MAX_CHUNK_LINES)
+  )
+  if (!selected) return undefined
   const chunk = {
     repositoryKey,
     file,
@@ -151,32 +183,40 @@ const fileChunkFor = ({
     kind: "file" as const,
     name: file,
     startLine: 1,
-    endLine: Math.min(lines.length, MAX_CHUNK_LINES),
-    content,
+    endLine: selected.endLine,
+    content: selected.content,
     strategy: "file-fallback" as const,
   }
   return { ...chunk, id: pointId(chunk) }
 }
 
 const boundedLineSlice = (
-  source: string,
+  source: IndexedSource,
   startLine: number,
   endLine: number
 ) => {
-  const lines = source.split(/\r?\n/)
-  const selected = lines.slice(startLine - 1, endLine)
-  let content = selected.join("\n")
-  let safeEndLine = endLine
-  while (
-    Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES &&
-    selected.length > 1
-  ) {
-    selected.pop()
-    safeEndLine -= 1
-    content = selected.join("\n")
+  const startIndex = Math.max(0, startLine - 1)
+  const requestedEndIndex = Math.min(source.lines.length, endLine)
+  if (requestedEndIndex <= startIndex) return undefined
+  if (sliceBytes(source, startIndex, startIndex + 1) > MAX_CHUNK_BYTES) {
+    return undefined
   }
-  if (Buffer.byteLength(content, "utf8") > MAX_CHUNK_BYTES) return undefined
-  return { content, endLine: safeEndLine }
+  let low = startIndex + 1
+  let high = requestedEndIndex
+  let safeEndIndex = low
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    if (sliceBytes(source, startIndex, middle) <= MAX_CHUNK_BYTES) {
+      safeEndIndex = middle
+      low = middle + 1
+    } else {
+      high = middle - 1
+    }
+  }
+  return {
+    content: source.lines.slice(startIndex, safeEndIndex).join("\n"),
+    endLine: safeEndIndex,
+  }
 }
 
 const scopeChunksFor = ({
@@ -189,7 +229,7 @@ const scopeChunksFor = ({
   repositoryKey: string
   file: string
   language: string
-  source: string
+  source: IndexedSource
   scope: ScopeDefinition
 }): CodeChunk[] => {
   if (scope.kind === "top-level") return []
@@ -327,34 +367,78 @@ const filterByRun = ({
   ],
 })
 
-export const chunksForRepositoryIndex = ({
+export const iterateRepositoryChunks = function* ({
   index,
   repositoryKey,
+  filePaths,
 }: {
   index: RepositoryCodeIndex
   repositoryKey: string
-}) => {
-  return index.files.flatMap((file) => {
+  filePaths?: Iterable<string>
+}): Generator<CodeChunk> {
+  const selectedFiles = filePaths ? new Set(filePaths) : null
+  for (const file of index.files) {
+    if (selectedFiles && !selectedFiles.has(file.path)) continue
     const source = index.sourceByFile.get(file.path)
-    if (!source) return []
-    const scopedChunks = file.scopes.flatMap((scope) =>
+    if (!source) continue
+    const indexedSource = indexSourceLines(source)
+    const childrenByParent = new Map<string, ScopeDefinition[]>()
+    for (const candidate of file.scopes) {
+      if (!candidate.parentScopeId) continue
+      const children = childrenByParent.get(candidate.parentScopeId)
+      if (children) children.push(candidate)
+      else childrenByParent.set(candidate.parentScopeId, [candidate])
+    }
+    const semanticScopes = file.scopes.flatMap((scope) => {
+      if (scope.kind !== "class") return [scope]
+      const firstChild = (childrenByParent.get(scope.id) ?? []).sort(
+        (left, right) => left.startLine - right.startLine
+      )[0]
+      if (!firstChild) return [scope]
+      const endLine = Math.min(
+        scope.endLine,
+        firstChild.startLine - 1,
+        scope.startLine + 79
+      )
+      return endLine >= scope.startLine ? [{ ...scope, endLine }] : []
+    })
+    const scopedChunks = semanticScopes.flatMap((scope) =>
       scopeChunksFor({
         repositoryKey,
         file: file.path,
         language: file.language,
-        source,
+        source: indexedSource,
         scope,
       })
     )
-    if (scopedChunks.length) return scopedChunks
+    if (scopedChunks.length) {
+      yield* scopedChunks
+      continue
+    }
     const chunk = fileChunkFor({
       repositoryKey,
       file: file.path,
       language: file.language,
-      source,
+      source: indexedSource,
     })
-    return chunk ? [chunk] : []
-  })
+    if (chunk) yield chunk
+  }
+}
+
+export const chunksForRepositoryIndex = (input: {
+  index: RepositoryCodeIndex
+  repositoryKey: string
+  filePaths?: Iterable<string>
+}) => [...iterateRepositoryChunks(input)]
+
+export const countRepositoryChunks = (input: {
+  index: RepositoryCodeIndex
+  repositoryKey: string
+  filePaths?: Iterable<string>
+}) => {
+  let count = 0
+  for (const _chunk of iterateRepositoryChunks(input)) count += 1
+  return count
 }
 
 const chunkText = (chunk: CodeChunk) =>
@@ -457,11 +541,14 @@ const isReviewCodeChunk = (payload: unknown): payload is ReviewCodeChunk => {
 
 export const indexReviewCodebase = async ({
   index,
+  filePaths,
+  chunks: selectedChunks,
   repositoryId,
   repositoryKey,
   headSha,
   reviewRunId,
   qdrant,
+  onProgress,
 }: IndexReviewCodebaseInput) => {
   const client = qdrantClient(qdrant)
   await ensureCollection(client, qdrant)
@@ -471,7 +558,14 @@ export const indexReviewCodebase = async ({
     filter: filterByRun({ repositoryId, headSha, reviewRunId }),
   })
 
-  const chunks = chunksForRepositoryIndex({ index, repositoryKey }).map(
+  const chunks = (
+    selectedChunks ??
+    chunksForRepositoryIndex({
+      index,
+      repositoryKey,
+      filePaths,
+    })
+  ).map(
     (chunk): ReviewCodeChunk => ({
       ...chunk,
       id: pointId({
@@ -484,17 +578,40 @@ export const indexReviewCodebase = async ({
     })
   )
 
-  await client.upsert(qdrant.collection, {
-    wait: true,
-    points: chunks.map((chunk) => ({
-      id: chunk.id,
-      vector: {
-        text: chunkText(chunk),
-        model: qdrant.model,
-      },
-      payload: chunk,
-    })),
-  } as Parameters<typeof client.upsert>[1])
+  const upsertBatchSize = 64
+  onProgress?.({
+    status: "started",
+    totalChunks: chunks.length,
+    writtenChunks: 0,
+  })
+  for (let offset = 0; offset < chunks.length; offset += upsertBatchSize) {
+    const batch = chunks.slice(offset, offset + upsertBatchSize)
+    await client.upsert(qdrant.collection, {
+      wait: true,
+      points: batch.map((chunk) => ({
+        id: chunk.id,
+        vector: {
+          text: chunkText(chunk),
+          model: qdrant.model,
+        },
+        payload: chunk,
+      })),
+    } as Parameters<typeof client.upsert>[1])
+    const writtenChunks = offset + batch.length
+    if (
+      writtenChunks === chunks.length ||
+      writtenChunks % (upsertBatchSize * 10) === 0
+    ) {
+      onProgress?.({
+        status: writtenChunks === chunks.length ? "completed" : "progress",
+        totalChunks: chunks.length,
+        writtenChunks,
+      })
+    }
+  }
+  if (chunks.length === 0) {
+    onProgress?.({ status: "completed", totalChunks: 0, writtenChunks: 0 })
+  }
 
   return {
     collection: qdrant.collection,

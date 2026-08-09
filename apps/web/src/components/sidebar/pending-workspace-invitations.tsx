@@ -64,20 +64,24 @@ export function PendingWorkspaceInvitations({
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger className="gap-2">
+      <DropdownMenuSubTrigger className="min-h-11 gap-2 md:min-h-0">
         <MailIcon className="size-4 text-muted-foreground" />
         <span className="flex-1">Invitations</span>
-        <span className="ml-auto mr-1 flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
+        <span className="mr-1 ml-auto flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
           {pending.length}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="w-72" sideOffset={4}>
+      <DropdownMenuSubContent
+        className="w-[min(88vw,288px)]"
+        sideOffset={6}
+        collisionPadding={12}
+      >
         {pending.map(({ workspace }, i) => (
           <div key={workspace.id}>
             {i > 0 && <DropdownMenuSeparator />}
             <DropdownMenuItem
               onSelect={(e) => e.preventDefault()}
-              className="flex items-center gap-3 py-2"
+              className="flex min-h-12 items-center gap-3 py-2"
             >
               <Avatar size="sm">
                 <AvatarImage
@@ -95,7 +99,7 @@ export function PendingWorkspaceInvitations({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-7"
+                  className="size-9 md:size-7"
                   disabled={accept.isPending || reject.isPending}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -108,7 +112,7 @@ export function PendingWorkspaceInvitations({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-7"
+                  className="size-9 md:size-7"
                   disabled={accept.isPending || reject.isPending}
                   onClick={(e) => {
                     e.stopPropagation()

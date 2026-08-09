@@ -8,7 +8,6 @@ import {
   jsonb,
   pgEnum,
   pgTable,
-  real,
   text,
   timestamp,
   uniqueIndex,
@@ -85,6 +84,38 @@ export const docSourceStatus = pgEnum("doc_source_status", [
   "crawling",
   "error",
 ])
+
+export const jobOutbox = pgTable(
+  "job_outbox",
+  {
+    id: text("id").primaryKey(),
+    jobName: text("job_name").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    availableAt: timestamp("available_at").defaultNow().notNull(),
+    lockedAt: timestamp("locked_at"),
+    publishedAt: timestamp("published_at"),
+    failedAt: timestamp("failed_at"),
+    hatchetRunId: text("hatchet_run_id"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("job_outbox_dispatch_idx").on(
+      table.publishedAt,
+      table.availableAt,
+      table.createdAt
+    ),
+    uniqueIndex("job_outbox_pending_idempotency_idx")
+      .on(table.idempotencyKey)
+      .where(sql`${table.publishedAt} is null and ${table.failedAt} is null`),
+  ]
+)
 
 export type ProviderActor = {
   id: string
@@ -483,7 +514,6 @@ export const reviewFinding = pgTable(
     startLine: integer("start_line").notNull(),
     endLine: integer("end_line").notNull(),
     title: text("title").notNull(),
-    confidence: real("confidence").notNull(),
     language: text("language").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -492,6 +522,32 @@ export const reviewFinding = pgTable(
     index("review_finding_severity_idx").on(table.severity),
     index("review_finding_file_idx").on(table.file),
     index("review_finding_language_idx").on(table.language),
+  ]
+)
+
+export const reviewMemory = pgTable(
+  "review_memory",
+  {
+    id: text("id").primaryKey(),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repository.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    pathGlob: text("path_glob"),
+    enabled: boolean("enabled").default(true).notNull(),
+    sourceCommentId: text("source_comment_id"),
+    sourceCommentUrl: text("source_comment_url"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("review_memory_repository_id_idx").on(table.repositoryId),
+    uniqueIndex("review_memory_source_comment_id_idx").on(
+      table.sourceCommentId
+    ),
   ]
 )
 
@@ -764,6 +820,7 @@ export const repositoryRelations = relations(repository, ({ one, many }) => ({
   }),
   context: one(repositoryContext),
   pullRequests: many(pullRequest),
+  memories: many(reviewMemory),
 }))
 
 export const pullRequestRelations = relations(pullRequest, ({ one, many }) => ({
@@ -812,6 +869,13 @@ export const reviewFindingRelations = relations(reviewFinding, ({ one }) => ({
   reviewRun: one(reviewRun, {
     fields: [reviewFinding.reviewRunId],
     references: [reviewRun.id],
+  }),
+}))
+
+export const reviewMemoryRelations = relations(reviewMemory, ({ one }) => ({
+  repository: one(repository, {
+    fields: [reviewMemory.repositoryId],
+    references: [repository.id],
   }),
 }))
 

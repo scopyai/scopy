@@ -1,21 +1,41 @@
-import { run } from "graphile-worker"
-import { workerEnv as env } from "./env"
-import { taskList } from "./jobs/tasks"
+import { pool } from "./db/client"
+import { createHatchetClient, createHatchetJobs } from "./jobs/hatchet"
 import { enqueueDueDocSourceCrawls } from "./modules/docs/service"
+import { workerEnv } from "./env"
+
 await enqueueDueDocSourceCrawls({
   logger: {
     info: (message, details) => console.log(message, details ?? {}),
   },
-  intervalHours: env.DOCS_RECRAWL_INTERVAL_HOURS,
-}).catch((error) => {
-  console.error("Startup docs sweep failed", error)
-})
+  intervalHours: workerEnv.DOCS_RECRAWL_INTERVAL_HOURS,
+}).catch((error) => console.error("Startup docs sweep failed", error))
 
-const runner = await run({
-  connectionString: env.DATABASE_URL,
-  concurrency: 5,
-  taskList,
-  crontab: "0 4 * * * crawl_all_doc_sources",
+const hatchet = createHatchetClient()
+const jobs = createHatchetJobs(hatchet)
+const worker = await hatchet.worker("scopy-worker", {
+  slots: 5,
+  handleKill: false,
 })
+await worker.registerWorkflows(jobs.workflows)
 
-await runner.promise
+const workerRun = worker.start()
+let shuttingDown = false
+const shutdown = async () => {
+  if (shuttingDown) return
+  shuttingDown = true
+  await worker.stop()
+}
+process.once("SIGINT", () => void shutdown())
+process.once("SIGTERM", () => void shutdown())
+
+try {
+  await workerRun
+  if (!shuttingDown) throw new Error("Hatchet worker stopped unexpectedly")
+} finally {
+  if (!shuttingDown) {
+    await worker.stop().catch((error) =>
+      console.error("Failed to stop Hatchet worker", error)
+    )
+  }
+  await pool.end()
+}

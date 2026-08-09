@@ -16,5 +16,6 @@ export function useWorkspaceBilling(workspaceId: string | null | undefined) {
       return data
     },
     enabled: !!session && !!workspaceId,
+    refetchInterval: 15_000,
   })
 }

@@ -23,6 +23,7 @@ import {
   useCheckoutBilling,
   useChangeBillingPlan,
 } from "@/hooks/use-workspace-billing-mutations"
+import { isRedirectMutationPending } from "@/hooks/use-redirect-lock"
 
 type Plan = {
   slug: string
@@ -188,10 +189,10 @@ function PlanCard({
         {action === "subscribe" && (
           <Button
             className="w-full"
-            disabled={!isOwner || checkout.isPending}
+            disabled={!isOwner || isRedirectMutationPending(checkout)}
             onClick={() => checkout.mutate(plan.slug as "premium" | "ultra")}
           >
-            {checkout.isPending
+            {isRedirectMutationPending(checkout)
               ? "Redirecting…"
               : isOwner
                 ? "Get started"

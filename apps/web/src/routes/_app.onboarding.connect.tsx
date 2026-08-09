@@ -1,9 +1,10 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { toast } from "sonner"
 import { z } from "zod"
 import { ConnectGitHub } from "@/components/connect-github"
 import { getGitHubConnectionErrorMessage } from "@/lib/github-connection-errors"
+import { hasSeenOnboardingWelcome } from "@/lib/onboarding-flow"
 
 const searchSchema = z.object({
   githubError: z.string().optional(),
@@ -24,6 +25,10 @@ function OnboardingConnectPage() {
     toast.error(getGitHubConnectionErrorMessage(githubError))
     navigate({ to: "/onboarding/connect", search: {}, replace: true })
   }, [githubError, navigate])
+
+  if (!hasSeenOnboardingWelcome()) {
+    return <Navigate to="/onboarding/welcome" replace />
+  }
 
   return (
     <div className="flex h-full items-center justify-center px-6">

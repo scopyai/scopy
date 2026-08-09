@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { db } from "../../db/client"
 import { webhookEvent, workspace } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
@@ -22,7 +22,7 @@ const findWorkspaceByInstallationId = async (installationId?: number) => {
 
 const finishWebhookEvent = async (
   eventId: string,
-  review?: PullRequestReviewRequest,
+  review?: PullRequestReviewRequest
 ) => {
   await db.transaction(async (tx) => {
     if (review) {
@@ -53,7 +53,7 @@ export const persistGitHubWebhookEvent = async ({
   payload: GitHubWebhookPayload
 }) => {
   const relatedWorkspace = await findWorkspaceByInstallationId(
-    payload.installation?.id,
+    payload.installation?.id
   )
 
   await db.transaction(async (tx) => {
@@ -78,7 +78,7 @@ export const persistGitHubWebhookEvent = async ({
       (await tx.query.webhookEvent.findFirst({
         where: and(
           eq(webhookEvent.provider, "github"),
-          eq(webhookEvent.deliveryId, deliveryId),
+          eq(webhookEvent.deliveryId, deliveryId)
         ),
       }))
 
@@ -90,43 +90,25 @@ export const persistGitHubWebhookEvent = async ({
   })
 }
 
-const claimGitHubWebhookEvent = async (eventId: string) => {
-  const leaseExpiredAt = new Date(Date.now() - 60 * 60 * 1000)
+const startGitHubWebhookEvent = async (eventId: string) => {
   const [event] = await db
     .update(webhookEvent)
     .set({
       processingStartedAt: new Date(),
       processingError: null,
     })
-    .where(
-      and(
-        eq(webhookEvent.id, eventId),
-        isNull(webhookEvent.processedAt),
-        or(
-          isNull(webhookEvent.processingStartedAt),
-          lt(webhookEvent.processingStartedAt, leaseExpiredAt),
-        ),
-      ),
-    )
+    .where(and(eq(webhookEvent.id, eventId), isNull(webhookEvent.processedAt)))
     .returning()
 
   if (event) {
     return event
   }
 
-  const existingEvent = await db.query.webhookEvent.findFirst({
-    where: eq(webhookEvent.id, eventId),
-  })
-
-  if (existingEvent?.processingStartedAt && !existingEvent.processedAt) {
-    throw new Error("GitHub webhook is already being processed")
-  }
-
   return null
 }
 
 export const processGitHubWebhookEvent = async (eventId: string) => {
-  const event = await claimGitHubWebhookEvent(eventId)
+  const event = await startGitHubWebhookEvent(eventId)
 
   if (!event) {
     return
@@ -134,12 +116,12 @@ export const processGitHubWebhookEvent = async (eventId: string) => {
 
   const payload = event.payload as GitHubWebhookPayload
   const relatedWorkspace =
-    ((event.workspaceId
+    (event.workspaceId
       ? await db.query.workspace.findFirst({
           where: eq(workspace.id, event.workspaceId),
         })
       : null) ??
-      (await findWorkspaceByInstallationId(payload.installation?.id))) ??
+    (await findWorkspaceByInstallationId(payload.installation?.id)) ??
     null
 
   try {
@@ -151,7 +133,9 @@ export const processGitHubWebhookEvent = async (eventId: string) => {
     await finishWebhookEvent(event.id, review)
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unknown webhook processing error"
+      error instanceof Error
+        ? error.message
+        : "Unknown webhook processing error"
 
     await db
       .update(webhookEvent)

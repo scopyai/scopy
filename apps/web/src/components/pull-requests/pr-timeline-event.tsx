@@ -1,5 +1,4 @@
 import type { ElementType } from "react"
-import ReactMarkdown from "react-markdown"
 import {
   CheckCircleIcon,
   XCircleIcon,
@@ -14,6 +13,7 @@ import {
   AvatarImage,
 } from "@workspace/ui/components/avatar"
 import { Badge } from "@workspace/ui/components/badge"
+import { PullRequestMarkdown } from "./pr-markdown"
 import { getLifecycleActionDisplay } from "./pr-status"
 import { cn } from "@workspace/ui/lib/utils"
 
@@ -49,14 +49,6 @@ function formatTimestamp(date: string | Date): string {
     hour: "2-digit",
     minute: "2-digit",
   })
-}
-
-function MarkdownBody({ content }: { content: string }) {
-  return (
-    <div className="max-w-none text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:text-sm [&_h3]:font-medium [&_hr]:my-3 [&_hr]:border-border [&_li]:mb-0.5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_pre]:mb-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-      <ReactMarkdown>{content}</ReactMarkdown>
-    </div>
-  )
 }
 
 const reviewBadgeConfig: Record<
@@ -152,7 +144,7 @@ function CommentEvent({
           [Comment deleted]
         </p>
       ) : body ? (
-        <MarkdownBody content={body} />
+        <PullRequestMarkdown content={body} />
       ) : (
         <p className="text-xs text-muted-foreground italic">No content</p>
       )}
@@ -210,7 +202,7 @@ function ReviewEvent({
       </div>
       {!deletedAt && body && (
         <div className="mt-2 rounded-md border border-border bg-card p-3">
-          <MarkdownBody content={body} />
+          <PullRequestMarkdown content={body} />
         </div>
       )}
     </div>
@@ -271,7 +263,7 @@ function ReviewCommentEvent({
             [Comment deleted]
           </p>
         ) : body ? (
-          <MarkdownBody content={body} />
+          <PullRequestMarkdown content={body} />
         ) : (
           <p className="text-xs text-muted-foreground italic">No content</p>
         )}
@@ -304,14 +296,14 @@ export function PullRequestTimelineEvent({
     >
       {!isLast && (
         <div
-          className="absolute left-3 top-3 -bottom-3 w-px bg-border"
+          className="absolute top-3 -bottom-3 left-3 w-px bg-border"
           aria-hidden
         />
       )}
 
       <div
         className={cn(
-          "relative z-10 flex size-6 shrink-0 items-center justify-center",
+          "relative z-10 flex size-6 shrink-0 items-center justify-center"
         )}
       >
         {isCompact ? (
@@ -321,9 +313,7 @@ export function PullRequestTimelineEvent({
             {author?.avatarUrl && (
               <AvatarImage src={author.avatarUrl} alt={author.login} />
             )}
-            <AvatarFallback>
-              {author?.login[0]?.toUpperCase()}
-            </AvatarFallback>
+            <AvatarFallback>{author?.login[0]?.toUpperCase()}</AvatarFallback>
           </Avatar>
         )}
       </div>

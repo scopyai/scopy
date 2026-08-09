@@ -85,14 +85,10 @@ function OnboardingUsagePage() {
             />
 
             <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={goToDashboard}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
+              <Button type="button" variant="text" onClick={goToDashboard}>
                 Continue to dashboard
-                <ArrowRightIcon className="size-4" />
-              </button>
+                <ArrowRightIcon data-icon="inline-end" />
+              </Button>
             </div>
           </div>
         )}

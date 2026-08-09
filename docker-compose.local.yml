@@ -1,12 +1,51 @@
 services:
+  hatchet-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hatchet
+      POSTGRES_USER: hatchet
+      POSTGRES_PASSWORD: hatchet
+    volumes:
+      - hatchet-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hatchet -d hatchet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hatchet:
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8888"
+    environment:
+      DATABASE_URL: postgres://hatchet:hatchet@hatchet-db:5432/hatchet?sslmode=disable
+      SERVER_MSGQUEUE_KIND: postgres
+      SERVER_AUTH_COOKIE_DOMAIN: localhost
+      SERVER_AUTH_COOKIE_INSECURE: "t"
+      SERVER_AUTH_SET_EMAIL_VERIFIED: "t"
+      SERVER_GRPC_BIND_ADDRESS: 0.0.0.0
+      SERVER_GRPC_INSECURE: "t"
+      SERVER_GRPC_BROADCAST_ADDRESS: hatchet:7077
+      SERVER_GRPC_PORT: 7077
+      SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: hatchet:7077
+      SERVER_URL: http://localhost:8888
+    volumes:
+      - hatchet-config:/config
+    depends_on:
+      hatchet-db:
+        condition: service_healthy
+
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -15,41 +54,13 @@ services:
       timeout: 5s
       retries: 10
 
-  api-migrate:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-      target: migrate
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/app
-      BETTER_AUTH_SECRET: local-development-secret-change-me
-      BETTER_AUTH_URL: http://localhost:3001
-      FRONTEND_URL: http://localhost:3000
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      CREEM_API_KEY: ${CREEM_API_KEY}
-      CREEM_WEBHOOK_SECRET: ${CREEM_WEBHOOK_SECRET}
-      CREEM_TEST_MODE: ${CREEM_TEST_MODE:-true}
-      CREEM_PREMIUM_PRODUCT_ID: ${CREEM_PREMIUM_PRODUCT_ID}
-      CREEM_ULTRA_PRODUCT_ID: ${CREEM_ULTRA_PRODUCT_ID}
-      PORT: 3001
-    depends_on:
-      db:
-        condition: service_healthy
-    command:
-      [
-        "sh",
-        "-c",
-        "pnpm --filter api db:migrate && pnpm --filter api worker:migrate",
-      ]
-    restart: "no"
-
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
       target: api-runner
     environment:
+      APP_ENV: ${APP_ENV:-prod}
       DATABASE_URL: postgres://postgres:postgres@db:5432/app
       BETTER_AUTH_SECRET: local-development-secret-change-me
       BETTER_AUTH_URL: http://localhost:3001
@@ -67,14 +78,18 @@ services:
       GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
       GITHUB_APP_WEBHOOK_SECRET: ${GITHUB_APP_WEBHOOK_SECRET}
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
+      HATCHET_CLIENT_HOST_PORT: hatchet:7077
+      HATCHET_CLIENT_API_URL: http://hatchet:8888
+      HATCHET_CLIENT_TLS_STRATEGY: none
       PORT: 3001
     ports:
       - "3001:3001"
     depends_on:
       db:
         condition: service_healthy
-      api-migrate:
-        condition: service_completed_successfully
+      hatchet:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -86,6 +101,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   api-worker:
     build:
@@ -93,6 +109,7 @@ services:
       dockerfile: apps/api/Dockerfile
       target: worker-runner
     environment:
+      APP_ENV: ${APP_ENV:-prod}
       DATABASE_URL: postgres://postgres:postgres@db:5432/app
       FRONTEND_URL: http://localhost:3000
       GITHUB_APP_ID: ${GITHUB_APP_ID}
@@ -100,12 +117,31 @@ services:
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
+      HATCHET_CLIENT_HOST_PORT: hatchet:7077
+      HATCHET_CLIENT_API_URL: http://hatchet:8888
+      HATCHET_CLIENT_TLS_STRATEGY: none
+      HATCHET_CLIENT_WORKER_HEALTHCHECK_ENABLED: "true"
+      HATCHET_CLIENT_WORKER_HEALTHCHECK_PORT: 8001
     depends_on:
       db:
         condition: service_healthy
-      api-migrate:
-        condition: service_completed_successfully
-    command: ["node", "dist/worker.js"]
+      hatchet:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 2h10m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8001/health').then(async(r)=>{const b=await r.json();process.exit(r.ok&&b.status==='HEALTHY'?0:1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
   web:
     build:
@@ -121,6 +157,9 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres-data:
+  hatchet-postgres-data:
+  hatchet-config:

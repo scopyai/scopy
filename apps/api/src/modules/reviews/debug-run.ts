@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { pullRequest, repository } from "../../db/schema"
 import { workerEnv as env } from "../../env"
@@ -65,13 +65,34 @@ const createJsonReplacer = () => {
 const stringifyJson = (value: unknown) =>
   `${JSON.stringify(value, createJsonReplacer(), 2)}\n`
 
-export const createReviewRunRecorder = async (input: RecorderInput) => {
-  const runPath = path.resolve(
+type ReviewRunPathInput = {
+  reviewRunId: string
+  repositoryId: string
+  pullRequestNumber: number
+  headSha: string
+}
+
+const getReviewRunPath = (input: ReviewRunPathInput) =>
+  path.resolve(
     env.REVIEW_RUNS_DIR,
-    safeSegment(input.repo.id),
-    `pr-${input.pullRequest.number}-${safeSegment(input.pullRequest.headSha.slice(0, 12))}`,
+    safeSegment(input.repositoryId),
+    `pr-${input.pullRequestNumber}-${safeSegment(input.headSha.slice(0, 12))}`,
     safeSegment(input.reviewRunId)
   )
+
+export const cleanupReviewRunRecorder = async (input: ReviewRunPathInput) => {
+  if (env.APP_ENV !== "prod") return false
+  await rm(getReviewRunPath(input), { recursive: true, force: true })
+  return true
+}
+
+export const createReviewRunRecorder = async (input: RecorderInput) => {
+  const runPath = getReviewRunPath({
+    reviewRunId: input.reviewRunId,
+    repositoryId: input.repo.id,
+    pullRequestNumber: input.pullRequest.number,
+    headSha: input.pullRequest.headSha,
+  })
   const toolsPath = path.join(runPath, "tools")
   const stepsPath = path.join(runPath, "steps")
   let toolCallCount = 0

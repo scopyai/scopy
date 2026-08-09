@@ -109,7 +109,7 @@ function AnalyticsRoute() {
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader icon={BarChart3Icon} title="Analytics" />
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex flex-col gap-6">
           <AnalyticsFilters
             range={range}
@@ -159,7 +159,7 @@ function AnalyticsRoute() {
             <div
               className={cn(
                 "flex flex-col gap-6 transition-opacity duration-200",
-                isRefreshing && "pointer-events-none opacity-60",
+                isRefreshing && "pointer-events-none opacity-60"
               )}
               aria-busy={isRefreshing}
             >

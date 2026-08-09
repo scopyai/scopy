@@ -8,17 +8,19 @@ export type ReviewReasoningEffort =
 
 export const reviewAgentConfig = {
   main: {
-    reasoningEffort: "low" as ReviewReasoningEffort,
-    maxSteps: 16,
+    reasoningEffort: "medium" as ReviewReasoningEffort,
+    maxSteps: 40,
   },
   subagent: {
-    reasoningEffort: "low" as ReviewReasoningEffort,
+    reasoningEffort: "high" as ReviewReasoningEffort,
     maxSteps: 40,
+    concurrency: 1,
+    requireCompleteFileCoverage: true,
   },
   verifier: {
     reasoningEffort: "medium" as ReviewReasoningEffort,
     maxSteps: 18,
-    maxFindingsPerCall: 8,
+    concurrency: 4,
   },
   naturalLanguageLinter: {
     maxSteps: 5,
@@ -29,6 +31,11 @@ export const reviewAgentConfig = {
   },
   repositoryContext: {
     maxSteps: 40,
+  },
+  semanticIndex: {
+    // The latest Keycloak run sustained about 48 chunks/second. Keep uploads
+    // within the 20-second review budget and always prioritize changed files.
+    maxUploadChunks: 800,
   },
   openai: {
     serviceTier: "flex" as "flex" | "priority" | "default",
