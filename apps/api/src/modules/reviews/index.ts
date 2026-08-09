@@ -681,6 +681,31 @@ export const runReviewAnalysis = async ({
     onUse?: () => void
   ) => {
     const base = {
+      read_patch: tool({
+        description:
+          "Read the full diff patch for one changed file in this pull request.",
+        inputSchema: z.object({ file: z.string().min(1) }),
+        execute: async ({ file }) => {
+          onUse?.()
+          const entry = filteredFiles.find((item) => item.filename === file)
+          const omitted = omittedFiles.find((item) => item.filename === file)
+          const output = entry
+            ? { file, patch: truncateText(serializePullRequestFiles([entry])) }
+            : omitted
+              ? { file, patch: omitted.omittedReason ?? "Patch omitted." }
+              : {
+                  file,
+                  error:
+                    "Not a changed file in this pull request. Use an exact repository-relative path from the changed-line map.",
+                }
+          await recorder.recordToolCall({
+            name: `${scope}.read_patch`,
+            input: { file },
+            output,
+          })
+          return output
+        },
+      }),
       read_file: tool({
         description:
           "Read numbered lines from any repository file. Reads 300 lines by default and up to 800; prefer one large read over paging through a file in small chunks.",
@@ -1018,6 +1043,11 @@ export const runReviewAnalysis = async ({
       baseRef: pullRequest.baseRef,
       headRef: pullRequest.headRef,
       changedLineMap,
+      candidatePatch: truncateText(
+        serializePullRequestFiles(
+          filteredFiles.filter((file) => file.filename === candidate.file)
+        ) || "Patch unavailable."
+      ),
       candidate,
     })
     await recorder.writeText(`verifier/${safeId}/prompt.txt`, prompt)
@@ -1110,6 +1140,7 @@ export const runReviewAnalysis = async ({
     return {
       id: candidate.id,
       verdict: "escalate" as const,
+      pullRequestCause: "",
       unresolvedQuestion: reason,
       knownFacts: "No verifier result was produced.",
       locations: [],
@@ -1177,9 +1208,6 @@ export const runReviewAnalysis = async ({
 Pull request description: ${pullRequest.body ?? "(none)"}
 Base branch: ${pullRequest.baseRef}
 Head branch: ${pullRequest.headRef}
-
-Repository context:
-${preparedRepositoryContext.markdown}
 
 Changed files:
 ${diff}

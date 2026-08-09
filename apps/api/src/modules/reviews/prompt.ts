@@ -124,6 +124,7 @@ const validateReviewProof = ({
 export const reviewVerifierOutputSchema = z.object({
   id: z.string().min(1),
   verdict: z.enum(["accept", "reject", "escalate"]),
+  pullRequestCause: z.string(),
   ...reviewProofFields,
   failedCondition: z.string(),
   unresolvedQuestion: z.string(),
@@ -136,6 +137,12 @@ export const reviewVerifierVerdictSchema =
       validation.addIssue({ code: "custom", path: [path], message })
     if (output.verdict === "accept") {
       validateReviewProof({ proof: output, outcome: "accept", addIssue })
+      if (output.pullRequestCause.trim().length === 0) {
+        addIssue(
+          "pullRequestCause",
+          "pullRequestCause is required for accept."
+        )
+      }
     } else if (output.verdict === "reject") {
       validateReviewProof({ proof: output, outcome: "reject", addIssue })
       if (output.failedCondition.trim().length === 0) {
@@ -322,6 +329,8 @@ Try to falsify every claim before you choose a verdict. Do not infer one claim f
 
 Build the final proof only from code that you personally inspect. changeLink must identify the exact changed code that introduces or exposes the mismatch. Its proofLocations entry must use role "change" and overlap a changed line. In usefulness, name the exact affected implementation and user, the concrete effect, and why a fix is justified. Do not generalize beyond the exact inspected scope.
 
+In pullRequestCause, state how the base-to-head change introduces the mismatch, makes it newly reachable, or makes it materially worse. Use an empty string when the field does not apply.
+
 A cited location can support more than one proof field. Give it the role that best describes why it is cited; do not duplicate a location only to add another role. An accepted verdict must include changed-line proof with role "change".
 
 Verdicts:
@@ -340,6 +349,7 @@ Phase 1 - understand the change:
 Phase 2 - discover:
 - Call spawn_review_agents with tasks that cover every materially affected area.
 - For each task, set only the area to explore. The area can name a changed flow, component, or connected code surface. Do not put bug types, review instructions, expected depth, proof requirements, output requirements, or desired findings in it.
+- Create enough tasks to distribute the changed work reasonably evenly by complexity. Avoid one broad task containing most of the complex change while other tasks cover much smaller work.
 - An assigned area is a starting location, not a boundary. Discovery agents remain responsible for every distinct defect they encounter, including defects in changed tests and support code.
 - Tasks run one at a time. Each later task receives a compact list of earlier findings and must search for different defects.
 - The tool returns every candidate with a lightweight verifier verdict. The verifier's private proof is not shown to you. A verdict is a worker opinion, not a fact.
@@ -412,6 +422,7 @@ export const buildReviewVerifierPrompt = ({
   baseRef,
   headRef,
   changedLineMap,
+  candidatePatch,
   candidate,
 }: {
   title: string
@@ -419,6 +430,7 @@ export const buildReviewVerifierPrompt = ({
   baseRef: string
   headRef: string
   changedLineMap: string
+  candidatePatch: string
   candidate: CandidateFinding
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
@@ -427,6 +439,9 @@ Head branch: ${headRef}
 
 Changed-line map:
 ${changedLineMap}
+
+Candidate file patch:
+${candidatePatch}
 
 Candidate finding:
 ${renderCandidate(candidate, 0)}`
