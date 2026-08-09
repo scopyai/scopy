@@ -9,6 +9,7 @@ import {
   refundReviewCredits,
   reserveReviewCredits,
 } from "../billing/usage"
+import { createGitHubApp } from "../github/service"
 import {
   annotatePullRequestFilesForReview,
   countPullRequestChangedLines,
@@ -447,6 +448,29 @@ export const publishReviewPullRequest = async (
   const analysis = asAnalysis(run.result)
   if (!analysis) return
 
+  const octokit = await createGitHubApp().getInstallationOctokit(
+    Number(run.pullRequest.repository.workspace.providerInstallationId)
+  )
+  const currentPullRequest = await octokit.request(
+    "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+    {
+      owner: run.pullRequest.repository.owner,
+      repo: run.pullRequest.repository.name,
+      pull_number: run.pullRequest.number,
+    }
+  )
+  if (currentPullRequest.data.head.sha !== run.headSha) {
+    await refundReviewCredits({
+      workspaceId: run.pullRequest.repository.workspace.id,
+      reviewRunId,
+    })
+    await db
+      .update(reviewRun)
+      .set({ status: "superseded", completedAt: new Date() })
+      .where(eq(reviewRun.id, reviewRunId))
+    return
+  }
+
   const result = await publishReviewAnalysis({
     reviewRunId,
     pullRequest: run.pullRequest,
@@ -561,10 +585,28 @@ export const failReviewPullRequest = async (
   error?: unknown
 ) => {
   const run = await loadReviewRun(reviewRunId)
-  if (!run || isTerminal(run)) return
+  if (!run || (isTerminal(run) && run.status !== "failed")) return
   const repo = run.pullRequest.repository
   const message =
     error instanceof Error ? error.message : String(error ?? "Review failed")
+  const completedAt = run.completedAt ?? new Date()
+
+  if (run.status !== "failed") {
+    await db
+      .update(reviewRun)
+      .set({
+        status: "failed",
+        error: message,
+        result: {
+          kind: "failed",
+          triggerSource: triggerSourceFor(run),
+          modelId: REVIEW_MODEL,
+          completedAt: completedAt.toISOString(),
+        },
+        completedAt,
+      })
+      .where(eq(reviewRun.id, reviewRunId))
+  }
 
   await refundReviewCredits({ workspaceId: repo.workspace.id, reviewRunId })
   let commentId: number | undefined
@@ -583,22 +625,20 @@ export const failReviewPullRequest = async (
     })
   }
 
-  const completedAt = new Date()
-  await db
-    .update(reviewRun)
-    .set({
-      status: "failed",
-      error: message,
-      result: {
-        kind: "failed",
-        triggerSource: triggerSourceFor(run),
-        modelId: REVIEW_MODEL,
-        commentId,
-        completedAt: completedAt.toISOString(),
-      },
-      completedAt,
-    })
-    .where(eq(reviewRun.id, reviewRunId))
+  if (commentId) {
+    await db
+      .update(reviewRun)
+      .set({
+        result: {
+          kind: "failed",
+          triggerSource: triggerSourceFor(run),
+          modelId: REVIEW_MODEL,
+          commentId,
+          completedAt: completedAt.toISOString(),
+        },
+      })
+      .where(eq(reviewRun.id, reviewRunId))
+  }
 
   await syncReviewCheck({
     run,
@@ -607,7 +647,7 @@ export const failReviewPullRequest = async (
       conclusion: "failure",
       output: {
         title: "Review failed",
-        summary: "The review could not be completed after two attempts.",
+        summary: "The review could not be completed after all retries.",
       },
     },
   })

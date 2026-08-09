@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "../../db/client"
 import { repository, reviewMemory } from "../../db/schema"
+import { workerEnv } from "../../env"
 import { createGitHubApp } from "../github/service"
 import { createReviewLlm, reviewModels } from "./llm"
 import { replaceEmDashes } from "./text"
@@ -15,6 +16,7 @@ export type FindingMarkerData = {
   severity: string
   title: string
   body: string
+  headSha?: string
 }
 
 export const renderFindingMarker = ({
@@ -24,8 +26,9 @@ export const renderFindingMarker = ({
   severity,
   title,
   body,
+  headSha,
 }: FindingMarkerData) => {
-  const data = { file, startLine, endLine, severity, title, body }
+  const data = { file, startLine, endLine, severity, title, body, headSha }
   const encoded = Buffer.from(JSON.stringify(data)).toString("base64url")
   return `<!-- scopy:finding ${encoded} -->`
 }
@@ -201,7 +204,18 @@ export const distillReviewMemory = async ({
   const root = pullComments.find(
     (comment) => comment.id === reply.in_reply_to_id
   )
-  const finding = root && parseFindingMarker(root.body)
+  const expectedBot = workerEnv.GITHUB_APP_SLUG
+    ? `${workerEnv.GITHUB_APP_SLUG}[bot]`.toLowerCase()
+    : null
+  if (
+    !root ||
+    !expectedBot ||
+    root.user.type !== "Bot" ||
+    root.user.login.toLowerCase() !== expectedBot
+  ) {
+    return
+  }
+  const finding = parseFindingMarker(root.body)
   if (!finding) return
 
   const stripMarker = (body: string) =>

@@ -447,6 +447,7 @@ export const buildReviewVerifierPrompt = ({
   changedLineMap,
   candidatePatch,
   candidate,
+  reviewMemories,
 }: {
   title: string
   body: string | null
@@ -455,10 +456,14 @@ export const buildReviewVerifierPrompt = ({
   changedLineMap: string
   candidatePatch: string
   candidate: CandidateFinding
+  reviewMemories: string
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
 Head branch: ${headRef}
+
+Repository review memories:
+${reviewMemories}
 
 Changed-line map:
 ${changedLineMap}
@@ -477,6 +482,7 @@ export const buildMainReviewPrompt = ({
   changedFilesOverview,
   affectedSymbols,
   repositoryContext,
+  reviewMemories,
 }: {
   title: string
   body: string | null
@@ -485,6 +491,7 @@ export const buildMainReviewPrompt = ({
   changedFilesOverview: string
   affectedSymbols: string
   repositoryContext?: string | null
+  reviewMemories: string
 }) => `Pull request title: ${title}
 Pull request description: ${body ?? "(none)"}
 Base branch: ${baseRef}
@@ -492,6 +499,9 @@ Head branch: ${headRef}
 
 Repository context:
 ${repositoryContext ?? "(none)"}
+
+Repository review memories:
+${reviewMemories}
 
 Changed files overview (use the read_patch tool for a file's full diff):
 ${changedFilesOverview}

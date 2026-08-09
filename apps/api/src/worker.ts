@@ -1,5 +1,14 @@
 import { pool } from "./db/client"
 import { createHatchetClient, createHatchetJobs } from "./jobs/hatchet"
+import { enqueueDueDocSourceCrawls } from "./modules/docs/service"
+import { workerEnv } from "./env"
+
+await enqueueDueDocSourceCrawls({
+  logger: {
+    info: (message, details) => console.log(message, details ?? {}),
+  },
+  intervalHours: workerEnv.DOCS_RECRAWL_INTERVAL_HOURS,
+}).catch((error) => console.error("Startup docs sweep failed", error))
 
 const hatchet = createHatchetClient()
 const jobs = createHatchetJobs(hatchet)

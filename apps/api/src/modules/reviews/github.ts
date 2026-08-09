@@ -264,7 +264,8 @@ const feedbackLink = (finding: ReviewFinding, repoFullName: string) => {
 
 export const renderInlineReviewComment = (
   finding: ReviewFinding,
-  repoFullName: string
+  repoFullName: string,
+  headSha: string
 ) =>
   replaceEmDashes([
     `**[${findingLabel(finding)}] ${finding.title}**`,
@@ -275,16 +276,17 @@ export const renderInlineReviewComment = (
     "",
     feedbackLink(finding, repoFullName),
     "",
-    renderFindingMarker(finding),
+    renderFindingMarker({ ...finding, headSha }),
   ].join("\n"))
 
 export const buildPullRequestReviewComments = (
   findings: ReviewFinding[],
-  repoFullName: string
+  repoFullName: string,
+  headSha: string
 ): PullRequestReviewComment[] =>
   findings.map((finding) => ({
     path: finding.file,
-    body: renderInlineReviewComment(finding, repoFullName),
+    body: renderInlineReviewComment(finding, repoFullName, headSha),
     line: finding.endLine,
     side: "RIGHT",
     ...(finding.startLine !== finding.endLine
@@ -327,7 +329,7 @@ export const publishPullRequestReview = async ({
     }
   )
   const unpublishedFindings = findings.filter((finding) => {
-    const marker = renderFindingMarker(finding)
+    const marker = renderFindingMarker({ ...finding, headSha })
     return !existingComments.some(
       (comment) =>
         typeof comment.body === "string" && comment.body.includes(marker)
@@ -337,7 +339,8 @@ export const publishPullRequestReview = async ({
 
   const comments = buildPullRequestReviewComments(
     unpublishedFindings,
-    repo.fullName
+    repo.fullName,
+    headSha
   )
   const createReview = (reviewComments: PullRequestReviewComment[]) =>
     octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {

@@ -109,7 +109,7 @@ export const createHatchetJobs = (
   const docsSweep = hatchet.task<Record<string, never>, { enqueued: string[] }>(
     {
       name: "crawl-all-doc-sources",
-      onCrons: ["0 4 * * 0"],
+      onCrons: ["0 * * * *"],
       ...retryPolicy,
       executionTimeout: "10m",
       fn: async (_input, ctx) => ({
@@ -166,7 +166,8 @@ export const createHatchetJobs = (
   })
   review.onFailure({
     name: "fail-review",
-    ...retryPolicy,
+    retries: 5,
+    backoff: retryPolicy.backoff,
     executionTimeout: "10m",
     fn: async (input, ctx) => {
       const logger = loggerFor(ctx)

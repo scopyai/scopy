@@ -51,11 +51,12 @@ export type LibrarianOptions = {
 
 const toolText = (text: string, maxBytes = DEFAULT_TOOL_BYTES) => {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
+  const suffix = "\n\n[truncated]"
   let output = text
-  while (Buffer.byteLength(output, "utf8") > maxBytes) {
+  while (Buffer.byteLength(output + suffix, "utf8") > maxBytes) {
     output = output.slice(0, Math.floor(output.length * 0.9))
   }
-  return `${output}\n\n[truncated]`
+  return output + suffix
 }
 
 const librarianInstructions = `You are a documentation librarian. You answer one question about a specific library using ONLY its indexed documentation.

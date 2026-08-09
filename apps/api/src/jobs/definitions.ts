@@ -16,7 +16,9 @@ const enqueueJob = (
   return executor.execute(sql`
     insert into job_outbox (id, job_name, payload, idempotency_key)
     values (${id}, ${jobName}, ${JSON.stringify(payload)}::jsonb, ${idempotencyKey})
-    on conflict (idempotency_key) where published_at is null do nothing
+    on conflict (idempotency_key)
+      where published_at is null and failed_at is null
+      do nothing
   `)
 }
 

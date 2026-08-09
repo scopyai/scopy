@@ -134,11 +134,13 @@ const boundedInteger = (
 
 const truncateSource = (source: string | undefined, maxBytes: number) => {
   if (!source || Buffer.byteLength(source, "utf8") <= maxBytes) return source
+  const suffix =
+    "\n\n[truncated; request a larger maxSourceBytes or use read_file]"
   let output = source
-  while (Buffer.byteLength(output, "utf8") > maxBytes) {
+  while (Buffer.byteLength(output + suffix, "utf8") > maxBytes) {
     output = output.slice(0, Math.floor(output.length * 0.9))
   }
-  return `${output}\n\n[truncated; request a larger maxSourceBytes or use read_file]`
+  return output + suffix
 }
 
 export const getSymbolDefinition = async ({

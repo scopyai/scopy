@@ -4,7 +4,6 @@ export type ReviewIndexDecision = {
 }
 
 const hardIgnoredPathParts = new Set([
-  ".agents",
   ".codex",
   ".git",
   ".github",
@@ -21,6 +20,7 @@ const hardIgnoredPathParts = new Set([
 ])
 
 const softIgnoredPathParts = new Set([
+  ".agents",
   "__fixtures__",
   "docs",
   "examples",

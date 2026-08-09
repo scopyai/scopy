@@ -186,18 +186,6 @@ export const handleGitHubWebhook = async ({
     return
   }
 
-  if (
-    event.eventName === "pull_request_review_comment" &&
-    (payload.action === "created" || payload.action === "edited") &&
-    payload.comment?.id &&
-    payload.comment.in_reply_to_id
-  ) {
-    await jobs.distillReviewMemory.enqueue(db, {
-      repositoryId: repo.id,
-      commentId: payload.comment.id,
-    })
-  }
-
   const savedPullRequest = await syncGitHubPullRequest(repo, number)
 
   if (
@@ -253,6 +241,18 @@ export const handleGitHubWebhook = async ({
     headSha: savedPullRequest.headSha,
     triggerSource,
   })
+
+  if (
+    event.eventName === "pull_request_review_comment" &&
+    (payload.action === "created" || payload.action === "edited") &&
+    payload.comment?.id &&
+    payload.comment.in_reply_to_id
+  ) {
+    await jobs.distillReviewMemory.enqueue(db, {
+      repositoryId: repo.id,
+      commentId: payload.comment.id,
+    })
+  }
 
   return triggerSource
     ? {

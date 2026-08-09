@@ -2,6 +2,7 @@ import {
   ChevronsUpDown,
   LifeBuoyIcon,
   LogOutIcon,
+  MessageSquareIcon,
   MoonIcon,
   SunIcon,
 } from "lucide-react"
@@ -30,12 +31,14 @@ import { cn } from "@workspace/ui/lib/utils"
 import { authClient } from "@/lib/auth-client"
 import { useMeUser } from "@/hooks/use-me"
 import { SupportDialog } from "./sidebar-support"
+import { FeedbackDialog } from "./sidebar-feedback"
 
 export function UserMenu({ compact = false }: { compact?: boolean }) {
   const { data: session, isPending: sessionPending } = authClient.useSession()
   const { data: user } = useMeUser()
   const { theme, setTheme } = useTheme()
   const [supportOpen, setSupportOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   if (sessionPending) {
     return (
@@ -154,6 +157,13 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
                 <LifeBuoyIcon />
                 Support
               </DropdownMenuItem>
+              <DropdownMenuItem
+                className="min-h-11 gap-2"
+                onSelect={() => setFeedbackOpen(true)}
+              >
+                <MessageSquareIcon />
+                Feedback
+              </DropdownMenuItem>
             </>
           )}
           <DropdownMenuSeparator />
@@ -168,7 +178,10 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         </DropdownMenuContent>
       </DropdownMenu>
       {compact && (
-        <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
+        <>
+          <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
+          <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+        </>
       )}
     </>
   )

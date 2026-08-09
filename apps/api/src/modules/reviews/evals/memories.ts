@@ -157,10 +157,9 @@ for (const testCase of cases) {
       problems.push(`action ${action}`)
     if (
       (action === "update" || action === "retract") &&
-      object.memoryId &&
       !testCase.memories.some((memory) => memory.id === object.memoryId)
     )
-      problems.push(`unknown target ${object.memoryId}`)
+      problems.push(`missing or unknown target ${object.memoryId}`)
     if (content && testCase.forbidContent?.test(content))
       problems.push(`forbidden content: ${content}`)
     if (

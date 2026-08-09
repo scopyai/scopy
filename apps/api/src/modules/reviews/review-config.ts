@@ -17,7 +17,7 @@ export const defaultWorkspaceReviewConfig: ReviewConfigValues = {
   reviewDrafts: false,
   baseBranchPatterns: ["main", "master"],
   pathIncludePatterns: [],
-  pathExcludePatterns: ["**/*.json"],
+  pathExcludePatterns: ["**/*.json", "**/.agents/**"],
   naturalLanguageRules: [],
   maxReviewChangedLines: 15_000,
 }

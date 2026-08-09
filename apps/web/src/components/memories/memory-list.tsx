@@ -50,7 +50,7 @@ export function MemoryList({
   canEdit,
   showRepository = true,
 }: MemoryListProps) {
-  const { data: memories, isLoading } = useWorkspaceMemories(
+  const { data: memories, isLoading, isError, refetch } = useWorkspaceMemories(
     workspaceId,
     repositoryId
   )
@@ -60,6 +60,17 @@ export function MemoryList({
       <div className="flex flex-col gap-2">
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 py-10 text-center">
+        <p className="text-sm font-medium">Could not load memories</p>
+        <Button type="button" variant="outline" onClick={() => void refetch()}>
+          Try again
+        </Button>
       </div>
     )
   }

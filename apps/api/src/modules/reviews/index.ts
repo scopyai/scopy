@@ -1,4 +1,5 @@
 import { Output, ToolLoopAgent, stepCountIs, tool, type ToolSet } from "ai"
+import { and, eq } from "drizzle-orm"
 import {
   buildDiffContext,
   chunksForRepositoryIndex,
@@ -12,7 +13,8 @@ import {
   parseUnifiedDiff,
 } from "tools"
 import { z } from "zod"
-import type { pullRequest, repository } from "../../db/schema"
+import { db } from "../../db/client"
+import { reviewMemory, type pullRequest, type repository } from "../../db/schema"
 import {
   calculateVectorNetworkCostMicrocents,
   calculateVectorQueryCostMicrocents,
@@ -325,6 +327,17 @@ export const runReviewAnalysis = async ({
     deletions,
     diffChangedLineCount,
   } = preflight
+  const activeMemories = await db.query.reviewMemory.findMany({
+    where: and(
+      eq(reviewMemory.repositoryId, repository.id),
+      eq(reviewMemory.enabled, true)
+    ),
+    columns: { content: true },
+  })
+  const reviewMemories =
+    activeMemories.length > 0
+      ? activeMemories.map((memory) => `- ${memory.content}`).join("\n")
+      : "(none)"
   await recorder.writeJson("review-config.json", reviewConfig)
   await recorder.writeJson("filtered-files.json", filteredFiles)
   await recorder.writeJson("omitted-files.json", omittedFiles)
@@ -1281,6 +1294,7 @@ Usefulness: ${decision.usefulness}`,
         ) || "Patch unavailable."
       ),
       candidate,
+      reviewMemories,
     })
     await recorder.writeText(`verifier/${safeId}/prompt.txt`, prompt)
     logger.info("Review finding verification started", {
@@ -1373,9 +1387,17 @@ Usefulness: ${decision.usefulness}`,
       id: candidate.id,
       verdict: "escalate" as const,
       pullRequestRelevance: "",
+      entryPath: "",
+      actualResult: "",
+      expectedResult: "",
+      expectationSource: "none" as const,
+      prChangeEvidence: "",
+      counterEvidence: "",
+      usefulness: "",
+      proofLocations: [],
+      failedCondition: "",
       unresolvedQuestion: reason,
       knownFacts: "No verifier result was produced.",
-      locations: [],
       failedOpen: true,
     }
   }
@@ -1440,6 +1462,9 @@ Usefulness: ${decision.usefulness}`,
 Pull request description: ${pullRequest.body ?? "(none)"}
 Base branch: ${pullRequest.baseRef}
 Head branch: ${pullRequest.headRef}
+
+Repository review memories:
+${reviewMemories}
 
 Changed files:
 ${diff}
@@ -2231,6 +2256,7 @@ ${task.area}`
     changedFilesOverview,
     affectedSymbols,
     repositoryContext: preparedRepositoryContext.markdown,
+    reviewMemories,
   })
   await recorder.writeText("context/main-review-prompt.txt", mainPrompt)
   await recorder.writeJson("context/main-review-prompt-stats.json", {

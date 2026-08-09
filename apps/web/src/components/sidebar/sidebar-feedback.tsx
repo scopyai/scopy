@@ -2,6 +2,12 @@ import { useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent } from "react"
 import { ArrowUpIcon, MessageSquareIcon } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/dialog"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { cn } from "@workspace/ui/lib/utils"
 import { useSubmitFeedback } from "@/hooks/use-submit-feedback"
@@ -76,5 +82,49 @@ export function SidebarFeedback({ onExpand }: { onExpand: () => void }) {
         </div>
       </div>
     </>
+  )
+}
+
+export function FeedbackDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [message, setMessage] = useState("")
+  const { mutate, isPending } = useSubmitFeedback()
+
+  const submit = () => {
+    const trimmed = message.trim()
+    if (!trimmed) return
+    mutate(trimmed, {
+      onSuccess: () => {
+        setMessage("")
+        onOpenChange(false)
+      },
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Send feedback</DialogTitle>
+        </DialogHeader>
+        <Textarea
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="For feedback or anything else..."
+          rows={4}
+          disabled={isPending}
+        />
+        <div className="flex justify-end">
+          <Button onClick={submit} disabled={isPending || !message.trim()}>
+            {isPending ? "Sending..." : "Send feedback"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

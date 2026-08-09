@@ -468,30 +468,29 @@ export const syncRepositoryPullRequests = async (
   }
 
   const octokit = await getRepositoryWorkspaceOctokit(repo)
-  const openPullRequests = (await octokit.paginate(
-    "GET /repos/{owner}/{repo}/pulls",
-    {
+  const [openPullRequests, knownPullRequests] = await Promise.all([
+    octokit.paginate("GET /repos/{owner}/{repo}/pulls", {
       owner: repo.owner,
       repo: repo.name,
       state: "open",
       per_page: 100,
-    }
-  )) as GitHubPullRequest[]
+    }),
+    db
+      .select({ number: pullRequest.number })
+      .from(pullRequest)
+      .where(eq(pullRequest.repositoryId, repo.id)),
+  ])
+  const numbers = new Set([
+    ...(openPullRequests as GitHubPullRequest[]).map((item) => item.number),
+    ...knownPullRequests.map((item) => item.number),
+  ])
 
-  for (const githubPullRequest of openPullRequests) {
-    const values = buildPullRequestValues(repo.id, githubPullRequest)
-    const savedPullRequest = await upsertPullRequest(values)
-
-    await ensureInitialPullRequestLifecycleEvent({
-      pullRequestId: savedPullRequest.id,
-      author: values.author,
-      htmlUrl: values.htmlUrl,
-      providerCreatedAt: values.providerCreatedAt,
-    })
+  for (const number of numbers) {
+    await syncGitHubPullRequest(repo, number)
   }
 
   return {
-    synced: openPullRequests.length,
+    synced: numbers.size,
   }
 }
 
