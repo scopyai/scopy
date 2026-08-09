@@ -8,7 +8,7 @@ import {
   type RepositoryCodeIndexProgress,
 } from "tools"
 import type { pullRequest, repository } from "../../db/schema"
-import { workerEnv as env } from "../../env"
+import { workerEnv as env } from "../../env-worker"
 import { createGitHubInstallationAccessToken } from "../github/service"
 
 const execFileAsync = promisify(execFile)

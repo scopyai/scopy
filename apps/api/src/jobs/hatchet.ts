@@ -4,7 +4,7 @@ import {
   type Context,
 } from "@hatchet-dev/typescript-sdk/v1"
 import { z } from "zod"
-import { workerEnv } from "../env"
+import { workerEnv } from "../env-worker"
 import { crawlDocSource } from "../modules/docs/crawler"
 import { enqueueDueDocSourceCrawls } from "../modules/docs/service"
 import { distillReviewMemory } from "../modules/reviews/memories"
