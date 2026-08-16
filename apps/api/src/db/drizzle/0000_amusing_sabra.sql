@@ -1,4 +1,3 @@
-DROP SCHEMA IF EXISTS "graphile_worker" CASCADE;--> statement-breakpoint
 CREATE TYPE "public"."doc_source_status" AS ENUM('idle', 'crawling', 'error');--> statement-breakpoint
 CREATE TYPE "public"."provider_account_type" AS ENUM('user', 'organization');--> statement-breakpoint
 CREATE TYPE "public"."pull_request_state" AS ENUM('open', 'closed', 'merged');--> statement-breakpoint
@@ -70,22 +69,6 @@ CREATE TABLE "doc_source" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "job_outbox" (
-	"id" text PRIMARY KEY NOT NULL,
-	"job_name" text NOT NULL,
-	"payload" jsonb NOT NULL,
-	"idempotency_key" text NOT NULL,
-	"attempts" integer DEFAULT 0 NOT NULL,
-	"available_at" timestamp DEFAULT now() NOT NULL,
-	"locked_at" timestamp,
-	"published_at" timestamp,
-	"failed_at" timestamp,
-	"hatchet_run_id" text,
-	"last_error" text,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "pull_request" (
 	"id" text PRIMARY KEY NOT NULL,
 	"repository_id" text NOT NULL,
@@ -107,7 +90,6 @@ CREATE TABLE "pull_request" (
 	"merged_at" timestamp,
 	"provider_created_at" timestamp NOT NULL,
 	"provider_updated_at" timestamp NOT NULL,
-	"last_synced_at" timestamp NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -151,7 +133,7 @@ CREATE TABLE "repository" (
 	"excluded_doc_libraries" jsonb,
 	"archived" boolean DEFAULT false NOT NULL,
 	"provider_access_removed_at" timestamp,
-	"last_synced_at" timestamp,
+	"pull_request_sync_status" text DEFAULT 'pending' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -279,9 +261,7 @@ CREATE TABLE "webhook_event" (
 	"workspace_id" text,
 	"payload" jsonb NOT NULL,
 	"received_at" timestamp DEFAULT now() NOT NULL,
-	"processing_started_at" timestamp,
-	"processed_at" timestamp,
-	"processing_error" text
+	"processed_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "workspace" (
@@ -304,7 +284,6 @@ CREATE TABLE "workspace" (
 	"max_review_changed_lines" integer NOT NULL,
 	"installed_by_user_id" text,
 	"installed_at" timestamp DEFAULT now() NOT NULL,
-	"last_synced_at" timestamp,
 	"billing_tier" "workspace_billing_tier" DEFAULT 'free' NOT NULL,
 	"billing_status" text DEFAULT 'free' NOT NULL,
 	"included_credit_balance" integer DEFAULT 0 NOT NULL,
@@ -382,15 +361,10 @@ CREATE INDEX "doc_page_source_last_seen_idx" ON "doc_page" USING btree ("source_
 CREATE UNIQUE INDEX "doc_source_global_slug_idx" ON "doc_source" USING btree ("slug") WHERE "doc_source"."workspace_id" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "doc_source_workspace_slug_idx" ON "doc_source" USING btree ("workspace_id","slug") WHERE "doc_source"."workspace_id" is not null;--> statement-breakpoint
 CREATE INDEX "doc_source_workspace_id_idx" ON "doc_source" USING btree ("workspace_id");--> statement-breakpoint
-CREATE INDEX "job_outbox_dispatch_idx" ON "job_outbox" USING btree ("published_at","available_at","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "job_outbox_pending_idempotency_idx" ON "job_outbox" USING btree ("idempotency_key") WHERE "job_outbox"."published_at" is null and "job_outbox"."failed_at" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "pull_request_repository_provider_id_idx" ON "pull_request" USING btree ("repository_id","provider_pull_request_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "pull_request_repository_number_idx" ON "pull_request" USING btree ("repository_id","number");--> statement-breakpoint
-CREATE INDEX "pull_request_repository_id_idx" ON "pull_request" USING btree ("repository_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "pull_request_timeline_external_key_idx" ON "pull_request_timeline_event" USING btree ("pull_request_id","external_key");--> statement-breakpoint
-CREATE INDEX "pull_request_timeline_pull_request_id_idx" ON "pull_request_timeline_event" USING btree ("pull_request_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "repository_workspace_provider_id_idx" ON "repository" USING btree ("workspace_id","provider_repository_id");--> statement-breakpoint
-CREATE INDEX "repository_workspace_id_idx" ON "repository" USING btree ("workspace_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "repository_context_repository_id_base_sha_idx" ON "repository_context" USING btree ("repository_id","base_sha");--> statement-breakpoint
 CREATE INDEX "repository_context_base_sha_idx" ON "repository_context" USING btree ("base_sha");--> statement-breakpoint
 CREATE INDEX "review_finding_review_run_id_idx" ON "review_finding" USING btree ("review_run_id");--> statement-breakpoint
@@ -400,7 +374,6 @@ CREATE INDEX "review_finding_language_idx" ON "review_finding" USING btree ("lan
 CREATE INDEX "review_memory_repository_id_idx" ON "review_memory" USING btree ("repository_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "review_memory_source_comment_id_idx" ON "review_memory" USING btree ("source_comment_id");--> statement-breakpoint
 CREATE INDEX "review_run_pull_request_head_sha_idx" ON "review_run" USING btree ("pull_request_id","head_sha");--> statement-breakpoint
-CREATE INDEX "review_run_pull_request_id_idx" ON "review_run" USING btree ("pull_request_id");--> statement-breakpoint
 CREATE INDEX "review_run_trigger_webhook_event_id_idx" ON "review_run" USING btree ("trigger_webhook_event_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "review_usage_review_run_id_idx" ON "review_usage" USING btree ("review_run_id");--> statement-breakpoint
 CREATE INDEX "review_usage_workspace_created_at_idx" ON "review_usage" USING btree ("workspace_id","created_at");--> statement-breakpoint

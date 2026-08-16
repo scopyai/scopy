@@ -1,5 +1,5 @@
 {
-  "id": "a1dfb3bc-1c60-4c90-9e21-429fbe69d5f8",
+  "id": "77d883dc-50a5-477f-8071-a1449a13c5e3",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -576,145 +576,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.job_outbox": {
-      "name": "job_outbox",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "job_name": {
-          "name": "job_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "locked_at": {
-          "name": "locked_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "failed_at": {
-          "name": "failed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hatchet_run_id": {
-          "name": "hatchet_run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "job_outbox_dispatch_idx": {
-          "name": "job_outbox_dispatch_idx",
-          "columns": [
-            {
-              "expression": "published_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "available_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "job_outbox_pending_idempotency_idx": {
-          "name": "job_outbox_pending_idempotency_idx",
-          "columns": [
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"job_outbox\".\"published_at\" is null and \"job_outbox\".\"failed_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.pull_request": {
       "name": "pull_request",
       "schema": "",
@@ -843,12 +704,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -903,21 +758,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pull_request_repository_id_idx": {
-          "name": "pull_request_repository_id_idx",
-          "columns": [
-            {
-              "expression": "repository_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1055,21 +895,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pull_request_timeline_pull_request_id_idx": {
-          "name": "pull_request_timeline_pull_request_id_idx",
-          "columns": [
-            {
-              "expression": "pull_request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1228,11 +1053,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp",
+        "pull_request_sync_status": {
+          "name": "pull_request_sync_status",
+          "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'pending'"
         },
         "created_at": {
           "name": "created_at",
@@ -1267,21 +1093,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "repository_workspace_id_idx": {
-          "name": "repository_workspace_id_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1794,21 +1605,6 @@
             },
             {
               "expression": "head_sha",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "review_run_pull_request_id_idx": {
-          "name": "review_run_pull_request_id_idx",
-          "columns": [
-            {
-              "expression": "pull_request_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2448,21 +2244,9 @@
           "notNull": true,
           "default": "now()"
         },
-        "processing_started_at": {
-          "name": "processing_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "processed_at": {
           "name": "processed_at",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "processing_error": {
-          "name": "processing_error",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         }
@@ -2654,12 +2438,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "billing_tier": {
           "name": "billing_tier",
