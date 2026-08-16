@@ -4,10 +4,7 @@ import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
 import { user, workspace, workspaceMember } from "../../db/schema"
 import { apiEnv as env } from "../../env-api"
-import {
-  getGitHubInstallation,
-  listGitHubInstallationRepositories,
-} from "./service"
+import { getGitHubInstallation } from "./service"
 import {
   getGitHubInstallUrl,
   getGitHubUserAuthorizationUrl,
@@ -15,7 +12,7 @@ import {
 } from "./user-auth"
 import {
   PersonalGitHubWorkspaceAlreadyConnectedError,
-  syncWorkspaceRepositories,
+  syncGitHubWorkspaceRepositories,
   upsertGitHubWorkspace,
 } from "../workspaces/service"
 
@@ -132,11 +129,9 @@ const connectGitHubInstallation = async (
     initialReviewCredits:
       source === "onboarding" ? env.SIGNUP_REVIEW_CREDITS : 0,
   })
-  const repositories = await listGitHubInstallationRepositories(installationId)
-
-  await syncWorkspaceRepositories(
+  await syncGitHubWorkspaceRepositories(
     savedWorkspace.id,
-    repositories,
+    installationId,
     installation.repository_selection
   )
 
@@ -241,12 +236,9 @@ const handleInstallationCallback = async ({
       }
 
       const installation = await getGitHubInstallation(installationId)
-      const repositories =
-        await listGitHubInstallationRepositories(installationId)
-
-      await syncWorkspaceRepositories(
+      await syncGitHubWorkspaceRepositories(
         existingWorkspace.workspace.id,
-        repositories,
+        installationId,
         installation.repository_selection
       )
 
@@ -302,11 +294,10 @@ export const githubRoutes = protectedRoute("/github")
 
     try {
       for (const row of workspaces) {
-        const repositories = await listGitHubInstallationRepositories(
+        await syncGitHubWorkspaceRepositories(
+          row.workspace.id,
           row.workspace.providerInstallationId
         )
-
-        await syncWorkspaceRepositories(row.workspace.id, repositories)
       }
 
       return {

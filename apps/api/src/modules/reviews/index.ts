@@ -4,12 +4,9 @@ import {
   buildDiffContext,
   chunksForRepositoryIndex,
   countRepositoryChunks,
-  getSymbolCallers,
-  getSymbolDefinition,
   indexReviewCodebase,
   readRepositoryFile,
   searchReviewCode,
-  searchRepositoryText,
   parseUnifiedDiff,
 } from "tools"
 import { z } from "zod"
@@ -92,6 +89,7 @@ import { queryDocsLibrarian } from "../docs/librarian"
 import { resolveDocSource, searchDocSourceChunks } from "../docs/search"
 import { workerEnv as env } from "../../env-worker"
 import { prepareRepositoryContextForReview } from "./repository-context"
+import { createRepositoryInspectionTools } from "./repository-tools"
 import { prepareReviewRuntime, serializeCodeIndexArtifact } from "./runtime"
 import type { ReviewConfigValues } from "./review-config"
 import { textBytes, truncateText } from "./text"
@@ -742,122 +740,13 @@ export const runReviewAnalysis = async ({
           return output
         },
       }),
-      read_file: tool({
-        description:
-          "Read numbered repository lines. Reads 120 lines by default and up to 800. Request a larger maxLines only when the next range is required.",
-        inputSchema: z.object({
-          file: z.string().min(1),
-          startLine: z.number().int().positive().optional(),
-          maxLines: z.number().int().positive().max(800).optional(),
-        }),
-        execute: async ({ file, startLine, maxLines = 120 }) => {
-          onUse?.()
-          const input = { file, startLine, maxLines }
-          const output = await readRepositoryFile({
-            repository: runtime.paths.repositoryPath,
-            file,
-            startLine,
-            maxLines,
-          })
-          onFileRead?.(file)
-          await recorder.recordToolCall({
-            name: `${scope}.read_file`,
-            input,
-            output,
-          })
-          return output
-        },
-      }),
-      get_symbol_definition: tool({
-        description:
-          "Get symbol definitions, locations, and bounded source. Returns 3 definitions by default; use offset, limit, or maxSourceBytes to request more.",
-        inputSchema: z.object({
-          symbol: z.string().min(1),
-          offset: z.number().int().nonnegative().optional(),
-          limit: z.number().int().positive().max(20).optional(),
-          maxSourceBytes: z
-            .number()
-            .int()
-            .min(1_000)
-            .max(40_000)
-            .optional(),
-        }),
-        execute: async ({ symbol, offset, limit, maxSourceBytes }) => {
-          onUse?.()
-          const input = { symbol, offset, limit, maxSourceBytes }
-          const result = await getSymbolDefinition({
-            repository: runtime.paths.repositoryPath,
-            index: runtime.codeIndex,
-            symbol,
-            offset,
-            limit,
-            maxSourceBytes,
-          })
-          for (const definition of result.json.definitions) {
-            if (definition.source) onFileRead?.(definition.file)
-          }
-          const output = { ...result.json, stats: result.stats }
-          await recorder.recordToolCall({
-            name: `${scope}.get_symbol_definition`,
-            input,
-            output,
-          })
-          return output
-        },
-      }),
-      get_symbol_callers: tool({
-        description:
-          "Get direct callers in pages. Returns 8 callers by default; use offset and limit to request more.",
-        inputSchema: z.object({
-          symbol: z.string().min(1),
-          offset: z.number().int().nonnegative().max(199).optional(),
-          limit: z.number().int().positive().max(50).optional(),
-        }),
-        execute: async ({ symbol, offset, limit }) => {
-          onUse?.()
-          const input = { symbol, offset, limit }
-          const result = await getSymbolCallers({
-            repository: runtime.paths.repositoryPath,
-            index: runtime.codeIndex,
-            symbol,
-            offset,
-            limit,
-          })
-          const output = { ...result.json, stats: result.stats }
-          await recorder.recordToolCall({
-            name: `${scope}.get_symbol_callers`,
-            input,
-            output,
-          })
-          return output
-        },
-      }),
-      locate_text: tool({
-        description:
-          "Search exact text across repository files. Returns 12 matches by default; request up to 50 with limit.",
-        inputSchema: z.object({
-          query: z.string().min(1),
-          limit: z.number().int().positive().max(50).optional(),
-        }),
-        execute: async ({ query, limit = 12 }) => {
-          onUse?.()
-          const result = await searchRepositoryText({
-            repository: runtime.paths.repositoryPath,
-            index: runtime.codeIndex,
-            query,
-            maxResults: limit,
-          })
-          const output = {
-            ...result.stats,
-            markdown: truncateText(result.markdown, 12_000),
-          }
-          await recorder.recordToolCall({
-            name: `${scope}.locate_text`,
-            input: { query, limit },
-            output,
-          })
-          return output
-        },
+      ...createRepositoryInspectionTools({
+        scope,
+        repositoryPath: runtime.paths.repositoryPath,
+        index: runtime.codeIndex,
+        recorder,
+        onFileRead,
+        onUse,
       }),
     }
     if (!semanticEnabled) return base
@@ -1227,7 +1116,7 @@ Return sameClaim=true only when both claims have the same root cause, trigger, a
         })
       ),
       stopWhen: stepCountIs(1),
-      maxRetries: 2,
+      maxRetries: reviewAgentConfig.retry.maxRetries,
       onStepFinish: async (step) => recorder.recordStep(step),
     })
     const generation = await agent.generate({
@@ -1303,102 +1192,99 @@ Usefulness: ${decision.usefulness}`,
       file: candidate.file,
       title: candidate.title,
     })
-    let lastError: unknown
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      const attemptSteps: unknown[] = []
-      inspectedFiles.clear()
-      try {
-        const agent = new ToolLoopAgent({
-          model: agentLayers.verifier.model,
-          instructions:
-            availableDocLibraries.length > 0
-              ? `${reviewVerifierInstructions}${reviewVerifierDocsInstructions}`
-              : reviewVerifierInstructions,
-          tools: {
-            ...createRepositoryTools(`verifier.${safeId}.${attempt}`, (file) =>
-              inspectedFiles.add(file)
-            ),
-            ...createDocsLookupTool(`verifier.${safeId}.${attempt}`),
-          },
-          providerOptions: agentLayers.verifier.providerOptions,
-          output: repairedJsonOutput(
-            Output.object({
-              schema: reviewVerifierOutputSchema,
-              name: "verified_finding",
-              description: "One evidence-backed verdict for one finding",
-            })
+    const attempt = 1
+    const attemptSteps: unknown[] = []
+    inspectedFiles.clear()
+    try {
+      const agent = new ToolLoopAgent({
+        model: agentLayers.verifier.model,
+        instructions:
+          availableDocLibraries.length > 0
+            ? `${reviewVerifierInstructions}${reviewVerifierDocsInstructions}`
+            : reviewVerifierInstructions,
+        tools: {
+          ...createRepositoryTools(`verifier.${safeId}.${attempt}`, (file) =>
+            inspectedFiles.add(file)
           ),
-          stopWhen: stepCountIs(reviewAgentConfig.verifier.maxSteps),
-          maxRetries: 2,
-          onStepFinish: async (step) => {
-            attemptSteps.push(step)
-            await recorder.recordStep(step)
-          },
-        })
-        const generation = await agent.generate({ prompt })
-        usages.verification!.push(generation.totalUsage)
-        await recordBilling(
-          "verification",
-          agentLayers.verifier.modelId,
-          generation
-        )
-        attemptSteps.length = 0
-        const verdict = verdictSchema.parse(generation.output)
-        await recorder.writeJson(`verifier/${safeId}/attempt-${attempt}.json`, {
-          finishReason: generation.finishReason,
-          usage: generation.totalUsage,
-          inspectedFiles: [...inspectedFiles],
-          output: verdict,
-        })
-        logger.info("Review finding verification completed", {
-          ...context,
-          findingId: candidate.id,
-          verdict: verdict.verdict,
-          ...(verdict.verdict === "accept"
-            ? { usefulness: verdict.usefulness }
-            : {}),
-          attempt,
-        })
-        return verdict
-      } catch (error) {
-        lastError = error
-        if (attemptSteps.length > 0) {
-          await recordBilling("verification", agentLayers.verifier.modelId, {
-            steps: attemptSteps,
+          ...createDocsLookupTool(`verifier.${safeId}.${attempt}`),
+        },
+        providerOptions: agentLayers.verifier.providerOptions,
+        output: repairedJsonOutput(
+          Output.object({
+            schema: reviewVerifierOutputSchema,
+            name: "verified_finding",
+            description: "One evidence-backed verdict for one finding",
           })
-        }
-        await recorder.writeJson(
-          `verifier/${safeId}/attempt-${attempt}-error.json`,
-          { error }
-        )
-        await recorder.appendEvent("verifier.attempt.failed", {
-          id: candidate.id,
-          attempt,
-          error: errorMessage(error),
+        ),
+        stopWhen: stepCountIs(reviewAgentConfig.verifier.maxSteps),
+        maxRetries: reviewAgentConfig.retry.maxRetries,
+        onStepFinish: async (step) => {
+          attemptSteps.push(step)
+          await recorder.recordStep(step)
+        },
+      })
+      const generation = await agent.generate({ prompt })
+      usages.verification!.push(generation.totalUsage)
+      await recordBilling(
+        "verification",
+        agentLayers.verifier.modelId,
+        generation
+      )
+      attemptSteps.length = 0
+      const verdict = verdictSchema.parse(generation.output)
+      await recorder.writeJson(`verifier/${safeId}/attempt-${attempt}.json`, {
+        finishReason: generation.finishReason,
+        usage: generation.totalUsage,
+        inspectedFiles: [...inspectedFiles],
+        output: verdict,
+      })
+      logger.info("Review finding verification completed", {
+        ...context,
+        findingId: candidate.id,
+        verdict: verdict.verdict,
+        ...(verdict.verdict === "accept"
+          ? { usefulness: verdict.usefulness }
+          : {}),
+        attempt,
+      })
+      return verdict
+    } catch (error) {
+      if (attemptSteps.length > 0) {
+        await recordBilling("verification", agentLayers.verifier.modelId, {
+          steps: attemptSteps,
         })
       }
-    }
-    const reason = `Verifier failed open: ${errorMessage(lastError)}`
-    await recorder.appendEvent("verifier.failed_open", {
-      id: candidate.id,
-      error: reason,
-    })
-    return {
-      id: candidate.id,
-      verdict: "escalate" as const,
-      pullRequestRelevance: "",
-      entryPath: "",
-      actualResult: "",
-      expectedResult: "",
-      expectationSource: "none" as const,
-      prChangeEvidence: "",
-      counterEvidence: "",
-      usefulness: "",
-      proofLocations: [],
-      failedCondition: "",
-      unresolvedQuestion: reason,
-      knownFacts: "No verifier result was produced.",
-      failedOpen: true,
+      await recorder.writeJson(
+        `verifier/${safeId}/attempt-${attempt}-error.json`,
+        { error }
+      )
+      await recorder.appendEvent("verifier.attempt.failed", {
+        id: candidate.id,
+        attempt,
+        error: errorMessage(error),
+      })
+      const reason = `Verifier failed open: ${errorMessage(error)}`
+      await recorder.appendEvent("verifier.failed_open", {
+        id: candidate.id,
+        error: reason,
+      })
+      return {
+        id: candidate.id,
+        verdict: "escalate" as const,
+        pullRequestRelevance: "",
+        entryPath: "",
+        actualResult: "",
+        expectedResult: "",
+        expectationSource: "none" as const,
+        prChangeEvidence: "",
+        counterEvidence: "",
+        usefulness: "",
+        proofLocations: [],
+        failedCondition: "",
+        unresolvedQuestion: reason,
+        knownFacts: "No verifier result was produced.",
+        failedOpen: true,
+      }
     }
   }
 
@@ -1517,107 +1403,104 @@ ${task.area}`
           `subagents/wave-${wave}/${safeId}/prompt.txt`,
           prompt
         )
-        let lastError: unknown
         const taskReadFiles = new Set<string>()
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
-          const attemptSteps: unknown[] = []
-          try {
-            const agent = new ToolLoopAgent({
-              model: agentLayers.subagent.model,
-              instructions:
-                diffDocLibraries.length > 0
-                  ? `${reviewSubagentInstructions}${reviewSubagentDocsInstructions}`
-                  : reviewSubagentInstructions,
-              tools: {
-                ...createRepositoryTools(
-                  `subagent.${wave}.${safeId}.${attempt}`,
-                  (file) => taskReadFiles.add(file)
-                ),
-                ...createDocsSearchTool(
-                  `subagent.${wave}.${safeId}.${attempt}`
-                ),
-              },
-              providerOptions: agentLayers.subagent.providerOptions,
-              output: repairedJsonOutput(
-                Output.object({
-                  schema: reviewSubagentOutputSchema,
-                  name: "review_findings",
-                  description:
-                    "Unfiltered candidate bug findings with evidence",
-                })
+        const attempt = 1
+        const attemptSteps: unknown[] = []
+        try {
+          const agent = new ToolLoopAgent({
+            model: agentLayers.subagent.model,
+            instructions:
+              diffDocLibraries.length > 0
+                ? `${reviewSubagentInstructions}${reviewSubagentDocsInstructions}`
+                : reviewSubagentInstructions,
+            tools: {
+              ...createRepositoryTools(
+                `subagent.${wave}.${safeId}.${attempt}`,
+                (file) => taskReadFiles.add(file)
               ),
-              stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
-              maxRetries: 2,
-              onStepFinish: async (step) => {
-                attemptSteps.push(step)
-                await recorder.recordStep(step)
-              },
-            })
-            const generation = await agent.generate({ prompt })
-            usages.subagents!.push(generation.totalUsage)
-            await recordBilling(
-              "subagents",
-              agentLayers.subagent.modelId,
-              generation
-            )
-            attemptSteps.length = 0
-            const output = reviewSubagentOutputSchema.parse(generation.output)
-            const candidates = output.findings.map((finding, index) => {
-              const id = `w${wave}:${task.id}:${index + 1}`
-              allCandidateIds.add(id)
-              const candidate = {
-                ...finding,
-                startLine: Math.min(finding.startLine, finding.endLine),
-                endLine: Math.max(finding.startLine, finding.endLine),
-                id,
-                taskId: task.id,
-                supportingTaskIds: [task.id],
-              } satisfies CandidateFinding
-              candidatesById.set(id, candidate)
-              return candidate
-            })
-            await recorder.writeJson(
-              `subagents/wave-${wave}/${safeId}/attempt-${attempt}.json`,
-              {
-                finishReason: generation.finishReason,
-                usage: generation.totalUsage,
-                output,
-              }
-            )
-            await recorder.appendEvent("subagent.completed", {
-              wave,
-              taskId: task.id,
-              attempt,
-              findings: candidates.length,
-            })
-            for (const file of taskReadFiles) {
-              subagentCoveredFiles.add(file)
-            }
-            return { wave, taskId: task.id, candidates }
-          } catch (error) {
-            lastError = error
-            if (attemptSteps.length > 0) {
-              await recordBilling("subagents", agentLayers.subagent.modelId, {
-                steps: attemptSteps,
+              ...createDocsSearchTool(
+                `subagent.${wave}.${safeId}.${attempt}`
+              ),
+            },
+            providerOptions: agentLayers.subagent.providerOptions,
+            output: repairedJsonOutput(
+              Output.object({
+                schema: reviewSubagentOutputSchema,
+                name: "review_findings",
+                description:
+                  "Unfiltered candidate bug findings with evidence",
               })
-            }
-            await recorder.writeJson(
-              `subagents/wave-${wave}/${safeId}/attempt-${attempt}-error.json`,
-              { error }
-            )
-            await recorder.appendEvent("subagent.attempt.failed", {
-              wave,
+            ),
+            stopWhen: stepCountIs(reviewAgentConfig.subagent.maxSteps),
+            maxRetries: reviewAgentConfig.retry.maxRetries,
+            onStepFinish: async (step) => {
+              attemptSteps.push(step)
+              await recorder.recordStep(step)
+            },
+          })
+          const generation = await agent.generate({ prompt })
+          usages.subagents!.push(generation.totalUsage)
+          await recordBilling(
+            "subagents",
+            agentLayers.subagent.modelId,
+            generation
+          )
+          attemptSteps.length = 0
+          const output = reviewSubagentOutputSchema.parse(generation.output)
+          const candidates = output.findings.map((finding, index) => {
+            const id = `w${wave}:${task.id}:${index + 1}`
+            allCandidateIds.add(id)
+            const candidate = {
+              ...finding,
+              startLine: Math.min(finding.startLine, finding.endLine),
+              endLine: Math.max(finding.startLine, finding.endLine),
+              id,
               taskId: task.id,
-              attempt,
-              error: errorMessage(error),
+              supportingTaskIds: [task.id],
+            } satisfies CandidateFinding
+            candidatesById.set(id, candidate)
+            return candidate
+          })
+          await recorder.writeJson(
+            `subagents/wave-${wave}/${safeId}/attempt-${attempt}.json`,
+            {
+              finishReason: generation.finishReason,
+              usage: generation.totalUsage,
+              output,
+            }
+          )
+          await recorder.appendEvent("subagent.completed", {
+            wave,
+            taskId: task.id,
+            attempt,
+            findings: candidates.length,
+          })
+          for (const file of taskReadFiles) {
+            subagentCoveredFiles.add(file)
+          }
+          return { wave, taskId: task.id, candidates }
+        } catch (error) {
+          if (attemptSteps.length > 0) {
+            await recordBilling("subagents", agentLayers.subagent.modelId, {
+              steps: attemptSteps,
             })
           }
-        }
-        return {
-          wave,
-          taskId: task.id,
-          candidates: [],
-          error: errorMessage(lastError),
+          await recorder.writeJson(
+            `subagents/wave-${wave}/${safeId}/attempt-${attempt}-error.json`,
+            { error }
+          )
+          await recorder.appendEvent("subagent.attempt.failed", {
+            wave,
+            taskId: task.id,
+            attempt,
+            error: errorMessage(error),
+          })
+          return {
+            wave,
+            taskId: task.id,
+            candidates: [],
+            error: errorMessage(error),
+          }
         }
       }
 
@@ -1858,7 +1741,7 @@ ${task.area}`
           })
         ),
         stopWhen: stepCountIs(reviewAgentConfig.naturalLanguageLinter.maxSteps),
-        maxRetries: 2,
+        maxRetries: reviewAgentConfig.retry.maxRetries,
         onStepFinish: async (step) => recorder.recordStep(step),
       })
       const generation = await agent.generate({ prompt })
@@ -1973,7 +1856,7 @@ ${task.area}`
             })
           ),
           stopWhen: stepCountIs(reviewAgentConfig.reportComposer.maxSteps),
-          maxRetries: 2,
+          maxRetries: reviewAgentConfig.retry.maxRetries,
           onStepFinish: async (step) => recorder.recordStep(step),
         })
         const generation = await agent.generate({ prompt })
@@ -1983,9 +1866,7 @@ ${task.area}`
           agentLayers.composer.modelId,
           generation,
           {
-            retryDelaysMs: [
-              250, 500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000,
-            ],
+            retryDelaysMs: reviewAgentConfig.retry.reportComposerDelaysMs,
           }
         )
         const output = reportComposerOutputSchema.parse(generation.output)
@@ -2047,7 +1928,7 @@ ${task.area}`
           })
         ),
         stopWhen: stepCountIs(reviewAgentConfig.reportComposer.maxSteps),
-        maxRetries: 2,
+        maxRetries: reviewAgentConfig.retry.maxRetries,
         onStepFinish: async (step) => recorder.recordStep(step),
       })
       const generation = await agent.generate({ prompt })
@@ -2375,7 +2256,7 @@ ${task.area}`
       })
     ),
     stopWhen: stepCountIs(reviewAgentConfig.main.maxSteps),
-    maxRetries: 2,
+    maxRetries: reviewAgentConfig.retry.maxRetries,
     onStepFinish: async (step) => recorder.recordStep(step),
   })
 

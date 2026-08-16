@@ -38,8 +38,6 @@ const finishWebhookEvent = async (
     .update(webhookEvent)
     .set({
       processedAt: new Date(),
-      processingStartedAt: null,
-      processingError: null,
     })
     .where(eq(webhookEvent.id, eventId))
 }
@@ -92,25 +90,10 @@ export const persistGitHubWebhookEvent = async ({
   }
 }
 
-const startGitHubWebhookEvent = async (eventId: string) => {
-  const [event] = await db
-    .update(webhookEvent)
-    .set({
-      processingStartedAt: new Date(),
-      processingError: null,
-    })
-    .where(and(eq(webhookEvent.id, eventId), isNull(webhookEvent.processedAt)))
-    .returning()
-
-  if (event) {
-    return event
-  }
-
-  return null
-}
-
 export const processGitHubWebhookEvent = async (eventId: string) => {
-  const event = await startGitHubWebhookEvent(eventId)
+  const event = await db.query.webhookEvent.findFirst({
+    where: and(eq(webhookEvent.id, eventId), isNull(webhookEvent.processedAt)),
+  })
 
   if (!event) {
     return
@@ -126,29 +109,12 @@ export const processGitHubWebhookEvent = async (eventId: string) => {
     (await findWorkspaceByInstallationId(payload.installation?.id)) ??
     null
 
-  try {
-    const review = await handleGitHubWebhook({
-      event,
-      payload,
-      relatedWorkspace,
-    })
-    await finishWebhookEvent(event.id, review)
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown webhook processing error"
-
-    await db
-      .update(webhookEvent)
-      .set({
-        processingStartedAt: null,
-        processingError: message,
-      })
-      .where(eq(webhookEvent.id, event.id))
-
-    throw error
-  }
+  const review = await handleGitHubWebhook({
+    event,
+    payload,
+    relatedWorkspace,
+  })
+  await finishWebhookEvent(event.id, review)
 }
 
 export type { GitHubWebhookPayload } from "./github"

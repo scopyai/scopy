@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { protectedRoute } from "../auth"
-import { getWorkspaceForUser } from "../workspaces/service"
+import { requireWorkspaceForUser } from "../workspaces/service"
 import {
   AnalyticsError,
   analyticsRangeValues,
@@ -16,14 +16,10 @@ const analyticsQuerySchema = z.object({
 export const analyticsRoutes = protectedRoute("/workspaces").get(
   "/:workspaceId/analytics",
   async ({ params, query, user, status }) => {
-    const workspaceWithRole = await getWorkspaceForUser(
+    await requireWorkspaceForUser(
       params.workspaceId,
-      user.id,
+      user.id
     )
-
-    if (!workspaceWithRole) {
-      return status(404, { error: "Workspace not found" })
-    }
 
     const parsed = analyticsQuerySchema.safeParse(query)
     if (!parsed.success) {

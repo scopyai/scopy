@@ -64,7 +64,7 @@ export const requireGitHubConfig = () => {
   return config;
 };
 
-export const createGitHubApp = () => {
+const createGitHubApp = () => {
   const config = requireGitHubConfig();
 
   return new App({
@@ -72,6 +72,10 @@ export const createGitHubApp = () => {
     privateKey: config.privateKey,
   });
 };
+
+export const getGitHubInstallationOctokit = (
+  installationId: string | number,
+) => createGitHubApp().getInstallationOctokit(Number(installationId));
 
 export const getGitHubInstallation = async (installationId: string) => {
   const app = createGitHubApp();
@@ -102,9 +106,8 @@ export const createGitHubInstallationAccessToken = async (
 export const listGitHubInstallationRepositories = async (
   installationId: string,
 ) => {
-  const app = createGitHubApp();
-  const installationOctokit = await app.getInstallationOctokit(
-    Number(installationId),
+  const installationOctokit = await getGitHubInstallationOctokit(
+    installationId,
   );
 
   const repositories = await installationOctokit.paginate(

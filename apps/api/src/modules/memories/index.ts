@@ -4,8 +4,7 @@ import { db } from "../../db/client"
 import { repository, reviewMemory } from "../../db/schema"
 import { protectedRoute } from "../auth"
 import {
-  getWorkspaceForUser,
-  getWorkspaceForUserWithRole,
+  requireWorkspaceForUser,
 } from "../workspaces/service"
 
 const listMemoriesSchema = z.object({
@@ -26,13 +25,10 @@ export const memoryRoutes = protectedRoute("/workspaces")
       return status(400, { error: "Invalid memory query" })
     }
 
-    const workspaceWithRole = await getWorkspaceForUser(
+    await requireWorkspaceForUser(
       params.workspaceId,
       user.id
     )
-    if (!workspaceWithRole) {
-      return status(404, { error: "Workspace not found" })
-    }
 
     return db
       .select({
@@ -64,14 +60,11 @@ export const memoryRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid memory update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         user.id,
         ["owner", "admin"]
       )
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const [updated] = await db
         .update(reviewMemory)
@@ -99,14 +92,11 @@ export const memoryRoutes = protectedRoute("/workspaces")
   .delete(
     "/:workspaceId/memories/:memoryId",
     async ({ params, user, status }) => {
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         user.id,
         ["owner", "admin"]
       )
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const [deleted] = await db
         .delete(reviewMemory)

@@ -9,7 +9,7 @@ import {
   refundReviewCredits,
   reserveReviewCredits,
 } from "../billing/usage"
-import { createGitHubApp } from "../github/service"
+import { getGitHubInstallationOctokit } from "../github/service"
 import {
   annotatePullRequestFilesForReview,
   countPullRequestChangedLines,
@@ -74,6 +74,38 @@ const asAnalysis = (value: Record<string, unknown> | null) =>
 const asPublishedReview = (value: Record<string, unknown> | null) =>
   value?.kind === "summary" ? (value as ReviewAgentResult) : null
 
+const updateReviewRun = (
+  reviewRunId: string,
+  values: Partial<typeof reviewRun.$inferInsert>
+) => db.update(reviewRun).set(values).where(eq(reviewRun.id, reviewRunId))
+
+const supersedeReviewRun = async (run: LoadedReviewRun) => {
+  await refundReviewCredits({
+    workspaceId: run.pullRequest.repository.workspace.id,
+    reviewRunId: run.id,
+  })
+  await updateReviewRun(run.id, {
+    status: "superseded",
+    completedAt: new Date(),
+  })
+}
+
+const failedReviewResult = ({
+  run,
+  completedAt,
+  commentId,
+}: {
+  run: LoadedReviewRun
+  completedAt: Date
+  commentId?: number
+}) => ({
+  kind: "failed" as const,
+  triggerSource: triggerSourceFor(run),
+  modelId: REVIEW_MODEL,
+  ...(commentId === undefined ? {} : { commentId }),
+  completedAt: completedAt.toISOString(),
+})
+
 const syncReviewCheck = async ({
   run,
   logger,
@@ -113,18 +145,15 @@ const syncReviewCheck = async ({
       })
     }
 
-    await db
-      .update(reviewRun)
-      .set({ providerCheckRunId: checkRunId, checkSyncError: null })
-      .where(eq(reviewRun.id, run.id))
+    await updateReviewRun(run.id, {
+      providerCheckRunId: checkRunId,
+      checkSyncError: null,
+    })
     run.providerCheckRunId = checkRunId
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown GitHub Check sync error"
-    await db
-      .update(reviewRun)
-      .set({ checkSyncError: message })
-      .where(eq(reviewRun.id, run.id))
+    await updateReviewRun(run.id, { checkSyncError: message })
     logger.error("Failed to synchronize GitHub Check", {
       reviewRunId: run.id,
       repository: repo.fullName,
@@ -229,23 +258,20 @@ const skipReview = async ({
   }
 
   const completedAt = new Date()
-  await db
-    .update(reviewRun)
-    .set({
-      status: "skipped",
-      result: {
-        kind: resultKind,
-        triggerSource,
-        modelId: REVIEW_MODEL,
-        commentId,
-        skipReason,
-        ...extraResult,
-        completedAt: completedAt.toISOString(),
-      },
-      completedAt,
-      error: null,
-    })
-    .where(eq(reviewRun.id, run.id))
+  await updateReviewRun(run.id, {
+    status: "skipped",
+    result: {
+      kind: resultKind,
+      triggerSource,
+      modelId: REVIEW_MODEL,
+      commentId,
+      skipReason,
+      ...extraResult,
+      completedAt: completedAt.toISOString(),
+    },
+    completedAt,
+    error: null,
+  })
 
   await syncReviewCheck({
     run,
@@ -268,15 +294,10 @@ export const prepareReviewPullRequest = async (
   }
 
   const repo = run.pullRequest.repository
-  const workspaceId = repo.workspace.id
   const triggerSource = triggerSourceFor(run)
 
   if (run.pullRequest.headSha !== run.headSha) {
-    await refundReviewCredits({ workspaceId, reviewRunId: run.id })
-    await db
-      .update(reviewRun)
-      .set({ status: "superseded", completedAt: new Date() })
-      .where(eq(reviewRun.id, run.id))
+    await supersedeReviewRun(run)
     return { proceed: false }
   }
 
@@ -318,15 +339,12 @@ export const prepareReviewPullRequest = async (
     return { proceed: false }
   }
 
-  await db
-    .update(reviewRun)
-    .set({
-      status: "running",
-      error: null,
-      startedAt: run.startedAt ?? new Date(),
-      completedAt: null,
-    })
-    .where(eq(reviewRun.id, run.id))
+  await updateReviewRun(run.id, {
+    status: "running",
+    error: null,
+    startedAt: run.startedAt ?? new Date(),
+    completedAt: null,
+  })
   logger.info("Prepared pull request review", { reviewRunId })
   return { proceed: true }
 }
@@ -343,14 +361,7 @@ export const analyzeReviewPullRequest = async (
   if (run.status !== "running") return { proceed: false }
 
   if (run.pullRequest.headSha !== run.headSha) {
-    await refundReviewCredits({
-      workspaceId: run.pullRequest.repository.workspace.id,
-      reviewRunId,
-    })
-    await db
-      .update(reviewRun)
-      .set({ status: "superseded", completedAt: new Date() })
-      .where(eq(reviewRun.id, reviewRunId))
+    await supersedeReviewRun(run)
     return { proceed: false }
   }
 
@@ -428,13 +439,10 @@ export const analyzeReviewPullRequest = async (
     logger,
     preflight,
   })
-  await db
-    .update(reviewRun)
-    .set({
-      result: analysis as unknown as Record<string, unknown>,
-      error: null,
-    })
-    .where(eq(reviewRun.id, reviewRunId))
+  await updateReviewRun(reviewRunId, {
+    result: analysis as unknown as Record<string, unknown>,
+    error: null,
+  })
   return { proceed: true }
 }
 
@@ -448,8 +456,8 @@ export const publishReviewPullRequest = async (
   const analysis = asAnalysis(run.result)
   if (!analysis) return { proceed: false }
 
-  const octokit = await createGitHubApp().getInstallationOctokit(
-    Number(run.pullRequest.repository.workspace.providerInstallationId)
+  const octokit = await getGitHubInstallationOctokit(
+    run.pullRequest.repository.workspace.providerInstallationId
   )
   const currentPullRequest = await octokit.request(
     "GET /repos/{owner}/{repo}/pulls/{pull_number}",
@@ -460,14 +468,7 @@ export const publishReviewPullRequest = async (
     }
   )
   if (currentPullRequest.data.head.sha !== run.headSha) {
-    await refundReviewCredits({
-      workspaceId: run.pullRequest.repository.workspace.id,
-      reviewRunId,
-    })
-    await db
-      .update(reviewRun)
-      .set({ status: "superseded", completedAt: new Date() })
-      .where(eq(reviewRun.id, reviewRunId))
+    await supersedeReviewRun(run)
     return { proceed: false }
   }
 
@@ -480,10 +481,10 @@ export const publishReviewPullRequest = async (
     logger,
     analysis,
   })
-  await db
-    .update(reviewRun)
-    .set({ result: result as unknown as Record<string, unknown>, error: null })
-    .where(eq(reviewRun.id, reviewRunId))
+  await updateReviewRun(reviewRunId, {
+    result: result as unknown as Record<string, unknown>,
+    error: null,
+  })
   return { proceed: true }
 }
 
@@ -593,20 +594,12 @@ export const failReviewPullRequest = async (
   const completedAt = run.completedAt ?? new Date()
 
   if (run.status !== "failed") {
-    await db
-      .update(reviewRun)
-      .set({
-        status: "failed",
-        error: message,
-        result: {
-          kind: "failed",
-          triggerSource: triggerSourceFor(run),
-          modelId: REVIEW_MODEL,
-          completedAt: completedAt.toISOString(),
-        },
-        completedAt,
-      })
-      .where(eq(reviewRun.id, reviewRunId))
+    await updateReviewRun(reviewRunId, {
+      status: "failed",
+      error: message,
+      result: failedReviewResult({ run, completedAt }),
+      completedAt,
+    })
   }
 
   await refundReviewCredits({ workspaceId: repo.workspace.id, reviewRunId })
@@ -627,18 +620,9 @@ export const failReviewPullRequest = async (
   }
 
   if (commentId) {
-    await db
-      .update(reviewRun)
-      .set({
-        result: {
-          kind: "failed",
-          triggerSource: triggerSourceFor(run),
-          modelId: REVIEW_MODEL,
-          commentId,
-          completedAt: completedAt.toISOString(),
-        },
-      })
-      .where(eq(reviewRun.id, reviewRunId))
+    await updateReviewRun(reviewRunId, {
+      result: failedReviewResult({ run, completedAt, commentId }),
+    })
   }
 
   await syncReviewCheck({

@@ -11,14 +11,14 @@ import {
   workspace,
   workspaceMember,
 } from "../../db/schema"
-import { listGitHubInstallationRepositories } from "../github/service"
 import {
   getWorkspaceMembershipForUser,
   inviteWorkspaceMemberByEmail,
-  getWorkspaceForUser,
-  getWorkspaceForUserWithRole,
+  getPullRequestForUser,
+  getRepositoryForUser,
+  requireWorkspaceForUser,
   submitRepositoryPullRequestSync,
-  syncWorkspaceRepositories,
+  syncGitHubWorkspaceRepositories,
 } from "./service"
 import { syncGitHubPullRequest } from "../pull-requests/service"
 import {
@@ -99,29 +99,19 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       .where(eq(workspaceMember.userId, currentUser.id))
       .orderBy(asc(workspace.name))
   })
-  .get("/:workspaceId", async ({ params, user: currentUser, status }) => {
-    const workspaceWithRole = await getWorkspaceForUser(
+  .get("/:workspaceId", async ({ params, user: currentUser }) => {
+    return requireWorkspaceForUser(
       params.workspaceId,
       currentUser.id
     )
-
-    if (!workspaceWithRole) {
-      return status(404, { error: "Workspace not found" })
-    }
-
-    return workspaceWithRole
   })
   .get(
     "/:workspaceId/github-links",
-    async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+    async ({ params, user: currentUser }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const ws = workspaceWithRole.workspace
 
@@ -151,15 +141,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid workspace update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const [updatedWorkspace] = await db
         .update(workspace)
@@ -175,15 +161,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   )
   .get(
     "/:workspaceId/review-config",
-    async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+    async ({ params, user: currentUser }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       return selectReviewConfigValues(workspaceWithRole.workspace)
     }
@@ -197,15 +179,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid review config update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const updatedWorkspace = await db.transaction(async (tx) => {
         const now = new Date()
@@ -239,29 +217,21 @@ export const workspaceRoutes = protectedRoute("/workspaces")
     }
   )
   .delete("/:workspaceId", async ({ params, user: currentUser, status }) => {
-    const workspaceWithRole = await getWorkspaceForUserWithRole(
+    await requireWorkspaceForUser(
       params.workspaceId,
       currentUser.id,
       ["owner"]
     )
 
-    if (!workspaceWithRole) {
-      return status(404, { error: "Workspace not found" })
-    }
-
     return status(409, { error: "Workspace owners cannot leave yet" })
   })
   .get(
     "/:workspaceId/members",
-    async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+    async ({ params, user: currentUser }) => {
+      const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const memberConditions = [
         eq(workspaceMember.workspaceId, params.workspaceId),
@@ -301,15 +271,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid member invite" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       if (parsed.data.role === "admin" && workspaceWithRole.role !== "owner") {
         return status(403, { error: "Only workspace owners can invite admins" })
@@ -426,15 +392,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid member update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       if (workspaceWithRole.role === "admin" && parsed.data.role === "admin") {
         return status(403, { error: "Admins cannot promote workspace admins" })
@@ -488,15 +450,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .delete(
     "/:workspaceId/members/:memberId",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const memberToRemove = await db.query.workspaceMember.findFirst({
         where: and(
@@ -540,25 +498,20 @@ export const workspaceRoutes = protectedRoute("/workspaces")
     }
   )
   .post("/:workspaceId/sync", async ({ params, user: currentUser, status }) => {
-    const workspaceWithRole = await getWorkspaceForUserWithRole(
+    const workspaceWithRole = await requireWorkspaceForUser(
       params.workspaceId,
       currentUser.id,
       ["owner", "admin"]
     )
 
-    if (!workspaceWithRole) {
-      return status(404, { error: "Workspace not found" })
-    }
-
     try {
-      const repositories = await listGitHubInstallationRepositories(
+      const synced = await syncGitHubWorkspaceRepositories(
+        params.workspaceId,
         workspaceWithRole.workspace.providerInstallationId
       )
 
-      await syncWorkspaceRepositories(params.workspaceId, repositories)
-
       return {
-        synced: repositories.length,
+        synced,
       }
     } catch (error) {
       console.error("Failed to sync GitHub repositories", error)
@@ -567,15 +520,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   })
   .get(
     "/:workspaceId/repositories",
-    async ({ params, user: currentUser, query, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+    async ({ params, user: currentUser, query }) => {
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       const enabled =
         query.enabled === "true"
@@ -610,15 +559,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid onboarding repository selection" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
-      }
 
       return db.transaction(async (tx) => {
         const availableRepositories = await tx
@@ -690,27 +635,17 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+      const access = await getRepositoryForUser(
         params.workspaceId,
+        params.repositoryId,
         currentUser.id
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const repo = await db.query.repository.findFirst({
-        where: and(
-          eq(repository.id, params.repositoryId),
-          eq(repository.workspaceId, params.workspaceId)
-        ),
-      })
-
-      if (!repo) {
-        return status(404, { error: "Repository not found" })
-      }
-
-      return repo
+      return access.repository
     }
   )
   .patch(
@@ -722,26 +657,18 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid repository update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      const access = await getRepositoryForUser(
         params.workspaceId,
+        params.repositoryId,
         currentUser.id,
-        ["owner", "admin"]
+        { roles: ["owner", "admin"] }
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const existingRepository = await db.query.repository.findFirst({
-        where: and(
-          eq(repository.id, params.repositoryId),
-          eq(repository.workspaceId, params.workspaceId)
-        ),
-      })
-
-      if (!existingRepository) {
-        return status(404, { error: "Repository not found" })
-      }
+      const existingRepository = access.repository
 
       if (existingRepository.providerAccessRemovedAt) {
         return status(409, {
@@ -773,24 +700,18 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId/pull-requests",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+      const access = await getRepositoryForUser(
         params.workspaceId,
+        params.repositoryId,
         currentUser.id
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const repo = await db.query.repository.findFirst({
-        where: and(
-          eq(repository.id, params.repositoryId),
-          eq(repository.workspaceId, params.workspaceId),
-          isNull(repository.providerAccessRemovedAt)
-        ),
-      })
-
-      if (!repo) {
+      const repo = access.repository
+      if (repo.providerAccessRemovedAt) {
         return status(404, { error: "Repository not found" })
       }
 
@@ -804,26 +725,18 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/repositories/:repositoryId/pull-requests/sync",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      const access = await getRepositoryForUser(
         params.workspaceId,
+        params.repositoryId,
         currentUser.id,
-        ["owner", "admin"]
+        { roles: ["owner", "admin"] }
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const repo = await db.query.repository.findFirst({
-        where: and(
-          eq(repository.id, params.repositoryId),
-          eq(repository.workspaceId, params.workspaceId)
-        ),
-      })
-
-      if (!repo) {
-        return status(404, { error: "Repository not found" })
-      }
+      const repo = access.repository
 
       if (repo.providerAccessRemovedAt) {
         return status(409, {
@@ -846,33 +759,18 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId/sync",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+      const access = await getPullRequestForUser(
         params.workspaceId,
+        params.repositoryId,
+        params.pullRequestId,
         currentUser.id
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const rows = await db
-        .select({ pullRequest, repository })
-        .from(pullRequest)
-        .innerJoin(repository, eq(repository.id, pullRequest.repositoryId))
-        .where(
-          and(
-            eq(pullRequest.id, params.pullRequestId),
-            eq(repository.id, params.repositoryId),
-            eq(repository.workspaceId, params.workspaceId),
-            isNull(repository.providerAccessRemovedAt)
-          )
-        )
-        .limit(1)
-      const row = rows[0]
-
-      if (!row) {
-        return status(404, { error: "Pull request not found" })
-      }
+      const row = access
 
       const rateLimit = checkRateLimit({
         key: `pull-request-sync:${currentUser.id}:${row.pullRequest.id}`,
@@ -897,36 +795,18 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+      const access = await getPullRequestForUser(
         params.workspaceId,
+        params.repositoryId,
+        params.pullRequestId,
         currentUser.id
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const rows = await db
-        .select({
-          pullRequest,
-          repository,
-        })
-        .from(pullRequest)
-        .innerJoin(repository, eq(repository.id, pullRequest.repositoryId))
-        .where(
-          and(
-            eq(pullRequest.id, params.pullRequestId),
-            eq(repository.id, params.repositoryId),
-            eq(repository.workspaceId, params.workspaceId),
-            isNull(repository.providerAccessRemovedAt)
-          )
-        )
-        .limit(1)
-      const row = rows[0]
-
-      if (!row) {
-        return status(404, { error: "Pull request not found" })
-      }
+      const row = access
 
       const timeline = await db
         .select()
@@ -949,30 +829,17 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories/:repositoryId/review-config",
     async ({ params, user: currentUser, status }) => {
-      const workspaceWithRole = await getWorkspaceForUser(
+      const access = await getRepositoryForUser(
         params.workspaceId,
+        params.repositoryId,
         currentUser.id
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const repo = await db.query.repository.findFirst({
-        where: and(
-          eq(repository.id, params.repositoryId),
-          eq(repository.workspaceId, params.workspaceId)
-        ),
-        with: {
-          workspace: true,
-        },
-      })
-
-      if (!repo) {
-        return status(404, { error: "Repository not found" })
-      }
-
-      return resolveReviewConfig(repo.workspace, repo)
+      return resolveReviewConfig(access.workspace, access.repository)
     }
   )
   .patch(
@@ -984,29 +851,18 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(400, { error: "Invalid review config update" })
       }
 
-      const workspaceWithRole = await getWorkspaceForUserWithRole(
+      const access = await getRepositoryForUser(
         params.workspaceId,
+        params.repositoryId,
         currentUser.id,
-        ["owner", "admin"]
+        { roles: ["owner", "admin"] }
       )
 
-      if (!workspaceWithRole) {
-        return status(404, { error: "Workspace not found" })
+      if (!access.ok) {
+        return status(404, { error: access.error })
       }
 
-      const repo = await db.query.repository.findFirst({
-        where: and(
-          eq(repository.id, params.repositoryId),
-          eq(repository.workspaceId, params.workspaceId)
-        ),
-        with: {
-          workspace: true,
-        },
-      })
-
-      if (!repo) {
-        return status(404, { error: "Repository not found" })
-      }
+      const repo = access.repository
 
       if (repo.providerAccessRemovedAt) {
         return status(409, {
@@ -1014,7 +870,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         })
       }
 
-      const workspaceDefaults = selectReviewConfigValues(repo.workspace)
+      const workspaceDefaults = selectReviewConfigValues(access.workspace)
       const overrides = normalizeReviewConfigOverrides(workspaceDefaults, {
         ...selectReviewConfigOverrides(repo),
         ...parsed.data,

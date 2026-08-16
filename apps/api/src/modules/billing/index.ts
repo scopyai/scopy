@@ -13,8 +13,7 @@ import {
   changeWorkspacePlan,
 } from "./service";
 import {
-  getWorkspaceForUser,
-  getWorkspaceForUserWithRole,
+  requireWorkspaceForUser,
 } from "../workspaces/service";
 
 const checkoutSchema = z.object({
@@ -47,26 +46,16 @@ const asBillingError = (error: unknown) => {
   return { statusCode: 500 as const, error: "Billing request failed" };
 };
 
-const requireMember = (workspaceId: string, userId: string) =>
-  getWorkspaceForUser(workspaceId, userId);
-
-const requireOwner = (workspaceId: string, userId: string) =>
-  getWorkspaceForUserWithRole(workspaceId, userId, ["owner"]);
-
 export const billingRoutes = protectedRoute("/workspaces")
-  .get("/:workspaceId/billing", async ({ params, user, status }) => {
-    if (!(await requireMember(params.workspaceId, user.id))) {
-      return status(404, { error: "Workspace not found" });
-    }
+  .get("/:workspaceId/billing", async ({ params, user }) => {
+    await requireWorkspaceForUser(params.workspaceId, user.id);
 
     return getWorkspaceBilling(params.workspaceId);
   })
   .get(
     "/:workspaceId/billing/usage",
     async ({ params, query, user, status }) => {
-      if (!(await requireMember(params.workspaceId, user.id))) {
-        return status(404, { error: "Workspace not found" });
-      }
+      await requireWorkspaceForUser(params.workspaceId, user.id);
 
       const parsed = usageQuerySchema.safeParse(query);
       if (!parsed.success) {
@@ -85,10 +74,8 @@ export const billingRoutes = protectedRoute("/workspaces")
   )
   .get(
     "/:workspaceId/billing/usage/trend",
-    async ({ params, user, status }) => {
-      if (!(await requireMember(params.workspaceId, user.id))) {
-        return status(404, { error: "Workspace not found" });
-      }
+    async ({ params, user }) => {
+      await requireWorkspaceForUser(params.workspaceId, user.id);
 
       return getWorkspaceUsageTrend(params.workspaceId);
     },
@@ -96,9 +83,7 @@ export const billingRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/billing/charges",
     async ({ params, query, user, status }) => {
-      if (!(await requireMember(params.workspaceId, user.id))) {
-        return status(404, { error: "Workspace not found" });
-      }
+      await requireWorkspaceForUser(params.workspaceId, user.id);
 
       const parsed = paginationSchema.safeParse(query);
       if (!parsed.success) {
@@ -115,9 +100,9 @@ export const billingRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/billing/checkout",
     async ({ body, params, user, status }) => {
-      if (!(await requireOwner(params.workspaceId, user.id))) {
-        return status(404, { error: "Workspace not found" });
-      }
+      await requireWorkspaceForUser(params.workspaceId, user.id, [
+        "owner",
+      ]);
 
       const parsed = checkoutSchema.safeParse(body);
       if (!parsed.success) {
@@ -140,9 +125,9 @@ export const billingRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/billing/credits/checkout",
     async ({ body, params, user, status }) => {
-      if (!(await requireOwner(params.workspaceId, user.id))) {
-        return status(404, { error: "Workspace not found" });
-      }
+      await requireWorkspaceForUser(params.workspaceId, user.id, [
+        "owner",
+      ]);
 
       const parsed = creditCheckoutSchema.safeParse(body);
       if (!parsed.success) {
@@ -163,9 +148,9 @@ export const billingRoutes = protectedRoute("/workspaces")
     },
   )
   .post("/:workspaceId/billing/portal", async ({ params, user, status }) => {
-    if (!(await requireOwner(params.workspaceId, user.id))) {
-      return status(404, { error: "Workspace not found" });
-    }
+    await requireWorkspaceForUser(params.workspaceId, user.id, [
+      "owner",
+    ]);
 
     try {
       return await createWorkspacePortal(params.workspaceId);
@@ -175,9 +160,9 @@ export const billingRoutes = protectedRoute("/workspaces")
     }
   })
   .post("/:workspaceId/billing/cancel", async ({ params, user, status }) => {
-    if (!(await requireOwner(params.workspaceId, user.id))) {
-      return status(404, { error: "Workspace not found" });
-    }
+    await requireWorkspaceForUser(params.workspaceId, user.id, [
+      "owner",
+    ]);
 
     try {
       return await cancelWorkspaceSubscription(params.workspaceId);
@@ -187,9 +172,9 @@ export const billingRoutes = protectedRoute("/workspaces")
     }
   })
   .post("/:workspaceId/billing/change-plan", async ({ body, params, user, status }) => {
-    if (!(await requireOwner(params.workspaceId, user.id))) {
-      return status(404, { error: "Workspace not found" });
-    }
+    await requireWorkspaceForUser(params.workspaceId, user.id, [
+      "owner",
+    ]);
 
     const parsed = changePlanSchema.safeParse(body);
     if (!parsed.success) {

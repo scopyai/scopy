@@ -32,9 +32,13 @@ export const reviewAgentConfig = {
   repositoryContext: {
     maxSteps: 40,
   },
+  retry: {
+    maxRetries: 2,
+    reportComposerDelaysMs: [
+      250, 500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000,
+    ],
+  },
   semanticIndex: {
-    // The latest Keycloak run sustained about 48 chunks/second. Keep uploads
-    // within the 20-second review budget and always prioritize changed files.
     maxUploadChunks: 800,
   },
   openai: {

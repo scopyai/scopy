@@ -1,6 +1,6 @@
 import { env } from "../../env"
 import type { repository } from "../../db/schema"
-import { createGitHubApp } from "../github/service"
+import { getGitHubInstallationOctokit } from "../github/service"
 import type { PullRequestFile } from "./diff"
 import { renderFindingMarker } from "./memories"
 import { findingLabel, type ReviewFinding } from "./prompt"
@@ -30,9 +30,6 @@ export type ReviewCheckOutput = {
   summary: string
 }
 
-const getOctokit = async (installationId: string) =>
-  createGitHubApp().getInstallationOctokit(Number(installationId))
-
 export const startReviewCheck = async ({
   repo,
   installationId,
@@ -48,7 +45,7 @@ export const startReviewCheck = async ({
   checkRunId?: string | null
   detailsUrl: string
 }) => {
-  const octokit = await getOctokit(installationId)
+  const octokit = await getGitHubInstallationOctokit(installationId)
   let existingCheckRunId = checkRunId
 
   if (!existingCheckRunId) {
@@ -122,7 +119,7 @@ export const completeReviewCheck = async ({
   output: ReviewCheckOutput
   detailsUrl: string
 }) => {
-  const octokit = await getOctokit(installationId)
+  const octokit = await getGitHubInstallationOctokit(installationId)
   await octokit.request(
     "PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}",
     {
@@ -318,7 +315,7 @@ export const publishPullRequestReview = async ({
     return null
   }
 
-  const octokit = await getOctokit(installationId)
+  const octokit = await getGitHubInstallationOctokit(installationId)
   const existingComments = await octokit.paginate(
     "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments",
     {
@@ -397,7 +394,7 @@ export const findOrCreateReviewComment = async ({
   pullRequestId: string
   reviewRunId?: string
 }) => {
-  const octokit = await getOctokit(installationId)
+  const octokit = await getGitHubInstallationOctokit(installationId)
   const scope = { pullRequestId, reviewRunId }
   const marker = getReviewCommentMarker(scope)
   const comments = await octokit.paginate(
@@ -454,7 +451,7 @@ export const updateReviewComment = async ({
   reviewRunId?: string
   body: string
 }) => {
-  const octokit = await getOctokit(installationId)
+  const octokit = await getGitHubInstallationOctokit(installationId)
   await octokit.request(
     "PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}",
     {
@@ -475,7 +472,7 @@ export const listPullRequestFiles = async ({
   installationId: string
   pullRequestNumber: number
 }) => {
-  const octokit = await getOctokit(installationId)
+  const octokit = await getGitHubInstallationOctokit(installationId)
   const files = await octokit.paginate(
     "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
     {

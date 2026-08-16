@@ -4,17 +4,10 @@ import {
   Output,
   ToolLoopAgent,
   stepCountIs,
-  tool,
   type LanguageModel,
   type ToolLoopAgentSettings,
 } from "ai"
-import {
-  getSymbolCallers,
-  getSymbolDefinition,
-  readRepositoryFile,
-  searchRepositoryText,
-  type RepositoryCodeIndex,
-} from "tools"
+import type { RepositoryCodeIndex } from "tools"
 import { z } from "zod"
 import { db } from "../../db/client"
 import {
@@ -24,7 +17,8 @@ import {
 } from "../../db/schema"
 import { reviewAgentConfig } from "./config"
 import type { ReviewRunRecorder } from "./debug-run"
-import { textBytes, truncateText } from "./text"
+import { createRepositoryInspectionTools } from "./repository-tools"
+import { textBytes } from "./text"
 
 type Repository = typeof repository.$inferSelect
 type PullRequest = typeof pullRequest.$inferSelect
@@ -167,127 +161,6 @@ const buildArchitectureSnapshot = ({
   }
 }
 
-const createRepositoryTools = ({
-  repositoryPath,
-  index,
-  recorder,
-}: {
-  repositoryPath: string
-  index: RepositoryCodeIndex
-  recorder: ReviewRunRecorder
-}) => ({
-  read_file: tool({
-    description:
-      "Returns numbered repository lines. Reads 120 lines by default and up to 800; request more only when needed.",
-    inputSchema: z.object({
-      file: z.string().min(1),
-      startLine: z.number().int().positive().optional(),
-      maxLines: z.number().int().positive().max(800).optional(),
-    }),
-    execute: async ({ file, startLine, maxLines = 120 }) => {
-      const input = { file, startLine, maxLines }
-      const output = await readRepositoryFile({
-        repository: repositoryPath,
-        file,
-        startLine,
-        maxLines,
-      })
-      await recorder.recordToolCall({
-        name: "repository_context.read_file",
-        input,
-        output,
-      })
-      return output
-    },
-  }),
-  get_symbol_definition: tool({
-    description:
-      "Returns bounded symbol definitions and source. Returns 3 definitions by default; use offset, limit, or maxSourceBytes to request more.",
-    inputSchema: z.object({
-      symbol: z.string().min(1),
-      offset: z.number().int().nonnegative().optional(),
-      limit: z.number().int().positive().max(20).optional(),
-      maxSourceBytes: z
-        .number()
-        .int()
-        .min(1_000)
-        .max(40_000)
-        .optional(),
-    }),
-    execute: async ({ symbol, offset, limit, maxSourceBytes }) => {
-      const input = { symbol, offset, limit, maxSourceBytes }
-      const result = await getSymbolDefinition({
-        repository: repositoryPath,
-        index,
-        symbol,
-        offset,
-        limit,
-        maxSourceBytes,
-      })
-      const output = { ...result.json, stats: result.stats }
-      await recorder.recordToolCall({
-        name: "repository_context.get_symbol_definition",
-        input,
-        output,
-      })
-      return output
-    },
-  }),
-  get_symbol_callers: tool({
-    description:
-      "Returns direct callers in pages. Returns 8 callers by default; use offset and limit to request more.",
-    inputSchema: z.object({
-      symbol: z.string().min(1),
-      offset: z.number().int().nonnegative().max(199).optional(),
-      limit: z.number().int().positive().max(50).optional(),
-    }),
-    execute: async ({ symbol, offset, limit }) => {
-      const input = { symbol, offset, limit }
-      const result = await getSymbolCallers({
-        repository: repositoryPath,
-        index,
-        symbol,
-        offset,
-        limit,
-      })
-      const output = { ...result.json, stats: result.stats }
-      await recorder.recordToolCall({
-        name: "repository_context.get_symbol_callers",
-        input,
-        output,
-      })
-      return output
-    },
-  }),
-  locate_text: tool({
-    description:
-      "Finds exact strings and identifiers. Returns 12 matches by default; request up to 50 with limit.",
-    inputSchema: z.object({
-      query: z.string().min(1),
-      limit: z.number().int().positive().max(50).optional(),
-    }),
-    execute: async ({ query, limit = 12 }) => {
-      const input = { query, limit }
-      const result = await searchRepositoryText({
-        repository: repositoryPath,
-        index,
-        query,
-        maxResults: limit,
-      })
-      const output = {
-        ...result.stats,
-        markdown: truncateText(result.markdown, 12_000),
-      }
-      await recorder.recordToolCall({
-        name: "repository_context.locate_text",
-        input,
-        output,
-      })
-      return output
-    },
-  }),
-})
-
 const repositoryContextInstructions = `Create a concise persistent repository context document.
 
 The document must be markdown. It should help others understand the repository quickly and analyze it when needed.
@@ -392,7 +265,12 @@ const generateRepositoryContext = async ({
   const agent = new ToolLoopAgent({
     model,
     instructions: repositoryContextInstructions,
-    tools: createRepositoryTools({ repositoryPath, index, recorder }),
+    tools: createRepositoryInspectionTools({
+      scope: "repository_context",
+      repositoryPath,
+      index,
+      recorder,
+    }),
     providerOptions,
     output: Output.object({
       schema: repositoryContextOutputSchema,
@@ -400,7 +278,7 @@ const generateRepositoryContext = async ({
       description: "Persistent markdown repository context",
     }),
     stopWhen: stepCountIs(reviewAgentConfig.repositoryContext.maxSteps),
-    maxRetries: 2,
+    maxRetries: reviewAgentConfig.retry.maxRetries,
     onStepFinish: async (step) => {
       await recorder.recordStep(step)
     },

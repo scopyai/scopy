@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
 import { and, eq, isNull, ne, notInArray, sql } from "drizzle-orm"
+import { status } from "elysia"
 import { db } from "../../db/client"
 import {
+  pullRequest,
   repository,
   user,
   workspace,
@@ -9,7 +11,11 @@ import {
   type workspaceMemberRole,
 } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
-import type { GitHubInstallation, GitHubRepository } from "../github/service"
+import {
+  listGitHubInstallationRepositories,
+  type GitHubInstallation,
+  type GitHubRepository,
+} from "../github/service"
 import { defaultWorkspaceReviewConfig } from "../reviews/review-config"
 
 type WorkspaceMemberRole = (typeof workspaceMemberRole.enumValues)[number]
@@ -56,6 +62,89 @@ export const getWorkspaceForUserWithRole = async (
   return workspaceWithRole && roles.includes(workspaceWithRole.role)
     ? workspaceWithRole
     : null
+}
+
+export const requireWorkspaceForUser = async (
+  workspaceId: string,
+  userId: string,
+  roles?: WorkspaceMemberRole[]
+) => {
+  const workspaceWithRole = roles
+    ? await getWorkspaceForUserWithRole(workspaceId, userId, roles)
+    : await getWorkspaceForUser(workspaceId, userId)
+
+  if (!workspaceWithRole) {
+    throw status(404, { error: "Workspace not found" })
+  }
+
+  return workspaceWithRole
+}
+
+type WorkspaceAccessOptions = {
+  roles?: WorkspaceMemberRole[]
+}
+
+export const getRepositoryForUser = async (
+  workspaceId: string,
+  repositoryId: string,
+  userId: string,
+  options: WorkspaceAccessOptions = {}
+) => {
+  const workspaceWithRole = options.roles
+    ? await getWorkspaceForUserWithRole(workspaceId, userId, options.roles)
+    : await getWorkspaceForUser(workspaceId, userId)
+
+  if (!workspaceWithRole) {
+    return { ok: false as const, error: "Workspace not found" as const }
+  }
+
+  const repo = await db.query.repository.findFirst({
+    where: and(
+      eq(repository.id, repositoryId),
+      eq(repository.workspaceId, workspaceId)
+    ),
+  })
+
+  return repo
+    ? { ok: true as const, ...workspaceWithRole, repository: repo }
+    : { ok: false as const, error: "Repository not found" as const }
+}
+
+export const getPullRequestForUser = async (
+  workspaceId: string,
+  repositoryId: string,
+  pullRequestId: string,
+  userId: string
+) => {
+  const repositoryAccess = await getRepositoryForUser(
+    workspaceId,
+    repositoryId,
+    userId
+  )
+
+  if (!repositoryAccess.ok) {
+    return repositoryAccess.error === "Workspace not found"
+      ? repositoryAccess
+      : { ok: false as const, error: "Pull request not found" as const }
+  }
+
+  if (repositoryAccess.repository.providerAccessRemovedAt) {
+    return { ok: false as const, error: "Pull request not found" as const }
+  }
+
+  const savedPullRequest = await db.query.pullRequest.findFirst({
+    where: and(
+      eq(pullRequest.id, pullRequestId),
+      eq(pullRequest.repositoryId, repositoryId)
+    ),
+  })
+
+  return savedPullRequest
+    ? {
+        ...repositoryAccess,
+        pullRequest: savedPullRequest,
+      }
+    : { ok: false as const, error: "Pull request not found" as const }
 }
 
 export const getWorkspaceMembershipForUser = async (
@@ -290,7 +379,6 @@ export const syncWorkspaceRepositories = async (
         htmlUrl: githubRepository.html_url,
         archived: githubRepository.archived,
         providerAccessRemovedAt: null,
-        lastSyncedAt: now,
         updatedAt: now,
       }
       await tx
@@ -340,13 +428,28 @@ export const syncWorkspaceRepositories = async (
       .update(workspace)
       .set({
         ...(repositorySelection ? { repositorySelection } : {}),
-        lastSyncedAt: now,
         updatedAt: now,
       })
       .where(eq(workspace.id, workspaceId))
   })
 
   await submitPendingRepositoryPullRequestSyncs(workspaceId)
+}
+
+export const syncGitHubWorkspaceRepositories = async (
+  workspaceId: string,
+  installationId: string,
+  repositorySelection?: "all" | "selected"
+) => {
+  const repositories = await listGitHubInstallationRepositories(installationId)
+
+  await syncWorkspaceRepositories(
+    workspaceId,
+    repositories,
+    repositorySelection
+  )
+
+  return repositories.length
 }
 
 export const submitPendingRepositoryPullRequestSyncs = async (

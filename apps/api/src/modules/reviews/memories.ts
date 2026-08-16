@@ -5,7 +5,8 @@ import { z } from "zod"
 import { db } from "../../db/client"
 import { repository, reviewMemory } from "../../db/schema"
 import { workerEnv } from "../../env-worker"
-import { createGitHubApp } from "../github/service"
+import { getGitHubInstallationOctokit } from "../github/service"
+import { reviewAgentConfig } from "./config"
 import { createReviewLlm, reviewModels } from "./llm"
 import { replaceEmDashes } from "./text"
 
@@ -172,8 +173,8 @@ export const distillReviewMemory = async ({
   })
   if (!repo) return
 
-  const octokit = await createGitHubApp().getInstallationOctokit(
-    Number(repo.workspace.providerInstallationId)
+  const octokit = await getGitHubInstallationOctokit(
+    repo.workspace.providerInstallationId
   )
   const getComment = async (id: number) => {
     try {
@@ -244,7 +245,7 @@ export const distillReviewMemory = async ({
       reply: { author: `@${reply.user.login}`, body: reply.body },
       memories,
     }),
-    maxRetries: 2,
+    maxRetries: reviewAgentConfig.retry.maxRetries,
   })
 
   const target = object.memoryId

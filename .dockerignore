@@ -13,6 +13,9 @@ dist
 **/.vinxi
 .turbo
 **/.turbo
+**/.runs
+**/.data
+**/.evals
 
 # Version control & IDE
 .git

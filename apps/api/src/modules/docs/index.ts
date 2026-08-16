@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { protectedRoute } from "../auth"
 import { checkRateLimit } from "../../lib/rate-limit"
-import { getWorkspaceForUserWithRole } from "../workspaces/service"
+import { requireWorkspaceForUser } from "../workspaces/service"
 import {
   createWorkspaceDocSource,
   deleteWorkspaceDocSource,
@@ -24,15 +24,12 @@ export const docsRoutes = protectedRoute("/docs")
 export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/docs/sources",
-    async ({ params, user: currentUser, status }) => {
-      const membership = await getWorkspaceForUserWithRole(
+    async ({ params, user: currentUser }) => {
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-      if (!membership) {
-        return status(404, { error: "Workspace not found" })
-      }
       return listWorkspaceDocSources(params.workspaceId)
     }
   )
@@ -43,14 +40,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
       if (!parsed.success) {
         return status(400, { error: "Invalid doc source" })
       }
-      const membership = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-      if (!membership) {
-        return status(404, { error: "Workspace not found" })
-      }
       const rateLimit = checkRateLimit({
         key: `docs-source-create:${params.workspaceId}`,
         ...createSourceRateLimit,
@@ -74,14 +68,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .delete(
     "/:workspaceId/docs/sources/:sourceId",
     async ({ params, user: currentUser, status }) => {
-      const membership = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-      if (!membership) {
-        return status(404, { error: "Workspace not found" })
-      }
       const removed = await deleteWorkspaceDocSource({
         workspaceId: params.workspaceId,
         sourceId: params.sourceId,
@@ -95,14 +86,11 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/docs/sources/:sourceId/crawl",
     async ({ params, user: currentUser, status }) => {
-      const membership = await getWorkspaceForUserWithRole(
+      await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
-      if (!membership) {
-        return status(404, { error: "Workspace not found" })
-      }
       const rateLimit = checkRateLimit({
         key: `docs-source-crawl:${params.workspaceId}`,
         ...crawlSourceRateLimit,

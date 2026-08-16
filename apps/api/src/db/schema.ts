@@ -205,7 +205,6 @@ export const workspace = pgTable(
       onDelete: "set null",
     }),
     installedAt: timestamp("installed_at").defaultNow().notNull(),
-    lastSyncedAt: timestamp("last_synced_at"),
     billingTier: workspaceBillingTier("billing_tier").default("free").notNull(),
     billingStatus: text("billing_status").default("free").notNull(),
     includedCreditBalance: integer("included_credit_balance")
@@ -308,13 +307,10 @@ export const repository = pgTable(
     excludedDocLibraries: jsonb("excluded_doc_libraries").$type<string[]>(),
     archived: boolean("archived").default(false).notNull(),
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
-    lastSyncedAt: timestamp("last_synced_at"),
     pullRequestSyncStatus: text("pull_request_sync_status")
       .$type<"pending" | "syncing" | "synced" | "failed">()
       .default("pending")
       .notNull(),
-    pullRequestSyncStartedAt: timestamp("pull_request_sync_started_at"),
-    pullRequestSyncedAt: timestamp("pull_request_synced_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -326,7 +322,6 @@ export const repository = pgTable(
       table.workspaceId,
       table.providerRepositoryId
     ),
-    index("repository_workspace_id_idx").on(table.workspaceId),
   ]
 )
 
@@ -358,7 +353,6 @@ export const pullRequest = pgTable(
     mergedAt: timestamp("merged_at"),
     providerCreatedAt: timestamp("provider_created_at").notNull(),
     providerUpdatedAt: timestamp("provider_updated_at").notNull(),
-    lastSyncedAt: timestamp("last_synced_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -374,7 +368,6 @@ export const pullRequest = pgTable(
       table.repositoryId,
       table.number
     ),
-    index("pull_request_repository_id_idx").on(table.repositoryId),
   ]
 )
 
@@ -409,7 +402,6 @@ export const pullRequestTimelineEvent = pgTable(
       table.pullRequestId,
       table.externalKey
     ),
-    index("pull_request_timeline_pull_request_id_idx").on(table.pullRequestId),
   ]
 )
 
@@ -474,7 +466,6 @@ export const reviewRun = pgTable(
       table.pullRequestId,
       table.headSha
     ),
-    index("review_run_pull_request_id_idx").on(table.pullRequestId),
     index("review_run_trigger_webhook_event_id_idx").on(
       table.triggerWebhookEventId
     ),
@@ -543,9 +534,7 @@ export const webhookEvent = pgTable(
     }),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     receivedAt: timestamp("received_at").defaultNow().notNull(),
-    processingStartedAt: timestamp("processing_started_at"),
     processedAt: timestamp("processed_at"),
-    processingError: text("processing_error"),
   },
   (table) => [
     uniqueIndex("webhook_event_provider_delivery_idx").on(

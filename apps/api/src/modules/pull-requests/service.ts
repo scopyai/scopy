@@ -7,7 +7,7 @@ import {
   repository,
   type ProviderActor,
 } from "../../db/schema"
-import { createGitHubApp } from "../github/service"
+import { getGitHubInstallationOctokit } from "../github/service"
 
 type GitHubActor = {
   id: number
@@ -84,10 +84,9 @@ const toActor = (
       }
     : null
 
-const getInstallationOctokit = async (installationId: string) => {
-  const app = createGitHubApp()
-  return app.getInstallationOctokit(Number(installationId))
-}
+type GitHubInstallationOctokit = Awaited<
+  ReturnType<typeof getGitHubInstallationOctokit>
+>
 
 const upsertTimelineEvent = async ({
   pullRequestId,
@@ -338,7 +337,6 @@ const buildPullRequestValues = (
     mergedAt: toNullableDate(githubPullRequest.merged_at),
     providerCreatedAt: toDate(githubPullRequest.created_at),
     providerUpdatedAt: toDate(githubPullRequest.updated_at),
-    lastSyncedAt: now,
     updatedAt: now,
   }
 }
@@ -369,7 +367,6 @@ const upsertPullRequest = async (
         mergedAt: values.mergedAt,
         providerCreatedAt: values.providerCreatedAt,
         providerUpdatedAt: values.providerUpdatedAt,
-        lastSyncedAt: values.lastSyncedAt,
         updatedAt: values.updatedAt,
       },
     })
@@ -389,14 +386,16 @@ const getRepositoryWorkspaceOctokit = async (
     throw new Error("Workspace not found for repository")
   }
 
-  return getInstallationOctokit(workspace.providerInstallationId)
+  return getGitHubInstallationOctokit(workspace.providerInstallationId)
 }
 
 export const syncGitHubPullRequest = async (
   repo: typeof repository.$inferSelect,
-  number: number
+  number: number,
+  installationOctokit?: GitHubInstallationOctokit
 ) => {
-  const octokit = await getRepositoryWorkspaceOctokit(repo)
+  const octokit =
+    installationOctokit ?? (await getRepositoryWorkspaceOctokit(repo))
   const [pullResponse, issueComments, reviews, reviewComments] =
     await Promise.all([
       octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
@@ -493,7 +492,7 @@ export const syncRepositoryPullRequests = async (
   }
 
   for (const number of numbers) {
-    await syncGitHubPullRequest(repo, number)
+    await syncGitHubPullRequest(repo, number, octokit)
   }
 
   return {
@@ -514,7 +513,6 @@ export const hydrateRepositoryPullRequests = async (repositoryId: string) => {
     .update(repository)
     .set({
       pullRequestSyncStatus: "syncing",
-      pullRequestSyncStartedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(repository.id, repositoryId))
@@ -525,7 +523,6 @@ export const hydrateRepositoryPullRequests = async (repositoryId: string) => {
       .update(repository)
       .set({
         pullRequestSyncStatus: "synced",
-        pullRequestSyncedAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(repository.id, repositoryId))

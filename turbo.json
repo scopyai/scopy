@@ -20,6 +20,15 @@
       "cache": false,
       "persistent": true
     },
+    "api#dev": {
+      "cache": false,
+      "persistent": true,
+      "with": ["api#worker"]
+    },
+    "worker": {
+      "cache": false,
+      "persistent": true
+    },
     "start": {
       "dependsOn": ["build"],
       "cache": false,

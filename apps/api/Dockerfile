@@ -48,7 +48,6 @@ ENV PORT=3001
 
 COPY --from=prod-deps --chown=app:app /repo/node_modules /repo/node_modules
 COPY --from=prod-deps --chown=app:app /repo/apps/api/node_modules /repo/apps/api/node_modules
-COPY --from=builder --chown=app:app /repo/apps/tools /repo/apps/tools
 COPY --from=builder --chown=app:app /repo/apps/api/dist ./dist
 COPY --from=builder --chown=app:app /repo/apps/api/src/db/drizzle ./src/db/drizzle
 COPY --from=builder --chown=app:app /repo/apps/api/package.json ./package.json
