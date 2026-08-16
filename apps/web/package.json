@@ -11,6 +11,7 @@
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
+    "test": "vitest run --config vitest.config.ts",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
@@ -48,6 +49,7 @@
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
     "vite": "^8.1.4",
+    "vitest": "^4.1.4",
     "wrangler": "^4.100.0"
   }
 }

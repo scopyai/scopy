@@ -151,118 +151,118 @@ export const upsertGitHubWorkspace = async (
   if (!installation.account) {
     throw new Error("GitHub installation does not include an account")
   }
+  const account = installation.account
 
   const providerInstallationId = String(installation.id)
-  const providerAccountId = String(installation.account.id)
-  const providerAccountType = normalizeAccountType(installation.account.type)
+  const providerAccountId = String(account.id)
+  const providerAccountType = normalizeAccountType(account.type)
   const connectionStatus: "active" | "suspended" = installation.suspended_at
     ? "suspended"
     : "active"
 
-  const existing = await db.query.workspace.findFirst({
-    where: and(
-      eq(workspace.provider, "github"),
-      eq(workspace.providerAccountId, providerAccountId)
-    ),
-  })
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`github:${providerAccountId}`}))`
+    )
 
-  const existingMembership = existing
-    ? await db.query.workspaceMember.findFirst({
-        where: and(
-          eq(workspaceMember.workspaceId, existing.id),
-          eq(workspaceMember.userId, userId)
-        ),
+    const existing = await tx.query.workspace.findFirst({
+      where: and(
+        eq(workspace.provider, "github"),
+        eq(workspace.providerAccountId, providerAccountId)
+      ),
+    })
+
+    const existingMembership = existing
+      ? await tx.query.workspaceMember.findFirst({
+          where: and(
+            eq(workspaceMember.workspaceId, existing.id),
+            eq(workspaceMember.userId, userId)
+          ),
+        })
+      : null
+    const hasActiveMembership = existingMembership?.status === "active"
+
+    if (
+      existing &&
+      providerAccountType === "user" &&
+      !hasActiveMembership &&
+      existing.installedByUserId !== userId
+    ) {
+      throw new PersonalGitHubWorkspaceAlreadyConnectedError()
+    }
+
+    const workspaceId = existing?.id ?? randomUUID()
+    const now = new Date()
+    const syncedWorkspace = {
+      providerInstallationId,
+      providerAccountId,
+      providerAccountLogin: account.login,
+      providerAccountType,
+      providerAccountAvatarUrl: account.avatar_url ?? null,
+      name: account.login,
+      repositorySelection: installation.repository_selection,
+      permissions: installation.permissions,
+      connectionStatus,
+      updatedAt: now,
+    }
+    const values = {
+      ...defaultWorkspaceReviewConfig,
+      ...syncedWorkspace,
+      id: workspaceId,
+      provider: "github" as const,
+      installedByUserId: userId,
+      installedAt: now,
+      includedCreditBalance: options.initialReviewCredits ?? 0,
+      purchasedCreditBalance: 0,
+    }
+
+    const [savedWorkspace] = await tx
+      .insert(workspace)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [workspace.provider, workspace.providerAccountId],
+        set: syncedWorkspace,
       })
-    : null
-  const hasActiveMembership = existingMembership?.status === "active"
+      .returning()
 
-  if (
-    existing &&
-    providerAccountType === "user" &&
-    !hasActiveMembership &&
-    existing.installedByUserId !== userId
-  ) {
-    throw new PersonalGitHubWorkspaceAlreadyConnectedError()
-  }
+    const role: WorkspaceMemberRole =
+      existingMembership?.role ??
+      (!existing || existing.installedByUserId === userId ? "owner" : "member")
+    const membershipStatus =
+      existingMembership?.status ?? ("active" as const)
+    const acceptedAt =
+      membershipStatus === "active"
+        ? (existingMembership?.acceptedAt ?? now)
+        : (existingMembership?.acceptedAt ?? null)
+    const membership = {
+      id: existingMembership?.id ?? randomUUID(),
+      workspaceId: savedWorkspace!.id,
+      userId,
+      role,
+      status: membershipStatus,
+      invitedByUserId: existingMembership?.invitedByUserId ?? null,
+      invitedAt: existingMembership?.invitedAt ?? null,
+      acceptedAt,
+      updatedAt: now,
+    }
 
-  const workspaceId = existing?.id ?? randomUUID()
+    await tx
+      .insert(workspaceMember)
+      .values(membership)
+      .onConflictDoUpdate({
+        target: [workspaceMember.workspaceId, workspaceMember.userId],
+        set: {
+          role: membership.role,
+          status: membership.status,
+          invitedByUserId: membership.invitedByUserId,
+          invitedAt: membership.invitedAt,
+          acceptedAt: membership.acceptedAt,
+          updatedAt: membership.updatedAt,
+        },
+      })
 
-  const values = {
-    ...defaultWorkspaceReviewConfig,
-    id: workspaceId,
-    provider: "github" as const,
-    providerInstallationId,
-    providerAccountId,
-    providerAccountLogin: installation.account.login,
-    providerAccountType,
-    providerAccountAvatarUrl: installation.account.avatar_url ?? null,
-    name: installation.account.login,
-    repositorySelection: installation.repository_selection,
-    permissions: installation.permissions,
-    connectionStatus,
-    installedByUserId: userId,
-    installedAt: new Date(),
-    includedCreditBalance: options.initialReviewCredits ?? 0,
-    purchasedCreditBalance: 0,
-    updatedAt: new Date(),
-  }
-
-  const [savedWorkspace] = await db
-    .insert(workspace)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [workspace.provider, workspace.providerAccountId],
-      set: {
-        providerInstallationId: values.providerInstallationId,
-        providerAccountId: values.providerAccountId,
-        providerAccountLogin: values.providerAccountLogin,
-        providerAccountType: values.providerAccountType,
-        providerAccountAvatarUrl: values.providerAccountAvatarUrl,
-        name: values.name,
-        repositorySelection: values.repositorySelection,
-        permissions: values.permissions,
-        connectionStatus: values.connectionStatus,
-        updatedAt: values.updatedAt,
-      },
-    })
-    .returning()
-
-  const role: WorkspaceMemberRole =
-    existingMembership?.role ??
-    (!existing || existing.installedByUserId === userId ? "owner" : "member")
-  const membershipStatus = existingMembership?.status ?? ("active" as const)
-  const acceptedAt =
-    membershipStatus === "active"
-      ? (existingMembership?.acceptedAt ?? new Date())
-      : (existingMembership?.acceptedAt ?? null)
-  const membership = {
-    id: randomUUID(),
-    workspaceId: savedWorkspace.id,
-    userId,
-    role,
-    status: membershipStatus,
-    invitedByUserId: existingMembership?.invitedByUserId ?? null,
-    invitedAt: existingMembership?.invitedAt ?? null,
-    acceptedAt,
-    updatedAt: new Date(),
-  }
-
-  await db
-    .insert(workspaceMember)
-    .values(membership)
-    .onConflictDoUpdate({
-      target: [workspaceMember.workspaceId, workspaceMember.userId],
-      set: {
-        role: membership.role,
-        status: membership.status,
-        invitedByUserId: membership.invitedByUserId,
-        invitedAt: membership.invitedAt,
-        acceptedAt: membership.acceptedAt,
-        updatedAt: membership.updatedAt,
-      },
-    })
-
-  return savedWorkspace
+    return savedWorkspace!
+  })
 }
 
 export const syncWorkspaceRepositories = async (
@@ -270,18 +270,18 @@ export const syncWorkspaceRepositories = async (
   repositories: GitHubRepository[],
   repositorySelection?: "all" | "selected"
 ) => {
-  const now = new Date()
-  const providerRepositoryIds = repositories.map((githubRepository) =>
-    String(githubRepository.id)
-  )
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`repository-sync:${workspaceId}`}))`
+    )
 
-  for (const githubRepository of repositories) {
-    await db
-      .insert(repository)
-      .values({
-        id: randomUUID(),
-        workspaceId,
-        providerRepositoryId: String(githubRepository.id),
+    const now = new Date()
+    const providerRepositoryIds = repositories.map((githubRepository) =>
+      String(githubRepository.id)
+    )
+
+    for (const githubRepository of repositories) {
+      const syncedRepository = {
         name: githubRepository.name,
         fullName: githubRepository.full_name,
         owner: githubRepository.owner.login,
@@ -292,52 +292,49 @@ export const syncWorkspaceRepositories = async (
         providerAccessRemovedAt: null,
         lastSyncedAt: now,
         updatedAt: now,
+      }
+      await tx
+        .insert(repository)
+        .values({
+          ...syncedRepository,
+          id: randomUUID(),
+          workspaceId,
+          providerRepositoryId: String(githubRepository.id),
+        })
+        .onConflictDoUpdate({
+          target: [repository.workspaceId, repository.providerRepositoryId],
+          set: syncedRepository,
+        })
+    }
+
+    const staleRepositoriesWhere =
+      providerRepositoryIds.length === 0
+        ? and(
+            eq(repository.workspaceId, workspaceId),
+            isNull(repository.providerAccessRemovedAt)
+          )
+        : and(
+            eq(repository.workspaceId, workspaceId),
+            notInArray(repository.providerRepositoryId, providerRepositoryIds),
+            isNull(repository.providerAccessRemovedAt)
+          )
+
+    await tx
+      .update(repository)
+      .set({
+        enabled: false,
+        providerAccessRemovedAt: now,
+        updatedAt: now,
       })
-      .onConflictDoUpdate({
-        target: [repository.workspaceId, repository.providerRepositoryId],
-        set: {
-          name: githubRepository.name,
-          fullName: githubRepository.full_name,
-          owner: githubRepository.owner.login,
-          private: githubRepository.private,
-          defaultBranch: githubRepository.default_branch,
-          htmlUrl: githubRepository.html_url,
-          archived: githubRepository.archived,
-          providerAccessRemovedAt: null,
-          lastSyncedAt: now,
-          updatedAt: now,
-        },
+      .where(staleRepositoriesWhere)
+
+    await tx
+      .update(workspace)
+      .set({
+        ...(repositorySelection ? { repositorySelection } : {}),
+        lastSyncedAt: now,
+        updatedAt: now,
       })
-      .returning()
-  }
-
-  const staleRepositoriesWhere =
-    providerRepositoryIds.length === 0
-      ? and(
-          eq(repository.workspaceId, workspaceId),
-          isNull(repository.providerAccessRemovedAt)
-        )
-      : and(
-          eq(repository.workspaceId, workspaceId),
-          notInArray(repository.providerRepositoryId, providerRepositoryIds),
-          isNull(repository.providerAccessRemovedAt)
-        )
-
-  await db
-    .update(repository)
-    .set({
-      enabled: false,
-      providerAccessRemovedAt: now,
-      updatedAt: now,
-    })
-    .where(staleRepositoriesWhere)
-
-  await db
-    .update(workspace)
-    .set({
-      ...(repositorySelection ? { repositorySelection } : {}),
-      lastSyncedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(workspace.id, workspaceId))
+      .where(eq(workspace.id, workspaceId))
+  })
 }

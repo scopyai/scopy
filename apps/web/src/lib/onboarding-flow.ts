@@ -1,32 +1,35 @@
 const WELCOME_SEEN_KEY = "onboarding-welcome-seen"
 const OVERVIEW_SEEN_KEY = "onboarding-overview-seen"
+const WORKSPACE_ID_KEY = "onboarding-workspace-id"
 
-export function hasSeenOnboardingWelcome() {
-  if (typeof window === "undefined") return false
-  return sessionStorage.getItem(WELCOME_SEEN_KEY) === "1"
-}
+const readSession = (key: string) =>
+  typeof window === "undefined" ? null : sessionStorage.getItem(key)
+const markSeen = (key: string) => sessionStorage.setItem(key, "1")
 
-export function markOnboardingWelcomeSeen() {
-  sessionStorage.setItem(WELCOME_SEEN_KEY, "1")
-}
+export const hasSeenOnboardingWelcome = () =>
+  readSession(WELCOME_SEEN_KEY) === "1"
 
-export function hasSeenOnboardingOverview() {
-  if (typeof window === "undefined") return false
-  return sessionStorage.getItem(OVERVIEW_SEEN_KEY) === "1"
-}
+export const markOnboardingWelcomeSeen = () => markSeen(WELCOME_SEEN_KEY)
 
-export function markOnboardingOverviewSeen() {
-  sessionStorage.setItem(OVERVIEW_SEEN_KEY, "1")
-}
+export const hasSeenOnboardingOverview = () =>
+  readSession(OVERVIEW_SEEN_KEY) === "1"
 
-export function getOnboardingConnectEntryPath() {
-  return hasSeenOnboardingWelcome()
+export const markOnboardingOverviewSeen = () => markSeen(OVERVIEW_SEEN_KEY)
+
+export const getOnboardingWorkspaceId = () => readSession(WORKSPACE_ID_KEY)
+
+export const setOnboardingWorkspaceId = (workspaceId: string) =>
+  sessionStorage.setItem(WORKSPACE_ID_KEY, workspaceId)
+
+export const clearOnboardingWorkspaceId = () =>
+  sessionStorage.removeItem(WORKSPACE_ID_KEY)
+
+export const getOnboardingConnectEntryPath = () =>
+  hasSeenOnboardingWelcome()
     ? "/onboarding/connect"
     : "/onboarding/welcome"
-}
 
-export function getOnboardingRepositoriesEntryPath() {
-  return hasSeenOnboardingOverview()
+export const getOnboardingRepositoriesEntryPath = () =>
+  hasSeenOnboardingOverview()
     ? "/onboarding/repositories"
     : "/onboarding/overview"
-}

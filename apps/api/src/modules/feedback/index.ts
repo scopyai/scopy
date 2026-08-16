@@ -1,10 +1,27 @@
 import { t } from 'elysia'
 import { protectedRoute } from '../auth'
 import { escapeHtml, sendTelegramMessage } from '../../lib/telegram'
+import { checkRateLimit } from '../../lib/rate-limit'
+
+const feedbackRateLimit = {
+	limit: 5,
+	windowMs: 10 * 60 * 1000,
+}
 
 export const feedbackRoutes = protectedRoute('/feedback').post(
 	'/',
 	async ({ body, user, status }) => {
+		const rateLimit = checkRateLimit({
+			key: `feedback:${user.id}`,
+			...feedbackRateLimit,
+		})
+		if (!rateLimit.allowed) {
+			return status(429, {
+				error: 'Too many feedback messages',
+				retryAfterSeconds: rateLimit.retryAfterSeconds,
+			})
+		}
+
 		const message = [
 			'📬 <b>New Feedback</b>',
 			'',

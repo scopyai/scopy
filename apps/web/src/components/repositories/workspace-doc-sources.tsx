@@ -202,7 +202,12 @@ export function WorkspaceDocSources({
   workspaceId: string
   canEdit: boolean
 }) {
-  const { data: sources, isPending } = useWorkspaceDocSources(workspaceId)
+  const {
+    data: sources,
+    isPending,
+    isError,
+    refetch,
+  } = useWorkspaceDocSources(workspaceId)
   const { data: catalog } = useDocsCatalog()
   const createSource = useCreateWorkspaceDocSource(workspaceId)
   const deleteSource = useDeleteWorkspaceDocSource(workspaceId)
@@ -252,9 +257,22 @@ export function WorkspaceDocSources({
 
       {isPending ? (
         <Skeleton className="h-12 w-full rounded-lg" />
+      ) : isError ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Failed to load custom documentation sources.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refetch()}
+          >
+            Retry
+          </Button>
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {(sources ?? []).map((source) => (
+          {sources.map((source) => (
             <div
               key={source.id}
               className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
@@ -305,7 +323,7 @@ export function WorkspaceDocSources({
               ) : null}
             </div>
           ))}
-          {sources?.length === 0 ? (
+          {sources.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
               No custom documentation sources yet.
             </p>

@@ -8,6 +8,7 @@ import { useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { authClient } from "@/lib/auth-client"
 import { AppSidebar, MobileHeader } from "@/components/sidebar/app-sidebar"
+import { LoadError } from "@/components/load-error"
 import { WorkspaceContext } from "@/contexts/workspace-context"
 import { useMeUser } from "@/hooks/use-me"
 import {
@@ -21,7 +22,12 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   const { data: session, isPending } = authClient.useSession()
-  const { data: user, isPending: userPending } = useMeUser()
+  const {
+    data: user,
+    isPending: userPending,
+    isError: userError,
+    refetch: refetchUser,
+  } = useMeUser()
   const location = useRouterState({
     select: (state) => state.location,
   })
@@ -36,13 +42,23 @@ function AppLayout() {
 
   if (userPending) return null
 
+  if (userError) {
+    return (
+      <LoadError
+        message="Failed to load your account"
+        onRetry={() => void refetchUser()}
+        fullScreen
+      />
+    )
+  }
+
   const isOnboardingPath = pathname.startsWith("/onboarding")
 
-  if (!isOnboardingPath && user?.onboardingStatus === "connect_github") {
+  if (!isOnboardingPath && user.onboardingStatus === "connect_github") {
     return <Navigate to={getOnboardingConnectEntryPath()} replace />
   }
 
-  if (!isOnboardingPath && user?.onboardingStatus === "select_repositories") {
+  if (!isOnboardingPath && user.onboardingStatus === "select_repositories") {
     return <Navigate to={getOnboardingRepositoriesEntryPath()} replace />
   }
 

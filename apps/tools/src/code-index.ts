@@ -38,7 +38,7 @@ const sourceLikeExtensions = new Set([
   ".vue",
 ])
 const MAX_REPOSITORY_INDEX_BYTES = 512 * 1024 * 1024
-export const REPOSITORY_CODE_INDEX_VERSION = "6"
+const REPOSITORY_CODE_INDEX_VERSION = "7"
 
 export type RepositoryCodeIndexProgress = {
   phase: "snapshot" | "discovery" | "parsing" | "graph" | "cache"
@@ -46,7 +46,7 @@ export type RepositoryCodeIndexProgress = {
   details?: Record<string, unknown>
 }
 
-export type RepositoryCodeIndexCacheStats = {
+type RepositoryCodeIndexCacheStats = {
   snapshotHit: boolean
   parsedFiles: number
   blobCacheReusedFiles: number
@@ -346,7 +346,7 @@ export const buildRepositoryCodeIndex = async ({
         parser.setLanguage(adapter.language)
         parsers.set(adapter.id, parser)
       }
-      const tree = parser.parse(source)
+      const tree = parser.parse(adapter.parseSource?.(source) ?? source)
       try {
         extracted = adapter.extract(file, source, tree)
       } finally {

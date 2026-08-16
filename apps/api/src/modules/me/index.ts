@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
   repository,
@@ -50,7 +50,12 @@ export const meRoutes = protectedRoute("/me")
       })
       .from(workspaceMember)
       .innerJoin(workspace, eq(workspace.id, workspaceMember.workspaceId))
-      .where(eq(workspaceMember.userId, user.id))
+      .where(
+        and(
+          eq(workspaceMember.userId, user.id),
+          eq(workspaceMember.status, "active")
+        )
+      )
       .limit(1)
 
     if (!firstWorkspace) {

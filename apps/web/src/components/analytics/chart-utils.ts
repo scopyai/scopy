@@ -3,6 +3,16 @@ export const chartAxisTick = {
   fill: "var(--muted-foreground)",
 } as const
 
+export type DateCountPoint = { date: string; count: number }
+
+export function pickDateTicks(data: DateCountPoint[], maximum: number) {
+  if (data.length <= maximum) return data.map((point) => point.date)
+  const step = Math.ceil(data.length / maximum)
+  return data
+    .filter((_, index) => index % step === 0 || index === data.length - 1)
+    .map((point) => point.date)
+}
+
 const analyticsChartPalette = [
   "#5B82FF",
   "#6E6BFF",

@@ -1,4 +1,4 @@
-export type ParsedDiffLine = {
+type ParsedDiffLine = {
   kind: "context" | "added" | "removed"
   content: string
   oldLine?: number
@@ -88,7 +88,7 @@ export const parseUnifiedDiff = (diff: string): ParsedDiffFile[] => {
     } else if (marker === "-") {
       currentHunk.lines.push({ kind: "removed", content, oldLine })
       oldLine += 1
-    } else if (marker === " " || rawLine === "") {
+    } else if (marker === " ") {
       currentHunk.lines.push({ kind: "context", content, oldLine, newLine })
       currentHunk.anchorNewLines.push(newLine)
       oldLine += 1

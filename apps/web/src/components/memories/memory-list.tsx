@@ -252,6 +252,7 @@ function MemoryRow({
           <Textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            maxLength={10_000}
             rows={4}
           />
           <div className="flex justify-end gap-2">

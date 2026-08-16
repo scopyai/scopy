@@ -30,7 +30,7 @@ import {
 } from "../reviews/review-config"
 
 const updateWorkspaceSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
 })
 
 const inviteWorkspaceMemberSchema = z.object({
@@ -52,7 +52,10 @@ const updateRepositorySchema = z.object({
 })
 
 const onboardingRepositoriesSchema = z.object({
-  repositoryIds: z.array(z.string()).default([]),
+  repositoryIds: z
+    .array(z.string().min(1).max(100))
+    .max(10_000)
+    .default([]),
 })
 
 const selectReviewConfigValues = (
@@ -619,65 +622,71 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(404, { error: "Workspace not found" })
       }
 
-      const availableRepositories = await db
-        .select({ id: repository.id })
-        .from(repository)
-        .where(
-          and(
-            eq(repository.workspaceId, params.workspaceId),
-            isNull(repository.providerAccessRemovedAt)
+      return db.transaction(async (tx) => {
+        const availableRepositories = await tx
+          .select({ id: repository.id })
+          .from(repository)
+          .where(
+            and(
+              eq(repository.workspaceId, params.workspaceId),
+              isNull(repository.providerAccessRemovedAt)
+            )
           )
+
+        const availableRepositoryIds = new Set(
+          availableRepositories.map((repo) => repo.id)
         )
+        const selectedRepositoryIds = [
+          ...new Set(
+            parsed.data.repositoryIds.filter((id) =>
+              availableRepositoryIds.has(id)
+            )
+          ),
+        ]
+        const now = new Date()
 
-      const availableRepositoryIds = new Set(
-        availableRepositories.map((repo) => repo.id)
-      )
-      const selectedRepositoryIds = parsed.data.repositoryIds.filter((id) =>
-        availableRepositoryIds.has(id)
-      )
-      const now = new Date()
-
-      await db
-        .update(repository)
-        .set({
-          enabled: false,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(repository.workspaceId, params.workspaceId),
-            isNull(repository.providerAccessRemovedAt)
-          )
-        )
-
-      if (selectedRepositoryIds.length) {
-        await db
+        await tx
           .update(repository)
           .set({
-            enabled: true,
+            enabled: false,
             updatedAt: now,
           })
           .where(
             and(
               eq(repository.workspaceId, params.workspaceId),
-              inArray(repository.id, selectedRepositoryIds),
               isNull(repository.providerAccessRemovedAt)
             )
           )
-      }
 
-      await db
-        .update(user)
-        .set({
-          onboardingStatus: "done",
-          updatedAt: now,
-        })
-        .where(eq(user.id, currentUser.id))
+        if (selectedRepositoryIds.length) {
+          await tx
+            .update(repository)
+            .set({
+              enabled: true,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(repository.workspaceId, params.workspaceId),
+                inArray(repository.id, selectedRepositoryIds),
+                isNull(repository.providerAccessRemovedAt)
+              )
+            )
+        }
 
-      return {
-        enabled: selectedRepositoryIds.length,
-        total: availableRepositories.length,
-      }
+        await tx
+          .update(user)
+          .set({
+            onboardingStatus: "done",
+            updatedAt: now,
+          })
+          .where(eq(user.id, currentUser.id))
+
+        return {
+          enabled: selectedRepositoryIds.length,
+          total: availableRepositories.length,
+        }
+      })
     }
   )
   .get(
@@ -829,6 +838,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         return status(404, { error: "Repository not found" })
       }
 
+      if (repo.providerAccessRemovedAt) {
+        return status(409, {
+          error: "Repository is no longer accessible through the GitHub App",
+        })
+      }
+
       if (!repo.enabled) {
         return status(409, { error: "Repository tracking is disabled" })
       }
@@ -953,6 +968,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
 
       if (!repo) {
         return status(404, { error: "Repository not found" })
+      }
+
+      if (repo.providerAccessRemovedAt) {
+        return status(409, {
+          error: "Repository is no longer accessible through the GitHub App",
+        })
       }
 
       const workspaceDefaults = selectReviewConfigValues(repo.workspace)

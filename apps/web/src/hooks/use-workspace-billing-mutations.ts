@@ -2,65 +2,60 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { billingKeys } from "@/lib/billing-query-keys"
+import { useRedirectLock } from "@/hooks/use-redirect-lock"
 
-export function useCheckoutBilling(workspaceId: string) {
-  return useMutation({
-    mutationFn: async (tier: "premium" | "ultra") => {
-      const { data, error } = await api
-        .workspaces({ workspaceId })
-        .billing.checkout.post({ tier, requestId: crypto.randomUUID() })
-      if (error) throw error
-      if (!data.url) throw new Error("Missing checkout URL")
-      return data
-    },
-    onSuccess: (data) => {
-      window.location.href = data.url
-    },
+function useBillingRedirect<T>(
+  request: (variables: T) => Promise<string>,
+  errorMessage: string
+) {
+  const { isRedirecting, startRedirect, cancelRedirect, redirectTo } =
+    useRedirectLock()
+  const mutation = useMutation({
+    mutationFn: request,
+    onMutate: startRedirect,
+    onSuccess: redirectTo,
     onError: () => {
-      toast.error("Failed to start checkout")
+      cancelRedirect()
+      toast.error(errorMessage)
     },
   })
+  return { ...mutation, isRedirecting }
+}
+
+export function useCheckoutBilling(workspaceId: string) {
+  return useBillingRedirect(async (tier: "premium" | "ultra") => {
+    const { data, error } = await api
+      .workspaces({ workspaceId })
+      .billing.checkout.post({ tier, requestId: crypto.randomUUID() })
+    if (error) throw error
+    if (!data.url) throw new Error("Missing checkout URL")
+    return data.url
+  }, "Failed to start checkout")
 }
 
 export function useCheckoutCredits(workspaceId: string) {
-  return useMutation({
-    mutationFn: async (credits: number) => {
-      const { data, error } = await api
-        .workspaces({ workspaceId })
-        .billing.credits.checkout.post({
-          credits,
-          requestId: crypto.randomUUID(),
-        })
-      if (error) throw error
-      if (!data.url) throw new Error("Missing checkout URL")
-      return data
-    },
-    onSuccess: (data) => {
-      window.location.href = data.url
-    },
-    onError: () => {
-      toast.error("Failed to start credit checkout")
-    },
-  })
+  return useBillingRedirect(async (credits: number) => {
+    const { data, error } = await api
+      .workspaces({ workspaceId })
+      .billing.credits.checkout.post({
+        credits,
+        requestId: crypto.randomUUID(),
+      })
+    if (error) throw error
+    if (!data.url) throw new Error("Missing checkout URL")
+    return data.url
+  }, "Failed to start credit checkout")
 }
 
 export function usePortalBilling(workspaceId: string) {
-  return useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api
-        .workspaces({ workspaceId })
-        .billing.portal.post()
-      if (error) throw error
-      if (!data.url) throw new Error("Missing portal URL")
-      return data
-    },
-    onSuccess: (data) => {
-      window.location.href = data.url
-    },
-    onError: () => {
-      toast.error("Failed to open billing portal")
-    },
-  })
+  return useBillingRedirect<void>(async () => {
+    const { data, error } = await api
+      .workspaces({ workspaceId })
+      .billing.portal.post()
+    if (error) throw error
+    if (!data.url) throw new Error("Missing portal URL")
+    return data.url
+  }, "Failed to open billing portal")
 }
 
 export function useCancelBilling(workspaceId: string) {

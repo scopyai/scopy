@@ -3,7 +3,7 @@ import { auth } from "./service"
 
 const getRequestSession = (headers: Headers) => auth.api.getSession({ headers })
 
-export const authContext = new Elysia({ name: "auth-context" }).macro({
+const authContext = new Elysia({ name: "auth-context" }).macro({
   auth: {
     async resolve({ request: { headers }, status }) {
       const session = await getRequestSession(headers)

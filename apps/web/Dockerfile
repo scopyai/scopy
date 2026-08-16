@@ -18,7 +18,9 @@ COPY apps/web ./apps/web
 COPY packages/ui ./packages/ui
 
 ARG VITE_API_BASE_URL=http://localhost:3001
+ARG VITE_WEB_BASE_URL=http://localhost:3000
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_WEB_BASE_URL=$VITE_WEB_BASE_URL
 
 RUN pnpm --filter web build
 

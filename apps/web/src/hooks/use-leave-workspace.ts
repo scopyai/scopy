@@ -12,8 +12,7 @@ export function useLeaveWorkspace() {
       if (error) throw error
       return data
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] })
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
   })
 }

@@ -33,7 +33,7 @@ export const renderFindingMarker = ({
   return `<!-- scopy:finding ${encoded} -->`
 }
 
-export const parseFindingMarker = (body: string): FindingMarkerData | null => {
+const parseFindingMarker = (body: string): FindingMarkerData | null => {
   const match = body.match(/<!-- scopy:finding ([A-Za-z0-9_-]+) -->/)
   if (!match) return null
   try {

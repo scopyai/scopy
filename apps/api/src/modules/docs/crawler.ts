@@ -28,7 +28,7 @@ const approxTokens = (text: string) => Math.ceil(text.length / 4)
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-export const readResponseText = async (
+const readResponseText = async (
   response: Response,
   maxBytes = MAX_RAW_BYTES
 ) => {
@@ -144,7 +144,7 @@ const LINK_LINE = /^[-*]?\s*\[([^\]]+)\]\(([^)\s]+)\)\s*(?::\s*(.*))?$/
 const isFullDumpUrl = (url: string) =>
   /\/llms[-_.]?full\.txt$/i.test(new URL(url).pathname)
 
-export const parseLlmsTxt = (
+const parseLlmsTxt = (
   text: string,
   baseUrl: string
 ): ParsedIndexEntry[] => {

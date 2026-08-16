@@ -5,8 +5,13 @@ import { ArrowRightIcon } from "lucide-react"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useWorkspaceBilling } from "@/hooks/use-workspace-billing"
 import { PlanCards } from "@/components/billing/plan-cards"
+import { LoadError } from "@/components/load-error"
 import { formatReviewCredits } from "@/lib/billing-format"
-import { getActiveWorkspaces, getWorkspaceSlug } from "@/lib/workspace-slug"
+import { findPreferredActiveWorkspace } from "@/lib/workspace-slug"
+import {
+  clearOnboardingWorkspaceId,
+  getOnboardingWorkspaceId,
+} from "@/lib/onboarding-flow"
 
 export const Route = createFileRoute("/_app/onboarding/usage")({
   component: OnboardingUsagePage,
@@ -14,8 +19,16 @@ export const Route = createFileRoute("/_app/onboarding/usage")({
 
 function OnboardingUsagePage() {
   const navigate = useNavigate()
-  const { data: workspaces, isPending: workspacesPending } = useWorkspaces()
-  const entry = getActiveWorkspaces(workspaces).at(0)
+  const {
+    data: workspaces,
+    isPending: workspacesPending,
+    isError: workspacesError,
+    refetch: refetchWorkspaces,
+  } = useWorkspaces()
+  const entry = findPreferredActiveWorkspace(
+    workspaces,
+    getOnboardingWorkspaceId()
+  )
   const activeWorkspace = entry?.workspace
   const isOwner = entry?.role === "owner"
   const {
@@ -26,14 +39,24 @@ function OnboardingUsagePage() {
   } = useWorkspaceBilling(activeWorkspace?.id)
 
   if (workspacesPending) return null
+  if (workspacesError) {
+    return (
+      <LoadError
+        message="Failed to load organizations"
+        onRetry={() => void refetchWorkspaces()}
+      />
+    )
+  }
   if (!activeWorkspace) return <Navigate to="/onboarding/connect" replace />
 
-  const goToDashboard = () =>
+  const goToDashboard = () => {
+    clearOnboardingWorkspaceId()
     navigate({
       to: "/$workspaceSlug/repositories",
-      params: { workspaceSlug: getWorkspaceSlug(activeWorkspace) },
+      params: { workspaceSlug: activeWorkspace.providerAccountLogin },
       replace: true,
     })
+  }
 
   const includedCredits = billing?.account.creditBalance ?? 0
 

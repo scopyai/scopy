@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import { pullRequest, reviewRun } from "../../db/schema"
 import { env } from "../../env"
@@ -80,6 +80,12 @@ export const schedulePullRequestReview = async (
     triggerSource: TriggerSource
   }
 ) => {
+  if (triggerSource === "automatic") {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`automatic-review:${pullRequestId}:${headSha}`}))`
+    )
+  }
+
   const existingRun =
     triggerSource === "automatic"
       ? await tx.query.reviewRun.findFirst({

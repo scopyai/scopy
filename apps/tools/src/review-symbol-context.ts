@@ -20,11 +20,11 @@ export type GetSymbolDefinitionInput = {
 
 export type GetSymbolCallersInput = GetSymbolDefinitionInput
 
-export type CompactSymbolDefinition = InspectedDefinition
+type CompactSymbolDefinition = InspectedDefinition
 
-export type CompactCallSite = InspectedCallSite
+type CompactCallSite = InspectedCallSite
 
-export type SymbolDefinitionContext = {
+type SymbolDefinitionContext = {
   repositoryPath: string
   detectedLanguages: Record<string, number>
   query: InspectSymbolResult["query"]
@@ -32,7 +32,7 @@ export type SymbolDefinitionContext = {
   diagnostics: InspectSymbolResult["diagnostics"]
 }
 
-export type SymbolCallersContext = SymbolDefinitionContext & {
+type SymbolCallersContext = SymbolDefinitionContext & {
   callers: Array<{
     definitionId: string
     directCallers: CompactCallSite[]

@@ -118,7 +118,7 @@ export const normalizeReviewConfigOverrides = (
       : overrides.maxReviewChangedLines,
 })
 
-export const matchesBranchPattern = (branch: string, pattern: string) => {
+const matchesBranchPattern = (branch: string, pattern: string) => {
   const expression = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*")

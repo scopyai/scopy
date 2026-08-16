@@ -33,6 +33,7 @@ export const parseRepositoryFile = async (
   })
   const parser = new Parser()
   parser.setLanguage(adapter.language)
-  const extracted = adapter.extract(file, source, parser.parse(source))
+  const parseSource = adapter.parseSource?.(source) ?? source
+  const extracted = adapter.extract(file, source, parser.parse(parseSource))
   return { source, extracted, diagnostics: extracted.diagnostics }
 }

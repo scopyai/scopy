@@ -18,9 +18,9 @@ import {
   chartAxisTick,
   chartSeriesColor,
   formatAnalyticsDate,
+  pickDateTicks,
 } from "./chart-utils"
-
-type DataPoint = { date: string; count: number }
+import type { DateCountPoint } from "./chart-utils"
 
 const chartConfig = {
   count: {
@@ -29,14 +29,8 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-function pickXAxisTicks(data: DataPoint[]): string[] {
-  if (data.length <= 10) return data.map((d) => d.date)
-  const step = Math.ceil(data.length / 10)
-  return data.filter((_, i) => i % step === 0 || i === data.length - 1).map((d) => d.date)
-}
-
-export function PrHeatmapChart({ data }: { data: DataPoint[] }) {
-  const ticks = pickXAxisTicks(data)
+export function PrHeatmapChart({ data }: { data: DateCountPoint[] }) {
+  const ticks = pickDateTicks(data, 10)
   const isEmpty = data.every((d) => d.count === 0)
 
   return (

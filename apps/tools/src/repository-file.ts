@@ -33,7 +33,7 @@ export const resolveRepositoryRoot = async (repository: string) => {
   return root
 }
 
-export const normalizeRepositoryFile = (repository: string, file: string) => {
+const normalizeRepositoryFile = (repository: string, file: string) => {
   if (path.isAbsolute(file)) throw new Error("File path must be relative")
   const absolutePath = path.resolve(repository, file)
   if (!isInside(repository, absolutePath))

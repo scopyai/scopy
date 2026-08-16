@@ -20,7 +20,6 @@ import { useInstallUrl } from "@/hooks/use-install-url"
 import { useRedirectLock } from "@/hooks/use-redirect-lock"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import {
-  getWorkspaceSlug,
   getActiveWorkspaces,
   getPendingWorkspaces,
 } from "@/lib/workspace-slug"
@@ -54,7 +53,7 @@ export function WorkspaceSwitcher() {
 
     navigate({
       to: "/$workspaceSlug/repositories",
-      params: { workspaceSlug: getWorkspaceSlug(entry.workspace) },
+      params: { workspaceSlug: entry.workspace.providerAccountLogin },
     })
   }
 

@@ -22,7 +22,8 @@ export function useUpdateRepository(workspaceId: string) {
       if (error) throw error
       return data
     },
-    onMutate: ({ repositoryId, enabled, excludedDocLibraries }) => {
+    onMutate: async ({ repositoryId, enabled, excludedDocLibraries }) => {
+      await queryClient.cancelQueries({ queryKey })
       const previous = queryClient.getQueryData<
         Array<{ id: string; enabled: boolean }>
       >(queryKey)
@@ -41,7 +42,6 @@ export function useUpdateRepository(workspaceId: string) {
             : repository
         )
       })
-      void queryClient.cancelQueries({ queryKey })
       return { previous }
     },
     onError: (_error, _variables, context) => {

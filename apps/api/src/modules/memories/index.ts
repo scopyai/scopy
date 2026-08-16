@@ -12,10 +12,12 @@ const listMemoriesSchema = z.object({
   repositoryId: z.string().min(1).optional(),
 })
 
-const updateMemorySchema = z.object({
-  content: z.string().min(1).optional(),
-  enabled: z.boolean().optional(),
-})
+const updateMemorySchema = z
+  .object({
+    content: z.string().trim().min(1).max(10_000).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((value) => value.content !== undefined || value.enabled !== undefined)
 
 export const memoryRoutes = protectedRoute("/workspaces")
   .get("/:workspaceId/memories", async ({ params, query, user, status }) => {

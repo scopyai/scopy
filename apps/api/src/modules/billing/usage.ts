@@ -8,16 +8,17 @@ import {
 } from "../../db/schema"
 import { env } from "../../env"
 
-export const MICRO_USD_PER_USD = 1_000_000
+const MICRO_USD_PER_USD = 1_000_000
 const BYTES_PER_GIB = 1024 ** 3
 const BYTES_PER_TIB = 1024 ** 4
 
 const ceilDiv = (numerator: bigint, denominator: bigint) =>
   (numerator + denominator - 1n) / denominator
 
-export const usdToMicroUsd = (usd: number) => {
+const usdToMicroUsd = (usd: number) => {
   if (!Number.isFinite(usd) || usd < 0) return null
-  return Math.ceil(usd * MICRO_USD_PER_USD)
+  const microUsd = Math.ceil(usd * MICRO_USD_PER_USD)
+  return Number.isSafeInteger(microUsd) ? microUsd : null
 }
 
 export const calculateVectorWriteCostMicrocents = (bytes: number) =>
@@ -71,7 +72,7 @@ const stringAt = (value: unknown, path: string[]) => {
 const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
-export const extractOpenRouterCost = (generation: unknown) => {
+const extractOpenRouterCost = (generation: unknown) => {
   const cost =
     numberAt(generation, ["providerMetadata", "openrouter", "usage", "cost"]) ??
     numberAt(generation, ["response", "body", "usage", "cost"])
@@ -105,7 +106,7 @@ const extractOpenRouterGenerationId = (generation: unknown) => {
     : null
 }
 
-export const resolveOpenRouterCost = async (
+const resolveOpenRouterCost = async (
   generation: unknown,
   apiKey?: string,
 ) => {
@@ -345,8 +346,12 @@ export const reserveReviewCredits = async ({
   reviewableAdditions: number
   reviewableDeletions: number
   reviewableChangedLines: number
-}): Promise<ReserveReviewCreditsResult> =>
-  db.transaction(async (tx) => {
+}): Promise<ReserveReviewCreditsResult> => {
+  if (!Number.isSafeInteger(credits) || credits <= 0) {
+    throw new Error("Review credits must be a positive safe integer")
+  }
+
+  return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${workspaceId}))`
     )
@@ -429,6 +434,7 @@ export const reserveReviewCredits = async ({
       balanceAfter,
     }
   })
+}
 
 export const refundReviewCredits = async ({
   workspaceId,
@@ -487,7 +493,7 @@ const numberOrZero = (value: unknown) =>
  * Flattens the per-stage `billing.llm` map produced by the review agent into a
  * normalized list of one entry per stage for internal cost analytics.
  */
-export const flattenBillingModels = (
+const flattenBillingModels = (
   llm: Record<string, unknown>,
 ): ReviewUsageModel[] =>
   Object.entries(llm).flatMap(([stage, value]) => {

@@ -110,6 +110,9 @@ const redirectAfterConnect = async (
       : `/${encodeURIComponent(ws.providerAccountLogin)}/repositories`
   const url = new URL(path, env.FRONTEND_URL)
   url.searchParams.set("connected", "1")
+  if (source === "onboarding") {
+    url.searchParams.set("workspaceId", workspaceId)
+  }
   return Response.redirect(url, 302)
 }
 

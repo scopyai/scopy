@@ -5,7 +5,7 @@ import { javascriptAdapters } from "./javascript"
 import { pythonAdapter } from "./python"
 import { rustAdapter } from "./rust"
 
-export const languageAdapters: LanguageAdapter[] = [
+const languageAdapters: LanguageAdapter[] = [
   ...javascriptAdapters,
   pythonAdapter,
   goAdapter,

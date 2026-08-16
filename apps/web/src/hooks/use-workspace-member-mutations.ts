@@ -97,9 +97,8 @@ export function useAcceptWorkspaceInvitation() {
       if (error) throw error
       return data
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] })
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
     onError: () => {
       toast.error("Failed to accept invitation")
     },

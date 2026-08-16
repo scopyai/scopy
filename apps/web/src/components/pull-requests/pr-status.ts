@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 
 export type PullRequestState = "open" | "closed" | "merged"
-export type PullRequestDisplayState = PullRequestState | "draft"
+type PullRequestDisplayState = PullRequestState | "draft"
 
 /** Lifecycle actions stored from GitHub webhooks and initial sync. */
 export type PullRequestLifecycleAction =
@@ -44,7 +44,7 @@ type LifecycleDisplay = {
   iconClassName: string
 }
 
-export function getPullRequestDisplayState(
+function getPullRequestDisplayState(
   state: PullRequestState,
   draft: boolean,
 ): PullRequestDisplayState {
@@ -52,7 +52,7 @@ export function getPullRequestDisplayState(
   return state
 }
 
-export const pullRequestStateDisplay: Record<
+const pullRequestStateDisplay: Record<
   PullRequestDisplayState,
   StateDisplay
 > = {
@@ -82,7 +82,7 @@ export const pullRequestStateDisplay: Record<
   },
 }
 
-export const pullRequestLifecycleDisplay: Record<
+const pullRequestLifecycleDisplay: Record<
   PullRequestLifecycleAction,
   LifecycleDisplay
 > = {
@@ -125,10 +125,6 @@ export function getPullRequestStateDisplay(
   return pullRequestStateDisplay[getPullRequestDisplayState(state, draft)]
 }
 
-function formatUnknownLifecycleAction(action: string): string {
-  return action.replace(/_/g, " ")
-}
-
 export function getLifecycleActionDisplay(
   action: string | null,
 ): LifecycleDisplay {
@@ -142,7 +138,7 @@ export function getLifecycleActionDisplay(
   return {
     icon: GitPullRequestIcon,
     label: action
-      ? `${formatUnknownLifecycleAction(action)} this pull request`
+      ? `${action.replace(/_/g, " ")} this pull request`
       : "updated this pull request",
     iconClassName: MUTED_ICON,
   }

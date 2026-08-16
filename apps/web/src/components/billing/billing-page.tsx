@@ -40,12 +40,17 @@ function CreditTopUp({
   unitPriceCents: number
   currency: string
 }) {
-  const [credits, setCredits] = useState(10)
+  const [creditsInput, setCreditsInput] = useState("10")
   const checkout = useCheckoutCredits(workspaceId)
-  const normalizedCredits = Number.isFinite(credits)
-    ? Math.max(10, Math.floor(credits))
-    : 10
-  const totalCents = normalizedCredits * unitPriceCents
+  const parsedCredits = Number(creditsInput)
+  const parsedTotalCents = parsedCredits * unitPriceCents
+  const credits =
+    Number.isSafeInteger(parsedCredits) &&
+    parsedCredits >= 10 &&
+    Number.isSafeInteger(parsedTotalCents)
+      ? parsedCredits
+      : null
+  const totalCents = credits === null ? null : parsedTotalCents
 
   return (
     <section className="relative overflow-hidden rounded-xl border bg-card shadow-sm ring-1 ring-border/50">
@@ -74,10 +79,10 @@ function CreditTopUp({
                 <button
                   key={preset}
                   type="button"
-                  onClick={() => setCredits(preset)}
+                  onClick={() => setCreditsInput(String(preset))}
                   className={cn(
                     "rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-                    normalizedCredits === preset
+                    credits === preset
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border text-muted-foreground hover:border-border/70 hover:text-foreground",
                   )}
@@ -89,8 +94,8 @@ function CreditTopUp({
                 type="number"
                 min={10}
                 step={1}
-                value={credits}
-                onChange={(event) => setCredits(Number(event.target.value))}
+                value={creditsInput}
+                onChange={(event) => setCreditsInput(event.target.value)}
                 aria-label="Custom credit amount"
                 className="w-24"
               />
@@ -100,17 +105,23 @@ function CreditTopUp({
           <div className="flex items-center justify-between gap-4 sm:justify-end">
             <div className="flex flex-col sm:items-end">
               <span className="text-lg font-semibold">
-                {formatPlanPriceAmount(totalCents, currency)}
+                {totalCents === null
+                  ? "—"
+                  : formatPlanPriceAmount(totalCents, currency)}
               </span>
               <span className="text-xs text-muted-foreground">
-                for {normalizedCredits.toLocaleString("en-US")} credits
+                {credits === null
+                  ? "Enter 10 or more whole credits"
+                  : `for ${credits.toLocaleString("en-US")} credits`}
               </span>
             </div>
             <Button
               disabled={
-                isRedirectMutationPending(checkout) || normalizedCredits < 10
+                isRedirectMutationPending(checkout) || credits === null
               }
-              onClick={() => checkout.mutate(normalizedCredits)}
+              onClick={() => {
+                if (credits !== null) checkout.mutate(credits)
+              }}
             >
               {isRedirectMutationPending(checkout)
                 ? "Redirecting..."

@@ -17,7 +17,7 @@ type PullRequestReviewComment = {
 }
 export type PullRequestReviewEvent = "COMMENT" | "REQUEST_CHANGES"
 
-export const REVIEW_CHECK_NAME = "AI Review"
+const REVIEW_CHECK_NAME = "AI Review"
 
 export type ReviewCheckConclusion =
   | "success"
@@ -186,7 +186,7 @@ export type ReviewCommentScope = {
   reviewRunId?: string
 }
 
-export const getReviewCommentMarker = ({
+const getReviewCommentMarker = ({
   pullRequestId,
   reviewRunId,
 }: ReviewCommentScope) =>
@@ -197,7 +197,7 @@ export const getReviewCommentMarker = ({
 const withMarker = (body: string, scope: ReviewCommentScope) =>
   `${replaceEmDashes(body)}\n\n${getReviewCommentMarker(scope)}`
 
-export const reviewStartedBody =
+const reviewStartedBody =
   "Review started. I am analyzing the changes in this pull request."
 
 export const reviewFailedBody =
@@ -262,7 +262,7 @@ const feedbackLink = (finding: ReviewFinding, repoFullName: string) => {
   return `[💬 Leave feedback on this finding](${env.FRONTEND_URL}/feedback/finding?data=${data})`
 }
 
-export const renderInlineReviewComment = (
+const renderInlineReviewComment = (
   finding: ReviewFinding,
   repoFullName: string,
   headSha: string
@@ -279,7 +279,7 @@ export const renderInlineReviewComment = (
     renderFindingMarker({ ...finding, headSha }),
   ].join("\n"))
 
-export const buildPullRequestReviewComments = (
+const buildPullRequestReviewComments = (
   findings: ReviewFinding[],
   repoFullName: string,
   headSha: string

@@ -55,7 +55,7 @@ export type CallEdge = {
   confidence: "resolved"
 }
 
-export type FileNode = {
+type FileNode = {
   path: string
   language: string
 }

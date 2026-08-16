@@ -8,30 +8,32 @@ type WorkspaceEntry = {
   status?: string
 }
 
-export function getWorkspaceSlug(workspace: WorkspaceLike) {
-  return workspace.providerAccountLogin
-}
-
 export function getActiveWorkspaces<T extends WorkspaceEntry>(
   workspaces: T[] | undefined
 ): T[] {
-  if (!workspaces) return []
-  return workspaces.filter((e) => e.status === "active")
+  return workspaces?.filter((entry) => entry.status === "active") ?? []
 }
 
 export function getPendingWorkspaces<T extends WorkspaceEntry>(
   workspaces: T[] | undefined
 ): T[] {
-  if (!workspaces) return []
-  return workspaces.filter((e) => e.status === "pending")
+  return workspaces?.filter((entry) => entry.status === "pending") ?? []
+}
+
+export function findPreferredActiveWorkspace<T extends WorkspaceEntry>(
+  workspaces: T[] | undefined,
+  id: string | null | undefined
+): T | undefined {
+  const active = getActiveWorkspaces(workspaces)
+  return active.find((entry) => entry.workspace.id === id) ?? active[0]
 }
 
 export function findActiveWorkspaceBySlug<T extends WorkspaceEntry>(
   workspaces: T[] | undefined,
   slug: string | undefined
 ): T | undefined {
-  if (!workspaces || !slug) return undefined
+  if (!slug) return undefined
   return getActiveWorkspaces(workspaces).find(
-    (entry) => getWorkspaceSlug(entry.workspace) === slug
+    (entry) => entry.workspace.providerAccountLogin === slug
   )
 }

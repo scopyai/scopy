@@ -18,7 +18,6 @@ import {
   useAcceptWorkspaceInvitation,
   useRejectWorkspaceInvitation,
 } from "@/hooks/use-workspace-member-mutations"
-import { getWorkspaceSlug } from "@/lib/workspace-slug"
 
 type PendingWorkspace = {
   workspace: {
@@ -46,7 +45,7 @@ export function PendingWorkspaceInvitations({
       toast.success(`Joined ${ws.name}`)
       navigate({
         to: "/$workspaceSlug/repositories",
-        params: { workspaceSlug: getWorkspaceSlug(ws) },
+        params: { workspaceSlug: ws.providerAccountLogin },
       })
     } catch {
       // error handled in mutation

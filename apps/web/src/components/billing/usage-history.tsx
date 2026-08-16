@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import { Button } from "@workspace/ui/components/button"
 import {
   Table,
   TableBody,
@@ -38,18 +39,34 @@ export function UsageHistory({
   workspaceId: string | null | undefined
 }) {
   const [page, setPage] = useState(1)
-  const { data, isFetching, isPending } = useWorkspaceBillingUsage(
-    workspaceId,
-    page,
-    PAGE_SIZE,
-  )
-  const { data: trend } = useWorkspaceUsageTrend(workspaceId)
+  const { data, isFetching, isPending, isError, refetch } =
+    useWorkspaceBillingUsage(workspaceId, page, PAGE_SIZE)
+  const {
+    data: trend,
+    isError: trendError,
+    refetch: refetchTrend,
+  } = useWorkspaceUsageTrend(workspaceId)
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0
 
   return (
     <div className="flex flex-col gap-4">
-      <UsageTrendChart points={trend ?? []} />
+      {trendError ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Failed to load the usage trend.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refetchTrend()}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <UsageTrendChart points={trend ?? []} />
+      )}
 
       <div className="flex flex-col gap-4 rounded-lg border bg-card px-4 py-4">
         <div className="flex flex-col gap-0.5">
@@ -65,7 +82,16 @@ export function UsageHistory({
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
-          ) : !data || data.items.length === 0 ? (
+          ) : isError ? (
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                Failed to load review usage
+              </p>
+              <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : data.items.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No review usage yet
             </p>

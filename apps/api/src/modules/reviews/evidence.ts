@@ -34,22 +34,6 @@ const MAX_SOURCE_READ_LINES = 120
 const diffPath = (file: ParsedDiffFiles[number]) =>
   file.newPath && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
 
-export const buildFindingAnchorCheck = (diffFiles: ParsedDiffFiles) => {
-  const diffLines = diffLinesByFile(diffFiles)
-  return (finding: {
-    file: string
-    startLine: number
-    endLine: number
-  }): boolean => {
-    const fileDiffLines = diffLines.get(finding.file)
-    if (!fileDiffLines) return false
-    for (let line = finding.startLine; line <= finding.endLine; line += 1) {
-      if (fileDiffLines.anchors.has(line)) return true
-    }
-    return false
-  }
-}
-
 const diffLinesByFile = (diffFiles: ParsedDiffFiles) => {
   const result = new Map<
     string,
@@ -129,7 +113,7 @@ const clampEvidenceWindow = ({
   }
 }
 
-export const validateFindingEvidence = async ({
+const validateFindingEvidence = async ({
   repository,
   diffFiles,
   finding,

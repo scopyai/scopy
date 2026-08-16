@@ -1,18 +1,32 @@
 import { execFile } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 
-export type PreparedRepository = {
+type PreparedRepository = {
   path: string
   cleanup: () => Promise<void>
 }
 
-const isLocalPath = (repository: string) =>
-  repository.startsWith("/") || repository.startsWith(".") || repository.startsWith("~")
+const resolveLocalPath = (repository: string) => {
+  if (repository === "~") return homedir()
+  if (repository.startsWith("~/")) {
+    return path.join(homedir(), repository.slice(2))
+  }
+  return repository.startsWith("/") || repository.startsWith(".")
+    ? repository
+    : null
+}
+
+const runGit = (args: string[], cwd?: string) =>
+  execFileAsync("git", args, {
+    cwd,
+    maxBuffer: 20 * 1024 * 1024,
+    timeout: 10 * 60 * 1000,
+  })
 
 const normalizeGitHubRepository = (repository: string) => {
   if (
@@ -25,7 +39,7 @@ const normalizeGitHubRepository = (repository: string) => {
   if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     return `https://github.com/${repository}.git`
   }
-  return repository
+  throw new Error("Unsupported repository path or URL")
 }
 
 export const prepareRepository = async ({
@@ -35,26 +49,26 @@ export const prepareRepository = async ({
   repository: string
   ref?: string
 }): Promise<PreparedRepository> => {
-  if (isLocalPath(repository)) {
-    return { path: repository, cleanup: async () => {} }
+  const localRepository = resolveLocalPath(repository)
+  if (localRepository && !ref) {
+    return { path: localRepository, cleanup: async () => {} }
   }
 
   const directory = await mkdtemp(path.join(tmpdir(), "review-tools-repo-"))
-  const cloneUrl = normalizeGitHubRepository(repository)
-  await execFileAsync("git", ["clone", "--quiet", cloneUrl, directory], {
-    maxBuffer: 20 * 1024 * 1024,
-    timeout: 10 * 60 * 1000,
-  })
-  if (ref) {
-    await execFileAsync("git", ["checkout", "--quiet", ref], {
-      cwd: directory,
-      maxBuffer: 20 * 1024 * 1024,
-      timeout: 10 * 60 * 1000,
-    })
-  }
+  try {
+    const cloneUrl = localRepository ?? normalizeGitHubRepository(repository)
+    await runGit(["clone", "--quiet", cloneUrl, directory])
+    if (ref) {
+      if (ref.startsWith("-")) throw new Error("Invalid repository ref")
+      await runGit(["checkout", "--quiet", ref], directory)
+    }
 
-  return {
-    path: directory,
-    cleanup: () => rm(directory, { recursive: true, force: true }),
+    return {
+      path: directory,
+      cleanup: () => rm(directory, { recursive: true, force: true }),
+    }
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true })
+    throw error
   }
 }

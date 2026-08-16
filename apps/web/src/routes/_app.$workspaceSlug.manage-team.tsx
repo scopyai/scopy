@@ -19,7 +19,7 @@ import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { useLeaveWorkspace } from "@/hooks/use-leave-workspace"
 import { authClient } from "@/lib/auth-client"
-import { getWorkspaceSlug } from "@/lib/workspace-slug"
+import { getActiveWorkspaces } from "@/lib/workspace-slug"
 
 export const Route = createFileRoute("/_app/$workspaceSlug/manage-team")({
   component: ManageTeamRoute,
@@ -47,17 +47,20 @@ function ManageTeamRoute() {
       await leaveWorkspace.mutateAsync(selectedEntry.workspace.id)
       toast.success(`Left ${selectedEntry.workspace.name}`)
 
-      const remaining = workspaces?.filter(
-        (w) => w.workspace.id !== selectedEntry.workspace.id
+      const remaining = getActiveWorkspaces(workspaces).filter(
+        (entry) => entry.workspace.id !== selectedEntry.workspace.id
       )
-      setSelectedWorkspaceId(remaining?.[0]?.workspace.id ?? null)
-      const next = remaining?.[0]
-      navigate({
-        to: next ? "/$workspaceSlug/repositories" : "/connect",
-        params: next
-          ? { workspaceSlug: getWorkspaceSlug(next.workspace) }
-          : undefined,
-      })
+      if (remaining.length === 0) {
+        setSelectedWorkspaceId(null)
+        navigate({ to: "/connect" })
+      } else {
+        const next = remaining[0]
+        setSelectedWorkspaceId(next.workspace.id)
+        navigate({
+          to: "/$workspaceSlug/repositories",
+          params: { workspaceSlug: next.workspace.providerAccountLogin },
+        })
+      }
     } catch {
       toast.error("Failed to leave workspace")
     } finally {

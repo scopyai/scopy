@@ -1,18 +1,4 @@
-export const githubConnectionErrorCodes = {
-  invalid_authorization_callback: "invalid_authorization_callback",
-  invalid_installation_callback: "invalid_installation_callback",
-  installation_not_accessible: "installation_not_accessible",
-  personal_account_already_connected: "personal_account_already_connected",
-  workspace_not_found: "workspace_not_found",
-  connect_failed: "connect_failed",
-  authorization_denied: "authorization_denied",
-} as const
-
-export type GitHubConnectionErrorCode =
-  (typeof githubConnectionErrorCodes)[keyof typeof githubConnectionErrorCodes]
-
-const githubConnectionErrorMessages: Record<GitHubConnectionErrorCode, string> =
-  {
+const githubConnectionErrorMessages = {
     invalid_authorization_callback:
       "Invalid GitHub authorization. Please try connecting again.",
     invalid_installation_callback:
@@ -26,10 +12,12 @@ const githubConnectionErrorMessages: Record<GitHubConnectionErrorCode, string> =
     connect_failed: "Failed to connect GitHub. Please try again.",
     authorization_denied:
       "GitHub authorization was cancelled. Connect again when you're ready.",
-  }
+} as const
+
+type GitHubConnectionErrorCode = keyof typeof githubConnectionErrorMessages
 
 export function getGitHubConnectionErrorMessage(code: string) {
-  if (code in githubConnectionErrorMessages) {
+  if (Object.hasOwn(githubConnectionErrorMessages, code)) {
     return githubConnectionErrorMessages[code as GitHubConnectionErrorCode]
   }
 

@@ -4,11 +4,11 @@ import { Slider } from "@workspace/ui/components/slider"
 import { cn } from "@workspace/ui/lib/utils"
 import { SettingLabelRow } from "@/components/repositories/setting-label-row"
 
-export const MAX_REVIEW_CHANGED_LINES_MIN = 1
-export const MAX_REVIEW_CHANGED_LINES_MAX = 100_000
-export const MAX_REVIEW_CHANGED_LINES_SLIDER_MIN = 1_000
-export const MAX_REVIEW_CHANGED_LINES_SLIDER_MAX = 30_000
-export const MAX_REVIEW_CHANGED_LINES_SLIDER_STEP = 500
+const MAX_REVIEW_CHANGED_LINES_MIN = 1
+const MAX_REVIEW_CHANGED_LINES_MAX = 100_000
+const MAX_REVIEW_CHANGED_LINES_SLIDER_MIN = 1_000
+const MAX_REVIEW_CHANGED_LINES_SLIDER_MAX = 30_000
+const MAX_REVIEW_CHANGED_LINES_SLIDER_STEP = 500
 
 const SLIDER_THUMB_SIZE = 16
 

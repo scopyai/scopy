@@ -9,6 +9,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Input } from "@workspace/ui/components/input"
 import { Separator } from "@workspace/ui/components/separator"
 import { PageHeader } from "@/components/page-header"
+import { LoadError } from "@/components/load-error"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { useRepositories } from "@/hooks/use-repositories"
 import { useUpdateRepository } from "@/hooks/use-update-repository"
@@ -73,7 +74,8 @@ function RepositoriesList({
   workspaceId: string
   workspaceSlug: string
 }) {
-  const { data: repos, isPending } = useRepositories(workspaceId)
+  const { data: repos, isPending, isError, refetch } =
+    useRepositories(workspaceId)
   const updateRepo = useUpdateRepository(workspaceId)
   const syncWorkspace = useSyncWorkspace(workspaceId)
   const navigate = useNavigate()
@@ -131,7 +133,16 @@ function RepositoriesList({
     )
   }
 
-  if (!repos || repos.length === 0) {
+  if (isError) {
+    return (
+      <LoadError
+        message="Failed to load repositories"
+        onRetry={() => void refetch()}
+      />
+    )
+  }
+
+  if (repos.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <div className="flex size-12 items-center justify-center rounded-xl border border-border bg-muted">

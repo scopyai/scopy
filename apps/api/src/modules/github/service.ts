@@ -38,7 +38,7 @@ type GitHubConfig = {
 const normalizePrivateKey = (privateKey: string) =>
   privateKey.replace(/\\n/g, "\n");
 
-export const getGitHubConfig = (): GitHubConfig | null => {
+const getGitHubConfig = (): GitHubConfig | null => {
   if (
     !env.GITHUB_APP_ID ||
     !env.GITHUB_APP_SLUG ||

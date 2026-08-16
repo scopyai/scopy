@@ -15,7 +15,7 @@ export type SearchRepositoryTextInput = {
   maxResults?: number
 }
 
-export type TextSearchSymbol = {
+type TextSearchSymbol = {
   name: string
   kind: ScopeDefinition["kind"]
   startLine: number
@@ -24,7 +24,7 @@ export type TextSearchSymbol = {
   returnType?: string
 }
 
-export type TextSearchMatch = {
+type TextSearchMatch = {
   file: string
   line: number
   column: number

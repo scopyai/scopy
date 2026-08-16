@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq, isNull, lt, or } from "drizzle-orm"
 import { db } from "../../db/client"
 import { webhookEvent, workspace } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
@@ -19,6 +19,8 @@ const findWorkspaceByInstallationId = async (installationId?: number) => {
     where: eq(workspace.providerInstallationId, String(installationId)),
   })
 }
+
+const WEBHOOK_PROCESSING_LEASE_MS = 15 * 60 * 1_000
 
 const finishWebhookEvent = async (
   eventId: string,
@@ -91,13 +93,23 @@ export const persistGitHubWebhookEvent = async ({
 }
 
 const startGitHubWebhookEvent = async (eventId: string) => {
+  const staleBefore = new Date(Date.now() - WEBHOOK_PROCESSING_LEASE_MS)
   const [event] = await db
     .update(webhookEvent)
     .set({
       processingStartedAt: new Date(),
       processingError: null,
     })
-    .where(and(eq(webhookEvent.id, eventId), isNull(webhookEvent.processedAt)))
+    .where(
+      and(
+        eq(webhookEvent.id, eventId),
+        isNull(webhookEvent.processedAt),
+        or(
+          isNull(webhookEvent.processingStartedAt),
+          lt(webhookEvent.processingStartedAt, staleBefore)
+        )
+      )
+    )
     .returning()
 
   if (event) {

@@ -183,8 +183,6 @@ function ScopeBadge({ visible }: { visible: boolean }) {
   )
 }
 
-export { SettingLabelRow } from "@/components/repositories/setting-label-row"
-
 function SettingRow({
   id,
   label,

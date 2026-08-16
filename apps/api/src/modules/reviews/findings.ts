@@ -64,25 +64,13 @@ const sameIssue = (
   )
 }
 
-export const isSameIssue = (first: IssueShape, second: IssueShape) =>
+const isSameIssue = (first: IssueShape, second: IssueShape) =>
   sameIssue(first, findingTokens(first), second, findingTokens(second))
 
 export const resemblesSameIssue = (first: IssueShape, second: IssueShape) =>
   isSameIssue(first, second) ||
   tokenOverlapScore(findingTokens(first), findingTokens(second)) >=
     SAME_ISSUE_TOKEN_OVERLAP
-
-export const dedupeSameIssueFindings = <T extends ReviewFinding>(
-  findings: T[]
-): T[] => {
-  const kept: T[] = []
-  for (const finding of findings) {
-    if (!kept.some((existing) => isSameIssue(existing, finding))) {
-      kept.push(finding)
-    }
-  }
-  return kept
-}
 
 export const dropFindingsCoveredBy = (
   findings: ReviewFinding[],

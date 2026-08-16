@@ -22,11 +22,21 @@ const hardIgnoredPathParts = new Set([
 const softIgnoredPathParts = new Set([
   ".agents",
   "__fixtures__",
-  "docs",
   "examples",
   "fixtures",
   "samples",
 ])
+
+const isDocumentationPath = (file: string) => {
+  const parts = file.split(/[\\/]/)
+  const docsIndex = parts.indexOf("docs")
+  if (docsIndex === -1) return false
+
+  const sourceRootIndex = parts.findIndex((part) =>
+    ["app", "lib", "src"].includes(part)
+  )
+  return sourceRootIndex === -1 || docsIndex < sourceRootIndex
+}
 
 const hardIgnoredFilePatterns = [
   /(^|\/)package-lock\.json$/,
@@ -62,7 +72,10 @@ export const reviewIndexDecision = (
     return { index: false, reason: "hard-ignore" }
   }
 
-  if (hasPart(file, softIgnoredPathParts) && !changedFiles.has(file)) {
+  if (
+    (hasPart(file, softIgnoredPathParts) || isDocumentationPath(file)) &&
+    !changedFiles.has(file)
+  ) {
     return { index: false, reason: "soft-ignore" }
   }
 

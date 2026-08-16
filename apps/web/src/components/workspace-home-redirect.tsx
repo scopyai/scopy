@@ -1,11 +1,22 @@
 import { Navigate } from "@tanstack/react-router"
+import { LoadError } from "@/components/load-error"
 import { useWorkspaces } from "@/hooks/use-workspaces"
-import { getActiveWorkspaces, getWorkspaceSlug } from "@/lib/workspace-slug"
+import { getActiveWorkspaces } from "@/lib/workspace-slug"
 
 export function WorkspaceHomeRedirect() {
-  const { data: workspaces, isPending } = useWorkspaces()
+  const { data: workspaces, isPending, isError, refetch } = useWorkspaces()
 
   if (isPending) return null
+
+  if (isError) {
+    return (
+      <LoadError
+        message="Failed to load organizations"
+        onRetry={() => void refetch()}
+        fullScreen
+      />
+    )
+  }
 
   const active = getActiveWorkspaces(workspaces)
 
@@ -16,7 +27,7 @@ export function WorkspaceHomeRedirect() {
   return (
     <Navigate
       to="/$workspaceSlug/repositories"
-      params={{ workspaceSlug: getWorkspaceSlug(active[0].workspace) }}
+      params={{ workspaceSlug: active[0].workspace.providerAccountLogin }}
       replace
     />
   )

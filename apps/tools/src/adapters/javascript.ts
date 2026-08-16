@@ -409,14 +409,26 @@ const extract = (
   }
 }
 
+// The current tree-sitter TypeScript grammar can read `in_` as the `in`
+// keyword when an unseparated type member starts on a new line. Keep byte and
+// line positions stable while hiding that keyword from the parser. Property
+// signatures are not part of the symbol graph.
+export const normalizeTypeScriptForParser = (source: string) =>
+  source.replace(
+    /^(\s*)in_(?=[$\w]*\??\s*:)/gm,
+    (_match, indentation: string) => `${indentation}ix_`
+  )
+
 const adapter = (
   id: string,
   extensions: string[],
   language: Parser.Language,
+  parseSource?: (source: string) => string,
 ): LanguageAdapter => ({
   id,
   extensions,
   language,
+  parseSource,
   extract: (file, source, tree) => extract(id, file, source, tree),
 })
 
@@ -427,6 +439,12 @@ export const javascriptAdapters: LanguageAdapter[] = [
     "typescript",
     [".ts", ".mts", ".cts"],
     TypeScript.typescript as unknown as Parser.Language,
+    normalizeTypeScriptForParser,
   ),
-  adapter("tsx", [".tsx"], TypeScript.tsx as unknown as Parser.Language),
+  adapter(
+    "tsx",
+    [".tsx"],
+    TypeScript.tsx as unknown as Parser.Language,
+    normalizeTypeScriptForParser,
+  ),
 ]

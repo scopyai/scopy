@@ -28,7 +28,7 @@ export type InspectSymbolInput = {
   keepTemporaryRepository?: boolean
 }
 
-export type InspectedScope = SourceLocation & {
+type InspectedScope = SourceLocation & {
   id: string
   name: string
   kind: ScopeKind
@@ -68,7 +68,7 @@ export type InspectedCallSite = SourceLocation & {
   }
 }
 
-export type DefinitionCallers = {
+type DefinitionCallers = {
   definitionId: string
   directCallers: InspectedCallSite[]
 }

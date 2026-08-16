@@ -1,8 +1,8 @@
 import { Outlet, createFileRoute, Navigate } from "@tanstack/react-router"
 import { useEffect } from "react"
+import { LoadError } from "@/components/load-error"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import {
-  getWorkspaceSlug,
   findActiveWorkspaceBySlug,
   getActiveWorkspaces,
 } from "@/lib/workspace-slug"
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_app/$workspaceSlug")({
 
 function WorkspaceLayout() {
   const { workspaceSlug } = Route.useParams()
-  const { data: workspaces, isPending } = useWorkspaces()
+  const { data: workspaces, isPending, isError, refetch } = useWorkspaces()
   const { setSelectedWorkspaceId } = useWorkspaceContext()
 
   const entry = findActiveWorkspaceBySlug(workspaces, workspaceSlug)
@@ -25,6 +25,15 @@ function WorkspaceLayout() {
 
   if (isPending) return null
 
+  if (isError) {
+    return (
+      <LoadError
+        message="Failed to load organizations"
+        onRetry={() => void refetch()}
+      />
+    )
+  }
+
   const active = getActiveWorkspaces(workspaces)
 
   if (!entry && active.length > 0) {
@@ -32,7 +41,7 @@ function WorkspaceLayout() {
     return (
       <Navigate
         to="/$workspaceSlug/repositories"
-        params={{ workspaceSlug: getWorkspaceSlug(fallback.workspace) }}
+        params={{ workspaceSlug: fallback.workspace.providerAccountLogin }}
         replace
       />
     )

@@ -17,6 +17,9 @@ import { memoryRoutes } from "./modules/memories"
 export const app = new Elysia({
   name: "api",
   adapter: node(),
+  serve: {
+    maxRequestBodySize: 26 * 1024 * 1024,
+  },
 })
   .use(
     cors({

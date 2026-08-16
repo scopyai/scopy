@@ -43,7 +43,7 @@ export function SubscriptionActions({
   if (!isPaid) return null
 
   const actions = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-4">
       {hasCustomer && (
         <Button
           variant="outline"

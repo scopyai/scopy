@@ -367,7 +367,7 @@ const filterByRun = ({
   ],
 })
 
-export const iterateRepositoryChunks = function* ({
+const iterateRepositoryChunks = function* ({
   index,
   repositoryKey,
   filePaths,

@@ -13,6 +13,8 @@ import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { useSubmitFeedback } from "@/hooks/use-submit-feedback"
+import { decodeFindingData } from "@/lib/finding-feedback"
+import type { FindingFeedbackData } from "@/lib/finding-feedback"
 
 const severityClass: Record<string, string> = {
   critical: "bg-red-500/15 text-red-500",
@@ -30,24 +32,6 @@ export const Route = createFileRoute("/_app/feedback/finding")({
   component: FindingFeedback,
 })
 
-type Finding = {
-  repo: string
-  file: string
-  severity: string
-  title: string
-  comment: string
-}
-
-function decode(data: string): Finding | null {
-  try {
-    const b64 = data.replace(/-/g, "+").replace(/_/g, "/")
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-    return JSON.parse(new TextDecoder().decode(bytes))
-  } catch {
-    return null
-  }
-}
-
 function truncate(value: string, maxLength: number) {
   if (value.length <= maxLength) return value
   if (maxLength <= TRUNCATION_SUFFIX.length) {
@@ -56,7 +40,7 @@ function truncate(value: string, maxLength: number) {
   return `${value.slice(0, maxLength - TRUNCATION_SUFFIX.length)}${TRUNCATION_SUFFIX}`
 }
 
-function buildFeedbackMessage(finding: Finding, note: string) {
+function buildFeedbackMessage(finding: FindingFeedbackData, note: string) {
   const normalizedNote = truncate(note.trim(), USER_NOTE_MAX_LENGTH)
   const prefix = [
     `Finding feedback – ${finding.repo}`,
@@ -86,7 +70,7 @@ function FindingFeedback() {
   const [note, setNote] = useState("")
   const { mutate, isPending } = useSubmitFeedback()
 
-  const finding = decode(data)
+  const finding = decodeFindingData(data)
 
   function close() {
     navigate({ to: "/" })

@@ -397,7 +397,14 @@ const applyCheckoutCompleted = async (
   if (metadataString(metadata, "kind") === "credit_topup") {
     const workspaceId = metadataString(metadata, "workspaceId")
     const credits = numberFromMetadata(metadata, "credits")
-    if (!workspaceId || !credits || credits < MINIMUM_TOP_UP_CREDITS) return
+    if (
+      !workspaceId ||
+      credits === null ||
+      !Number.isSafeInteger(credits) ||
+      credits < MINIMUM_TOP_UP_CREDITS
+    ) {
+      return
+    }
 
     await db.transaction(async (tx) => {
       await lockWorkspace(tx, workspaceId)
@@ -498,8 +505,10 @@ const applyFinancialRevoke = async (
       })
       if (!recorded) return
 
-      const nextPurchasedCreditBalance =
+      const nextPurchasedCreditBalance = Math.max(
+        0,
         currentWorkspace.purchasedCreditBalance - credits
+      )
 
       await tx
         .update(workspace)
@@ -698,7 +707,7 @@ export const createWorkspaceCreditCheckout = async (
   credits: number,
   requestId: string
 ) => {
-  if (!Number.isInteger(credits) || credits < MINIMUM_TOP_UP_CREDITS) {
+  if (!Number.isSafeInteger(credits) || credits < MINIMUM_TOP_UP_CREDITS) {
     throw new BillingError(
       `Credit top-ups must be at least ${MINIMUM_TOP_UP_CREDITS} credits`
     )
@@ -723,6 +732,9 @@ export const createWorkspaceCreditCheckout = async (
     env.FRONTEND_URL
   ).toString()
   const checkoutPriceCents = credits * plan.topUpCreditUnitPriceCents
+  if (!Number.isSafeInteger(checkoutPriceCents)) {
+    throw new BillingError("Credit top-up amount is too large")
+  }
   const checkout = await creem.checkouts.create({
     productId: env.CREEM_CREDIT_TOPUP_PRODUCT_ID,
     requestId,
@@ -827,6 +839,12 @@ export const changeWorkspacePlan = async (
 
   await db.transaction(async (tx) => {
     await lockWorkspace(tx, workspaceId)
+    const lockedWorkspace = await tx.query.workspace.findFirst({
+      where: eq(workspace.id, workspaceId),
+    })
+    if (!lockedWorkspace) {
+      throw new BillingError("Workspace not found", 404)
+    }
     const productId =
       typeof subscription.product === "string"
         ? subscription.product
@@ -842,7 +860,7 @@ export const changeWorkspacePlan = async (
       throw new Error("Upgraded subscription did not include a billing period")
     }
 
-    await resetCredits(tx, currentWorkspace, {
+    await resetCredits(tx, lockedWorkspace, {
       id: subscription.id,
       productId,
       customerId,

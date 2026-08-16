@@ -11,9 +11,9 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { authClient } from "@/lib/auth-client"
-import { env } from "@/env"
 import { WorkspaceHomeRedirect } from "@/components/workspace-home-redirect"
 import { isRedirectMutationPending } from "@/hooks/use-redirect-lock"
+import { getSafeRedirect } from "@/lib/safe-redirect"
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -56,14 +56,13 @@ function LoginPage() {
   const { redirect } = Route.useSearch()
   const { data: session, isPending } = authClient.useSession()
   const navigate = useNavigate()
-  const safeRedirect =
-    redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : "/"
+  const safeRedirect = getSafeRedirect(redirect)
 
   const mutation = useMutation({
     mutationFn: async () => {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: new URL(safeRedirect, env.VITE_WEB_BASE_URL).toString(),
+        callbackURL: new URL(safeRedirect, window.location.origin).toString(),
       })
 
       if (error) {

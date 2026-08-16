@@ -5,7 +5,9 @@ import { z } from "zod"
 dotenv.config({ path: resolve(process.cwd(), ".env") })
 
 export const sharedSchema = z.object({
-  APP_ENV: z.enum(["dev", "prod"]).default("dev"),
+  APP_ENV: z
+    .enum(["dev", "prod"])
+    .default(process.env.NODE_ENV === "production" ? "prod" : "dev"),
   DATABASE_URL: z.string().min(1),
   FRONTEND_URL: z.url(),
   GITHUB_APP_ID: z.string().min(1).optional(),

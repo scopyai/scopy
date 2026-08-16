@@ -18,11 +18,17 @@ import { useEffect } from "react"
 import { toast } from "sonner"
 import { z } from "zod"
 import { useWorkspaces } from "@/hooks/use-workspaces"
-import { markOnboardingOverviewSeen } from "@/lib/onboarding-flow"
-import { getActiveWorkspaces } from "@/lib/workspace-slug"
+import { LoadError } from "@/components/load-error"
+import {
+  getOnboardingWorkspaceId,
+  markOnboardingOverviewSeen,
+  setOnboardingWorkspaceId,
+} from "@/lib/onboarding-flow"
+import { findPreferredActiveWorkspace } from "@/lib/workspace-slug"
 
 const searchSchema = z.object({
   connected: z.union([z.literal("1"), z.literal(1)]).optional(),
+  workspaceId: z.string().optional(),
 })
 
 export const Route = createFileRoute("/_app/onboarding/overview")({
@@ -58,19 +64,31 @@ const howItWorksSteps = [
 ] as const
 
 function OnboardingOverviewPage() {
-  const { connected } = Route.useSearch()
+  const { connected, workspaceId } = Route.useSearch()
   const navigate = useNavigate()
-  const { data: workspaces, isPending } = useWorkspaces()
-  const activeWorkspace = getActiveWorkspaces(workspaces).at(0)?.workspace
+  const { data: workspaces, isPending, isError, refetch } = useWorkspaces()
+  const activeWorkspace = findPreferredActiveWorkspace(
+    workspaces,
+    workspaceId ?? getOnboardingWorkspaceId()
+  )?.workspace
 
   useEffect(() => {
     if (!connected) return
 
+    if (workspaceId) setOnboardingWorkspaceId(workspaceId)
     toast.success("GitHub connected successfully")
     navigate({ to: "/onboarding/overview", search: {}, replace: true })
-  }, [connected, navigate])
+  }, [connected, navigate, workspaceId])
 
   if (isPending) return null
+  if (isError) {
+    return (
+      <LoadError
+        message="Failed to load organizations"
+        onRetry={() => void refetch()}
+      />
+    )
+  }
   if (!activeWorkspace) return <Navigate to="/onboarding/connect" replace />
 
   const handleContinue = () => {

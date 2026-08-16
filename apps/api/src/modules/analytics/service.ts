@@ -46,7 +46,7 @@ const startOfUtcWeek = (date: Date) => {
 const startOfUtcMonth = (date: Date) =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
 
-export const resolveAnalyticsWindow = (
+const resolveAnalyticsWindow = (
   range: AnalyticsRange,
   now = new Date(),
 ) => {
@@ -70,7 +70,7 @@ export const resolveAnalyticsWindow = (
   }
 }
 
-export const fillDailyBuckets = (
+const fillDailyBuckets = (
   rows: Array<{ date: string; count: number }>,
   start: Date | null,
   end: Date,

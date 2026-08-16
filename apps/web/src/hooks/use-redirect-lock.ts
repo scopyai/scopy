@@ -21,6 +21,7 @@ export function useRedirectLock() {
 
 export function isRedirectMutationPending(mutation: {
   isPending: boolean
+  isRedirecting?: boolean
 }) {
-  return mutation.isPending
+  return mutation.isPending || mutation.isRedirecting === true
 }

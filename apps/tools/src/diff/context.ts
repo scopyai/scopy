@@ -3,7 +3,7 @@ import { resolveRepositoryRoot } from "../repository-file"
 import type { Diagnostic, ScopeDefinition } from "../types"
 import type { ParsedDiffFile, ParsedDiffHunk } from "./parse"
 
-export type AffectedSymbol = {
+type AffectedSymbol = {
   id: string
   file: string
   name: string
@@ -18,7 +18,7 @@ export type AffectedSymbol = {
   source: string
 }
 
-export type DiffContextFile = {
+type DiffContextFile = {
   file: string
   status: ParsedDiffFile["status"]
   language?: string

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Badge } from "@workspace/ui/components/badge"
+import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
@@ -27,11 +28,8 @@ export function ChargeHistory({
   workspaceId: string | null | undefined
 }) {
   const [page, setPage] = useState(1)
-  const { data, isFetching, isPending } = useWorkspaceBillingCharges(
-    workspaceId,
-    page,
-    PAGE_SIZE
-  )
+  const { data, isFetching, isPending, isError, refetch } =
+    useWorkspaceBillingCharges(workspaceId, page, PAGE_SIZE)
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0
 
@@ -50,7 +48,16 @@ export function ChargeHistory({
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
-        ) : !data || data.items.length === 0 ? (
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              Failed to load charges
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          </div>
+        ) : data.items.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             No charges yet
           </p>

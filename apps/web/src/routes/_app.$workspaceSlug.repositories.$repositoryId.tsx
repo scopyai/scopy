@@ -12,6 +12,7 @@ import { useWorkspaces } from "@/hooks/use-workspaces"
 import { PullRequestList } from "@/components/pull-requests/pr-list"
 import { PullRequestDetail } from "@/components/pull-requests/pr-detail"
 import { RepositoryReviewSettings } from "@/components/repositories/repository-review-settings"
+import { LoadError } from "@/components/load-error"
 
 const searchSchema = z.object({
   pullRequestId: z.string().optional(),
@@ -38,7 +39,12 @@ function RepositoryPage() {
 
   const { selectedWorkspaceId } = useWorkspaceContext()
   const { data: workspaces } = useWorkspaces()
-  const { data: repos } = useRepositories(selectedWorkspaceId)
+  const {
+    data: repos,
+    isPending: repositoriesPending,
+    isError: repositoriesError,
+    refetch: refetchRepositories,
+  } = useRepositories(selectedWorkspaceId)
   const repository = repos?.find((r) => r.id === repositoryId)
 
   const selectedEntry = workspaces?.find(
@@ -47,14 +53,19 @@ function RepositoryPage() {
   const canEditSettings =
     selectedEntry?.role === "owner" || selectedEntry?.role === "admin"
 
-  const { data: pullRequests, isPending: pullRequestsPending } =
-    usePullRequests(selectedWorkspaceId, repositoryId)
+  const {
+    data: pullRequests,
+    isPending: pullRequestsPending,
+    isError: pullRequestsError,
+    refetch: refetchPullRequests,
+  } = usePullRequests(selectedWorkspaceId, repositoryId)
 
-  const { data: pullRequestDetail, isPending: detailPending } = usePullRequest(
-    selectedWorkspaceId,
-    repositoryId,
-    pullRequestId
-  )
+  const {
+    data: pullRequestDetail,
+    isPending: detailPending,
+    isError: detailError,
+    refetch: refetchDetail,
+  } = usePullRequest(selectedWorkspaceId, repositoryId, pullRequestId)
 
   const showSettings = view === "settings"
   const detailOpen = !!pullRequestId && !showSettings
@@ -66,6 +77,7 @@ function RepositoryPage() {
   const previousDetailOpenRef = useRef(detailOpen)
   const pullRequestToRestoreFocusRef = useRef<string | null>(null)
   const isResizing = useRef(false)
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const wasDetailOpen = previousDetailOpenRef.current
@@ -100,6 +112,13 @@ function RepositoryPage() {
     return () => window.cancelAnimationFrame(animationFrame)
   }, [detailOpen])
 
+  useEffect(
+    () => () => {
+      resizeCleanupRef.current?.()
+    },
+    []
+  )
+
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     isResizing.current = true
@@ -120,14 +139,18 @@ function RepositoryPage() {
       setListWidth(Math.max(MIN_LIST_WIDTH, Math.min(maxListWidth, newWidth)))
     }
 
-    const onMouseUp = () => {
+    const cleanup = () => {
       isResizing.current = false
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
+      resizeCleanupRef.current = null
     }
+    const onMouseUp = () => cleanup()
 
+    resizeCleanupRef.current?.()
+    resizeCleanupRef.current = cleanup
     document.addEventListener("mousemove", onMouseMove)
     document.addEventListener("mouseup", onMouseUp)
   }, [])
@@ -152,6 +175,52 @@ function RepositoryPage() {
         pullRequestId: nextView === "settings" ? undefined : prev.pullRequestId,
       }),
     })
+  }
+
+  if (repositoriesError) {
+    return (
+      <LoadError
+        message="Failed to load the repository"
+        onRetry={() => void refetchRepositories()}
+      />
+    )
+  }
+
+  if (!repositoriesPending && !repository) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <p className="text-sm text-muted-foreground">Repository not found</p>
+        <Button
+          variant="outline"
+          onClick={() =>
+            navigate({
+              to: "/$workspaceSlug/repositories",
+              search: {},
+            })
+          }
+        >
+          Back to repositories
+        </Button>
+      </div>
+    )
+  }
+
+  if (pullRequestsError) {
+    return (
+      <LoadError
+        message="Failed to load pull requests"
+        onRetry={() => void refetchPullRequests()}
+      />
+    )
+  }
+
+  if (detailOpen && detailError) {
+    return (
+      <LoadError
+        message="Failed to load the pull request"
+        onRetry={() => void refetchDetail()}
+      />
+    )
   }
 
   return (

@@ -40,7 +40,7 @@ export type PreparedReviewRuntime = {
 
 const safeSegment = (value: string) => value.replace(/[^A-Za-z0-9_.-]/g, "_")
 
-export const getReviewRuntimePaths = ({
+const getReviewRuntimePaths = ({
   repositoryId,
   headSha,
   reviewRunId,

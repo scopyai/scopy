@@ -15,10 +15,14 @@ import { ArrowRightIcon, SearchIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { LoadError } from "@/components/load-error"
 import { useRepositories } from "@/hooks/use-repositories"
 import { useWorkspaces } from "@/hooks/use-workspaces"
-import { hasSeenOnboardingOverview } from "@/lib/onboarding-flow"
-import { getActiveWorkspaces } from "@/lib/workspace-slug"
+import {
+  getOnboardingWorkspaceId,
+  hasSeenOnboardingOverview,
+} from "@/lib/onboarding-flow"
+import { findPreferredActiveWorkspace } from "@/lib/workspace-slug"
 
 export const Route = createFileRoute("/_app/onboarding/repositories")({
   component: OnboardingRepositoriesPage,
@@ -27,10 +31,22 @@ export const Route = createFileRoute("/_app/onboarding/repositories")({
 function OnboardingRepositoriesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { data: workspaces, isPending: workspacesPending } = useWorkspaces()
-  const activeWorkspace = getActiveWorkspaces(workspaces).at(0)?.workspace
-  const { data: repositories, isPending: repositoriesPending } =
-    useRepositories(activeWorkspace?.id)
+  const {
+    data: workspaces,
+    isPending: workspacesPending,
+    isError: workspacesError,
+    refetch: refetchWorkspaces,
+  } = useWorkspaces()
+  const activeWorkspace = findPreferredActiveWorkspace(
+    workspaces,
+    getOnboardingWorkspaceId()
+  )?.workspace
+  const {
+    data: repositories,
+    isPending: repositoriesPending,
+    isError: repositoriesError,
+    refetch: refetchRepositories,
+  } = useRepositories(activeWorkspace?.id)
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<string[]>(
     []
   )
@@ -90,7 +106,23 @@ function OnboardingRepositoriesPage() {
   }
 
   if (workspacesPending) return <RepositorySelectionSkeleton />
+  if (workspacesError) {
+    return (
+      <LoadError
+        message="Failed to load organizations"
+        onRetry={() => void refetchWorkspaces()}
+      />
+    )
+  }
   if (!activeWorkspace) return <Navigate to="/onboarding/connect" replace />
+  if (repositoriesError) {
+    return (
+      <LoadError
+        message="Failed to load repositories"
+        onRetry={() => void refetchRepositories()}
+      />
+    )
+  }
 
   const isLoading = repositoriesPending
   const canContinue =

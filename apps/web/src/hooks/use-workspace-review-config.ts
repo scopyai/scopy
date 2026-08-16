@@ -38,10 +38,10 @@ export function useUpdateWorkspaceReviewConfig(workspaceId: string) {
       if (error) throw error
       return data
     },
-    onMutate: (values) => {
+    onMutate: async (values) => {
+      await queryClient.cancelQueries({ queryKey })
       const previous = queryClient.getQueryData(queryKey)
       applyReviewConfigOptimisticUpdate(queryClient, queryKey, values)
-      void queryClient.cancelQueries({ queryKey })
       return { previous }
     },
     onError: (_error, _values, context) => {

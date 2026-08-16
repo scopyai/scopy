@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import { docSource, repository } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
@@ -11,7 +11,7 @@ type Logger = {
   info: (message: string, details?: Record<string, unknown>) => void
 }
 
-export const MAX_CUSTOM_SOURCES_PER_WORKSPACE = 10
+const MAX_CUSTOM_SOURCES_PER_WORKSPACE = 10
 
 const upsertGlobalSource = async (config: (typeof docSourceConfigs)[number]) =>
   db
@@ -255,40 +255,46 @@ export const createWorkspaceDocSource = async ({
   const slug = slugify(name)
   if (!slug) return { ok: false, error: "Name must contain letters or digits" }
 
-  const existing = await db.query.docSource.findMany({
-    columns: { slug: true, llmsTxtUrl: true },
-    where: eq(docSource.workspaceId, workspaceId),
-  })
-  if (existing.length >= MAX_CUSTOM_SOURCES_PER_WORKSPACE) {
-    return {
-      ok: false,
-      error: `Limit of ${MAX_CUSTOM_SOURCES_PER_WORKSPACE} custom doc sources reached`,
-    }
-  }
-  if (existing.some((source) => source.slug === slug)) {
-    return { ok: false, error: "A doc source with this name already exists" }
-  }
-  if (
-    existing.some(
-      (source) =>
-        normalizeDocUrl(source.llmsTxtUrl) === normalizeDocUrl(llmsTxtUrl)
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`doc-source-create:${workspaceId}`}))`
     )
-  ) {
-    return { ok: false, error: "A doc source with this URL already exists" }
-  }
 
-  const [source] = await db
-    .insert(docSource)
-    .values({
-      id: randomUUID(),
-      workspaceId,
-      slug,
-      name: name.trim(),
-      llmsTxtUrl,
+    const existing = await tx.query.docSource.findMany({
+      columns: { slug: true, llmsTxtUrl: true },
+      where: eq(docSource.workspaceId, workspaceId),
     })
-    .returning()
-  await jobs.crawlDocSource.enqueue(db, { sourceId: source!.id })
-  return { ok: true, source: selectSourceState(source!) }
+    if (existing.length >= MAX_CUSTOM_SOURCES_PER_WORKSPACE) {
+      return {
+        ok: false as const,
+        error: `Limit of ${MAX_CUSTOM_SOURCES_PER_WORKSPACE} custom doc sources reached`,
+      }
+    }
+    const normalizedUrl = normalizeDocUrl(llmsTxtUrl)
+    const duplicate = existing.find(
+      (source) =>
+        source.slug === slug || normalizeDocUrl(source.llmsTxtUrl) === normalizedUrl
+    )
+    if (duplicate) {
+      return {
+        ok: false as const,
+        error: `A doc source with this ${duplicate.slug === slug ? "name" : "URL"} already exists`,
+      }
+    }
+
+    const [source] = await tx
+      .insert(docSource)
+      .values({
+        id: randomUUID(),
+        workspaceId,
+        slug,
+        name: name.trim(),
+        llmsTxtUrl,
+      })
+      .returning()
+    await jobs.crawlDocSource.enqueue(tx, { sourceId: source!.id })
+    return { ok: true as const, source: selectSourceState(source!) }
+  })
 }
 
 export const deleteWorkspaceDocSource = async ({
