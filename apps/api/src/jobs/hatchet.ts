@@ -13,7 +13,8 @@ import {
   publishReviewPullRequest,
   type JobLogger,
 } from "../modules/reviews/task"
-import { processGitHubWebhookEvent } from "../modules/webhooks/service"
+import type { GitHubWebhookPayload } from "../modules/webhooks/github"
+import { runGitHubWebhook } from "../modules/webhooks/service"
 import { hydrateRepositoryPullRequests } from "../modules/pull-requests/service"
 import { jobNames, jobPayloadSchemas } from "./definitions"
 import { hatchet } from "./client"
@@ -47,15 +48,19 @@ export const createHatchetJobs = () => {
   >({
     name: jobNames.processGitHubWebhook,
     inputValidator: processGitHubWebhookSchema,
-    idempotency: activeRunIdempotency("input.webhookEventId", 30 * 60 * 1_000),
+    idempotency: activeRunIdempotency("input.deliveryId", 30 * 60 * 1_000),
     ...retryPolicy,
     executionTimeout: "10m",
     fn: async (input, ctx) => {
       try {
-        await processGitHubWebhookEvent(input.webhookEventId)
+        await runGitHubWebhook({
+          deliveryId: input.deliveryId,
+          eventName: input.eventName,
+          payload: input.payload as unknown as GitHubWebhookPayload,
+        })
       } catch (error) {
         await ctx.logger.error(
-          `Failed to process GitHub webhook ${input.webhookEventId}`,
+          `Failed to process GitHub webhook ${input.deliveryId}`,
           {
             error: error instanceof Error ? error : new Error(String(error)),
           }

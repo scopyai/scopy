@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import { calculateReviewCredits } from "@workspace/billing/plans"
@@ -550,7 +549,6 @@ export const finalizeReviewPullRequest = async (
     if (result.findings?.length) {
       await tx.insert(reviewFinding).values(
         result.findings.map((finding) => ({
-          id: randomUUID(),
           reviewRunId,
           severity: finding.severity,
           file: finding.file,

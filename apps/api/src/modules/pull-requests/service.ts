@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { and, eq, isNull, notInArray } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
@@ -8,63 +7,6 @@ import {
   type ProviderActor,
 } from "../../db/schema"
 import { getGitHubInstallationOctokit } from "../github/service"
-
-type GitHubActor = {
-  id: number
-  login: string
-  avatar_url?: string | null
-  html_url?: string | null
-}
-
-type GitHubPullRequest = {
-  id: number
-  number: number
-  title: string
-  body: string | null
-  html_url: string
-  user: GitHubActor | null
-  state: "open" | "closed"
-  draft?: boolean | null
-  base: { ref: string }
-  head: { ref: string; sha: string }
-  labels: Array<{ name?: string | null }>
-  assignees?: GitHubActor[] | null
-  created_at: string
-  updated_at: string
-  closed_at: string | null
-  merged_at: string | null
-}
-
-type GitHubIssueComment = {
-  id: number
-  user: GitHubActor | null
-  body?: string | null
-  html_url: string
-  created_at: string
-  updated_at: string
-}
-
-type GitHubReview = {
-  id: number
-  user: GitHubActor | null
-  body?: string | null
-  html_url: string
-  state: string
-  commit_id?: string | null
-  submitted_at?: string | null
-}
-
-type GitHubReviewComment = GitHubIssueComment & {
-  path: string
-  diff_hunk: string
-  line?: number | null
-  original_line?: number | null
-  side?: string | null
-  start_line?: number | null
-  original_start_line?: number | null
-  start_side?: string | null
-  in_reply_to_id?: number
-}
 
 type TimelineEventType = "issue_comment" | "review" | "review_comment"
 
@@ -87,6 +29,28 @@ const toActor = (
 type GitHubInstallationOctokit = Awaited<
   ReturnType<typeof getGitHubInstallationOctokit>
 >
+
+type GitHubActor = NonNullable<
+  Awaited<
+    ReturnType<GitHubInstallationOctokit["rest"]["pulls"]["get"]>
+  >["data"]["user"]
+>
+type GitHubPullRequest =
+  | Awaited<
+      ReturnType<GitHubInstallationOctokit["rest"]["pulls"]["get"]>
+    >["data"]
+  | Awaited<
+      ReturnType<GitHubInstallationOctokit["rest"]["pulls"]["list"]>
+    >["data"][number]
+type GitHubIssueComment = Awaited<
+  ReturnType<GitHubInstallationOctokit["rest"]["issues"]["listComments"]>
+>["data"][number]
+type GitHubReview = Awaited<
+  ReturnType<GitHubInstallationOctokit["rest"]["pulls"]["listReviews"]>
+>["data"][number]
+type GitHubReviewComment = Awaited<
+  ReturnType<GitHubInstallationOctokit["rest"]["pulls"]["listReviewComments"]>
+>["data"][number]
 
 const upsertTimelineEvent = async ({
   pullRequestId,
@@ -112,7 +76,6 @@ const upsertTimelineEvent = async ({
   providerUpdatedAt: Date
 }) => {
   const values = {
-    id: randomUUID(),
     pullRequestId,
     eventType,
     externalKey,
@@ -307,12 +270,13 @@ const buildPullRequestValues = (
   githubPullRequest: GitHubPullRequest
 ) => {
   const now = new Date()
-  const state = githubPullRequest.merged_at
-    ? ("merged" as const)
-    : githubPullRequest.state
+  const state: "open" | "closed" | "merged" = githubPullRequest.merged_at
+    ? "merged"
+    : githubPullRequest.state === "open"
+      ? "open"
+      : "closed"
 
   return {
-    id: randomUUID(),
     repositoryId,
     providerPullRequestId: String(githubPullRequest.id),
     number: githubPullRequest.number,
@@ -398,7 +362,7 @@ export const syncGitHubPullRequest = async (
     installationOctokit ?? (await getRepositoryWorkspaceOctokit(repo))
   const [pullResponse, issueComments, reviews, reviewComments] =
     await Promise.all([
-      octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+      octokit.rest.pulls.get({
         owner: repo.owner,
         repo: repo.name,
         pull_number: number,
@@ -432,10 +396,7 @@ export const syncGitHubPullRequest = async (
       ),
     ])
 
-  const values = buildPullRequestValues(
-    repo.id,
-    pullResponse.data as GitHubPullRequest
-  )
+  const values = buildPullRequestValues(repo.id, pullResponse.data)
   const savedPullRequest = await upsertPullRequest(values)
 
   await Promise.all([
@@ -445,15 +406,9 @@ export const syncGitHubPullRequest = async (
       htmlUrl: values.htmlUrl,
       providerCreatedAt: values.providerCreatedAt,
     }),
-    syncIssueComments(
-      savedPullRequest.id,
-      issueComments as GitHubIssueComment[]
-    ),
-    syncReviews(savedPullRequest.id, reviews as GitHubReview[]),
-    syncReviewComments(
-      savedPullRequest.id,
-      reviewComments as GitHubReviewComment[]
-    ),
+    syncIssueComments(savedPullRequest.id, issueComments),
+    syncReviews(savedPullRequest.id, reviews),
+    syncReviewComments(savedPullRequest.id, reviewComments),
   ])
 
   return savedPullRequest
@@ -482,7 +437,7 @@ export const syncRepositoryPullRequests = async (
       per_page: 100,
     }
   )) {
-    const page = response.data as GitHubPullRequest[]
+    const page = response.data
     page.forEach((item) => numbers.add(item.number))
     await Promise.all(
       page.map((item) =>

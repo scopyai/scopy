@@ -1,11 +1,6 @@
-import { randomUUID } from "node:crypto"
 import { eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
-import {
-  reviewUsage,
-  workspace,
-  type ReviewUsageModel,
-} from "../../db/schema"
+import { reviewUsage, workspace, type ReviewUsageModel } from "../../db/schema"
 import { env } from "../../env"
 
 const MICRO_USD_PER_USD = 1_000_000
@@ -26,8 +21,8 @@ export const calculateVectorWriteCostMicrocents = (bytes: number) =>
     ceilDiv(
       BigInt(Math.max(0, Math.ceil(bytes))) *
         BigInt(env.VECTOR_WRITE_MICROUSD_PER_GIB),
-      BigInt(BYTES_PER_GIB),
-    ),
+      BigInt(BYTES_PER_GIB)
+    )
   )
 
 export const calculateVectorQueryCostMicrocents = (bytes: number) =>
@@ -35,8 +30,8 @@ export const calculateVectorQueryCostMicrocents = (bytes: number) =>
     ceilDiv(
       BigInt(Math.max(0, Math.ceil(bytes))) *
         BigInt(env.VECTOR_QUERY_MICROUSD_PER_TIB),
-      BigInt(BYTES_PER_TIB),
-    ),
+      BigInt(BYTES_PER_TIB)
+    )
   )
 
 export const calculateVectorNetworkCostMicrocents = (bytes: number) =>
@@ -44,8 +39,8 @@ export const calculateVectorNetworkCostMicrocents = (bytes: number) =>
     ceilDiv(
       BigInt(Math.max(0, Math.ceil(bytes))) *
         BigInt(env.VECTOR_NETWORK_MICROUSD_PER_GIB),
-      BigInt(BYTES_PER_GIB),
-    ),
+      BigInt(BYTES_PER_GIB)
+    )
   )
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -57,7 +52,9 @@ const numberAt = (value: unknown, path: string[]) => {
     if (!isRecord(current)) return null
     current = current[key]
   }
-  return typeof current === "number" && Number.isFinite(current) ? current : null
+  return typeof current === "number" && Number.isFinite(current)
+    ? current
+    : null
 }
 
 const stringAt = (value: unknown, path: string[]) => {
@@ -69,8 +66,7 @@ const stringAt = (value: unknown, path: string[]) => {
   return typeof current === "string" && current.length > 0 ? current : null
 }
 
-const sleep = (ms: number) =>
-  new Promise((resolve) => setTimeout(resolve, ms))
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const extractOpenRouterCost = (generation: unknown) => {
   const cost =
@@ -106,10 +102,7 @@ const extractOpenRouterGenerationId = (generation: unknown) => {
     : null
 }
 
-const resolveOpenRouterCost = async (
-  generation: unknown,
-  apiKey?: string,
-) => {
+const resolveOpenRouterCost = async (generation: unknown, apiKey?: string) => {
   const extracted = extractOpenRouterCost(generation)
   if (extracted.costMicrocents !== null) return extracted
 
@@ -118,13 +111,13 @@ const resolveOpenRouterCost = async (
 
   const response = await fetch(
     `https://openrouter.ai/api/v1/generation?id=${encodeURIComponent(
-      generationId,
+      generationId
     )}`,
     {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
-    },
+    }
   )
   if (!response.ok) return extracted
 
@@ -220,7 +213,7 @@ const resolveGenerationCost = async (
 
 export const resolveOpenRouterGenerationCost = (
   generation: unknown,
-  apiKey?: string,
+  apiKey?: string
 ) =>
   resolveGenerationCost(generation, async (step) => {
     const cost = await resolveOpenRouterCost(step, apiKey)
@@ -234,11 +227,7 @@ export const resolveOpenRouterGenerationCost = (
   })
 
 const extractGatewayGenerationId = (generation: unknown) => {
-  return stringAt(generation, [
-    "providerMetadata",
-    "gateway",
-    "generationId",
-  ])
+  return stringAt(generation, ["providerMetadata", "gateway", "generationId"])
 }
 
 type GatewayGenerationInfo = {
@@ -289,8 +278,7 @@ export const resolveGatewayGenerationCost = async (
       const resolved = await resolveGatewayGenerationInfo(
         generationId,
         getGenerationInfo,
-        options.retryDelaysMs ??
-          DEFAULT_GATEWAY_GENERATION_INFO_RETRY_DELAYS_MS
+        options.retryDelaysMs ?? DEFAULT_GATEWAY_GENERATION_INFO_RETRY_DELAYS_MS
       )
       generationUsage = resolved.generationUsage
       generationLookupError = resolved.generationLookupError
@@ -378,12 +366,9 @@ export const reserveReviewCredits = async ({
         purchasedCreditBalance: true,
       },
     })
-    const includedCreditBalance =
-      currentWorkspace?.includedCreditBalance ?? 0
-    const purchasedCreditBalance =
-      currentWorkspace?.purchasedCreditBalance ?? 0
-    const availableCredits =
-      includedCreditBalance + purchasedCreditBalance
+    const includedCreditBalance = currentWorkspace?.includedCreditBalance ?? 0
+    const purchasedCreditBalance = currentWorkspace?.purchasedCreditBalance ?? 0
+    const availableCredits = includedCreditBalance + purchasedCreditBalance
 
     if (!currentWorkspace || availableCredits < credits) {
       return {
@@ -397,8 +382,7 @@ export const reserveReviewCredits = async ({
     const purchasedDebit = credits - includedDebit
     const nextIncludedCreditBalance = includedCreditBalance - includedDebit
     const nextPurchasedCreditBalance = purchasedCreditBalance - purchasedDebit
-    const balanceAfter =
-      nextIncludedCreditBalance + nextPurchasedCreditBalance
+    const balanceAfter = nextIncludedCreditBalance + nextPurchasedCreditBalance
 
     await tx
       .update(workspace)
@@ -410,7 +394,6 @@ export const reserveReviewCredits = async ({
       .where(eq(workspace.id, workspaceId))
 
     await tx.insert(reviewUsage).values({
-      id: randomUUID(),
       workspaceId,
       reviewRunId,
       repositoryId,
@@ -494,7 +477,7 @@ const numberOrZero = (value: unknown) =>
  * normalized list of one entry per stage for internal cost analytics.
  */
 const flattenBillingModels = (
-  llm: Record<string, unknown>,
+  llm: Record<string, unknown>
 ): ReviewUsageModel[] =>
   Object.entries(llm).flatMap(([stage, value]) => {
     if (typeof value !== "object" || value === null) return []
@@ -578,7 +561,6 @@ export const recordReviewUsage = async (input: RecordReviewUsageInput) =>
     await tx
       .insert(reviewUsage)
       .values({
-        id: randomUUID(),
         reviewRunId: input.reviewRunId,
         ...values,
         creditsCharged: input.creditsCharged ?? 0,

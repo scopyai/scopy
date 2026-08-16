@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { invalidRequest } from "../../lib/validation"
 import { protectedRoute } from "../auth"
 import { requireWorkspaceForUser } from "../workspaces/service"
 import {
@@ -16,22 +17,14 @@ const analyticsQuerySchema = z.object({
 export const analyticsRoutes = protectedRoute("/workspaces").get(
   "/:workspaceId/analytics",
   async ({ params, query, user, status }) => {
-    await requireWorkspaceForUser(
-      params.workspaceId,
-      user.id
-    )
-
-    const parsed = analyticsQuerySchema.safeParse(query)
-    if (!parsed.success) {
-      return status(400, { error: "Invalid analytics query" })
-    }
+    await requireWorkspaceForUser(params.workspaceId, user.id)
 
     try {
       return await getWorkspaceAnalytics({
         workspaceId: params.workspaceId,
-        range: parsed.data.range,
-        repositoryIds: parsed.data.repositoryIds,
-        authorIds: parsed.data.authorIds,
+        range: query.range,
+        repositoryIds: query.repositoryIds,
+        authorIds: query.authorIds,
       })
     } catch (error) {
       if (error instanceof AnalyticsError) {
@@ -41,4 +34,8 @@ export const analyticsRoutes = protectedRoute("/workspaces").get(
       throw error
     }
   },
+  {
+    query: analyticsQuerySchema,
+    error: invalidRequest("Invalid analytics query"),
+  }
 )

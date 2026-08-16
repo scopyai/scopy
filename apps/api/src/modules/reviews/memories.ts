@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { generateObject } from "ai"
 import { eq } from "drizzle-orm"
 import { z } from "zod"
@@ -284,7 +283,6 @@ export const distillReviewMemory = async ({
     await db
       .insert(reviewMemory)
       .values({
-        id: randomUUID(),
         repositoryId: repo.id,
         content: replaceEmDashes(content!),
         sourceCommentId: String(commentId),

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import type {
   NormalizedCheckoutCompletedEvent,
   NormalizedDisputeCreatedEvent,
@@ -183,7 +182,6 @@ const recordCharge = async (
   const inserted = await tx
     .insert(workspaceCharge)
     .values({
-      id: randomUUID(),
       ...values,
       credits: values.credits ?? null,
       description: values.description ?? null,

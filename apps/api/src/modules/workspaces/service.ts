@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { and, eq, isNull, ne, notInArray, sql } from "drizzle-orm"
 import { status } from "elysia"
 import { db } from "../../db/client"
@@ -84,19 +83,17 @@ type WorkspaceAccessOptions = {
   roles?: WorkspaceMemberRole[]
 }
 
-export const getRepositoryForUser = async (
+export const requireRepositoryForUser = async (
   workspaceId: string,
   repositoryId: string,
   userId: string,
   options: WorkspaceAccessOptions = {}
 ) => {
-  const workspaceWithRole = options.roles
-    ? await getWorkspaceForUserWithRole(workspaceId, userId, options.roles)
-    : await getWorkspaceForUser(workspaceId, userId)
-
-  if (!workspaceWithRole) {
-    return { ok: false as const, error: "Workspace not found" as const }
-  }
+  const workspaceWithRole = await requireWorkspaceForUser(
+    workspaceId,
+    userId,
+    options.roles
+  )
 
   const repo = await db.query.repository.findFirst({
     where: and(
@@ -105,31 +102,27 @@ export const getRepositoryForUser = async (
     ),
   })
 
-  return repo
-    ? { ok: true as const, ...workspaceWithRole, repository: repo }
-    : { ok: false as const, error: "Repository not found" as const }
+  if (!repo) {
+    throw status(404, { error: "Repository not found" })
+  }
+
+  return { ...workspaceWithRole, repository: repo }
 }
 
-export const getPullRequestForUser = async (
+export const requirePullRequestForUser = async (
   workspaceId: string,
   repositoryId: string,
   pullRequestId: string,
   userId: string
 ) => {
-  const repositoryAccess = await getRepositoryForUser(
+  const repositoryAccess = await requireRepositoryForUser(
     workspaceId,
     repositoryId,
     userId
   )
 
-  if (!repositoryAccess.ok) {
-    return repositoryAccess.error === "Workspace not found"
-      ? repositoryAccess
-      : { ok: false as const, error: "Pull request not found" as const }
-  }
-
   if (repositoryAccess.repository.providerAccessRemovedAt) {
-    return { ok: false as const, error: "Pull request not found" as const }
+    throw status(404, { error: "Pull request not found" })
   }
 
   const savedPullRequest = await db.query.pullRequest.findFirst({
@@ -139,12 +132,11 @@ export const getPullRequestForUser = async (
     ),
   })
 
-  return savedPullRequest
-    ? {
-        ...repositoryAccess,
-        pullRequest: savedPullRequest,
-      }
-    : { ok: false as const, error: "Pull request not found" as const }
+  if (!savedPullRequest) {
+    throw status(404, { error: "Pull request not found" })
+  }
+
+  return { ...repositoryAccess, pullRequest: savedPullRequest }
 }
 
 export const getWorkspaceMembershipForUser = async (
@@ -198,7 +190,6 @@ export const inviteWorkspaceMemberByEmail = async ({
 
   const now = new Date()
   const membership = {
-    id: existingMembership?.id ?? randomUUID(),
     workspaceId,
     userId: invitedUser.id,
     role,
@@ -245,7 +236,9 @@ export const upsertGitHubWorkspace = async (
 
   const providerInstallationId = String(installation.id)
   const providerAccountId = String(account.id)
-  const providerAccountType = normalizeAccountType(account.type)
+  const providerAccountType =
+    "type" in account ? normalizeAccountType(account.type) : "organization"
+  const providerAccountLogin = "login" in account ? account.login : account.slug
   const connectionStatus: "active" | "suspended" = installation.suspended_at
     ? "suspended"
     : "active"
@@ -281,15 +274,14 @@ export const upsertGitHubWorkspace = async (
       throw new PersonalGitHubWorkspaceAlreadyConnectedError()
     }
 
-    const workspaceId = existing?.id ?? randomUUID()
     const now = new Date()
     const syncedWorkspace = {
       providerInstallationId,
       providerAccountId,
-      providerAccountLogin: account.login,
+      providerAccountLogin,
       providerAccountType,
       providerAccountAvatarUrl: account.avatar_url ?? null,
-      name: account.login,
+      name: providerAccountLogin,
       repositorySelection: installation.repository_selection,
       permissions: installation.permissions,
       connectionStatus,
@@ -298,7 +290,6 @@ export const upsertGitHubWorkspace = async (
     const values = {
       ...defaultWorkspaceReviewConfig,
       ...syncedWorkspace,
-      id: workspaceId,
       provider: "github" as const,
       installedByUserId: userId,
       installedAt: now,
@@ -324,7 +315,6 @@ export const upsertGitHubWorkspace = async (
         ? (existingMembership?.acceptedAt ?? now)
         : (existingMembership?.acceptedAt ?? null)
     const membership = {
-      id: existingMembership?.id ?? randomUUID(),
       workspaceId: savedWorkspace!.id,
       userId,
       role,
@@ -385,7 +375,6 @@ export const syncWorkspaceRepositories = async (
         .insert(repository)
         .values({
           ...syncedRepository,
-          id: randomUUID(),
           workspaceId,
           providerRepositoryId: String(githubRepository.id),
           pullRequestSyncStatus: "pending",

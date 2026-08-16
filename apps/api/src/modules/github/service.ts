@@ -1,42 +1,14 @@
-import { App } from "octokit";
-import { env } from "../../env";
-
-type GitHubAccount = {
-  id: number;
-  login: string;
-  type: string;
-  avatar_url?: string | null;
-};
-
-export type GitHubInstallation = {
-  id: number;
-  account: GitHubAccount | null;
-  repository_selection: "all" | "selected";
-  permissions: Record<string, string>;
-  suspended_at?: string | null;
-};
-
-export type GitHubRepository = {
-  id: number;
-  name: string;
-  full_name: string;
-  owner: {
-    login: string;
-  };
-  private: boolean;
-  default_branch: string | null;
-  html_url: string;
-  archived: boolean;
-};
+import { App } from "octokit"
+import { env } from "../../env"
 
 type GitHubConfig = {
-  appId: string;
-  appSlug: string;
-  privateKey: string;
-};
+  appId: string
+  appSlug: string
+  privateKey: string
+}
 
 const normalizePrivateKey = (privateKey: string) =>
-  privateKey.replace(/\\n/g, "\n");
+  privateKey.replace(/\\n/g, "\n")
 
 const getGitHubConfig = (): GitHubConfig | null => {
   if (
@@ -44,79 +16,83 @@ const getGitHubConfig = (): GitHubConfig | null => {
     !env.GITHUB_APP_SLUG ||
     !env.GITHUB_APP_PRIVATE_KEY
   ) {
-    return null;
+    return null
   }
 
   return {
     appId: env.GITHUB_APP_ID,
     appSlug: env.GITHUB_APP_SLUG,
     privateKey: normalizePrivateKey(env.GITHUB_APP_PRIVATE_KEY),
-  };
-};
+  }
+}
 
 export const requireGitHubConfig = () => {
-  const config = getGitHubConfig();
+  const config = getGitHubConfig()
 
   if (!config) {
-    throw new Error("GitHub App is not configured");
+    throw new Error("GitHub App is not configured")
   }
 
-  return config;
-};
+  return config
+}
 
 const createGitHubApp = () => {
-  const config = requireGitHubConfig();
+  const config = requireGitHubConfig()
 
   return new App({
     appId: config.appId,
     privateKey: config.privateKey,
-  });
-};
+  })
+}
 
-export const getGitHubInstallationOctokit = (
-  installationId: string | number,
-) => createGitHubApp().getInstallationOctokit(Number(installationId));
+export const getGitHubInstallationOctokit = (installationId: string | number) =>
+  createGitHubApp().getInstallationOctokit(Number(installationId))
 
 export const getGitHubInstallation = async (installationId: string) => {
-  const app = createGitHubApp();
+  const app = createGitHubApp()
   const response = await app.octokit.request(
     "GET /app/installations/{installation_id}",
     {
       installation_id: Number(installationId),
-    },
-  );
+    }
+  )
 
-  return response.data as GitHubInstallation;
-};
+  return response.data
+}
 
 export const createGitHubInstallationAccessToken = async (
-  installationId: string,
+  installationId: string
 ) => {
-  const app = createGitHubApp();
+  const app = createGitHubApp()
   const response = await app.octokit.request(
     "POST /app/installations/{installation_id}/access_tokens",
     {
       installation_id: Number(installationId),
-    },
-  );
+    }
+  )
 
-  return response.data.token;
-};
+  return response.data.token
+}
 
 export const listGitHubInstallationRepositories = async (
-  installationId: string,
+  installationId: string
 ) => {
-  const installationOctokit = await getGitHubInstallationOctokit(
-    installationId,
-  );
+  const installationOctokit = await getGitHubInstallationOctokit(installationId)
 
   const repositories = await installationOctokit.paginate(
     "GET /installation/repositories",
     {
       per_page: 100,
     },
-    (response) => response.data,
-  );
+    (response) => response.data
+  )
 
-  return repositories as GitHubRepository[];
-};
+  return repositories
+}
+
+export type GitHubInstallation = Awaited<
+  ReturnType<typeof getGitHubInstallation>
+>
+export type GitHubRepository = Awaited<
+  ReturnType<typeof listGitHubInstallationRepositories>
+>[number]

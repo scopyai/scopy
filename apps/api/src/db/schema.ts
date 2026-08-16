@@ -16,6 +16,10 @@ import {
 const tsvector = customType<{ data: string }>({
   dataType: () => "tsvector",
 })
+const generatedId = () =>
+  text("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()::text`)
 
 export const workspaceProvider = pgEnum("workspace_provider", ["github"])
 export const providerAccountType = pgEnum("provider_account_type", [
@@ -170,7 +174,7 @@ export const verification = pgTable(
 export const workspace = pgTable(
   "workspace",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     provider: workspaceProvider("provider").notNull(),
     providerInstallationId: text("provider_installation_id").notNull(),
     providerAccountId: text("provider_account_id").notNull(),
@@ -245,7 +249,7 @@ export const workspace = pgTable(
 export const workspaceMember = pgTable(
   "workspace_member",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
@@ -277,7 +281,7 @@ export const workspaceMember = pgTable(
 export const repository = pgTable(
   "repository",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
@@ -328,7 +332,7 @@ export const repository = pgTable(
 export const pullRequest = pgTable(
   "pull_request",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     repositoryId: text("repository_id")
       .notNull()
       .references(() => repository.id, { onDelete: "cascade" }),
@@ -374,7 +378,7 @@ export const pullRequest = pgTable(
 export const pullRequestTimelineEvent = pgTable(
   "pull_request_timeline_event",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     pullRequestId: text("pull_request_id")
       .notNull()
       .references(() => pullRequest.id, { onDelete: "cascade" }),
@@ -408,7 +412,7 @@ export const pullRequestTimelineEvent = pgTable(
 export const repositoryContext = pgTable(
   "repository_context",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     repositoryId: text("repository_id")
       .notNull()
       .references(() => repository.id, { onDelete: "cascade" }),
@@ -439,14 +443,11 @@ export const repositoryContext = pgTable(
 export const reviewRun = pgTable(
   "review_run",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     pullRequestId: text("pull_request_id")
       .notNull()
       .references(() => pullRequest.id, { onDelete: "cascade" }),
-    triggerWebhookEventId: text("trigger_webhook_event_id").references(
-      () => webhookEvent.id,
-      { onDelete: "set null" }
-    ),
+    triggerDeliveryId: text("trigger_delivery_id"),
     headSha: text("head_sha").notNull(),
     providerCheckRunId: text("provider_check_run_id"),
     checkSyncError: text("check_sync_error"),
@@ -466,8 +467,8 @@ export const reviewRun = pgTable(
       table.pullRequestId,
       table.headSha
     ),
-    index("review_run_trigger_webhook_event_id_idx").on(
-      table.triggerWebhookEventId
+    uniqueIndex("review_run_trigger_delivery_id_idx").on(
+      table.triggerDeliveryId
     ),
   ]
 )
@@ -475,7 +476,7 @@ export const reviewRun = pgTable(
 export const reviewFinding = pgTable(
   "review_finding",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     reviewRunId: text("review_run_id")
       .notNull()
       .references(() => reviewRun.id, { onDelete: "cascade" }),
@@ -498,7 +499,7 @@ export const reviewFinding = pgTable(
 export const reviewMemory = pgTable(
   "review_memory",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     repositoryId: text("repository_id")
       .notNull()
       .references(() => repository.id, { onDelete: "cascade" }),
@@ -521,30 +522,6 @@ export const reviewMemory = pgTable(
   ]
 )
 
-export const webhookEvent = pgTable(
-  "webhook_event",
-  {
-    id: text("id").primaryKey(),
-    provider: workspaceProvider("provider").notNull(),
-    deliveryId: text("delivery_id").notNull(),
-    eventName: text("event_name").notNull(),
-    action: text("action"),
-    workspaceId: text("workspace_id").references(() => workspace.id, {
-      onDelete: "set null",
-    }),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    receivedAt: timestamp("received_at").defaultNow().notNull(),
-    processedAt: timestamp("processed_at"),
-  },
-  (table) => [
-    uniqueIndex("webhook_event_provider_delivery_idx").on(
-      table.provider,
-      table.deliveryId
-    ),
-    index("webhook_event_workspace_id_idx").on(table.workspaceId),
-  ]
-)
-
 export type ReviewUsageModel = {
   stage: string
   modelId: string
@@ -556,7 +533,7 @@ export type ReviewUsageModel = {
 export const reviewUsage = pgTable(
   "review_usage",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     reviewRunId: text("review_run_id")
       .notNull()
       .references(() => reviewRun.id, { onDelete: "cascade" }),
@@ -631,7 +608,7 @@ export const reviewUsage = pgTable(
 export const workspaceCharge = pgTable(
   "workspace_charge",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
@@ -668,7 +645,7 @@ export type DocTocEntry = {
 export const docSource = pgTable(
   "doc_source",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     // Null = global corpus entry (from the hardcoded config); set = a custom
     // llms.txt added by that workspace, visible only to it.
     workspaceId: text("workspace_id").references(() => workspace.id, {
@@ -703,7 +680,7 @@ export const docSource = pgTable(
 export const docPage = pgTable(
   "doc_page",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     sourceId: text("source_id")
       .notNull()
       .references(() => docSource.id, { onDelete: "cascade" }),
@@ -758,7 +735,6 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
   }),
   members: many(workspaceMember),
   repositories: many(repository),
-  webhookEvents: many(webhookEvent),
   reviewUsage: many(reviewUsage),
   charges: many(workspaceCharge),
 }))
@@ -825,10 +801,6 @@ export const reviewRunRelations = relations(reviewRun, ({ one, many }) => ({
     fields: [reviewRun.pullRequestId],
     references: [pullRequest.id],
   }),
-  triggerWebhookEvent: one(webhookEvent, {
-    fields: [reviewRun.triggerWebhookEventId],
-    references: [webhookEvent.id],
-  }),
   findings: many(reviewFinding),
   usage: one(reviewUsage),
 }))
@@ -846,17 +818,6 @@ export const reviewMemoryRelations = relations(reviewMemory, ({ one }) => ({
     references: [repository.id],
   }),
 }))
-
-export const webhookEventRelations = relations(
-  webhookEvent,
-  ({ one, many }) => ({
-    workspace: one(workspace, {
-      fields: [webhookEvent.workspaceId],
-      references: [workspace.id],
-    }),
-    reviewRuns: many(reviewRun),
-  })
-)
 
 export const reviewUsageRelations = relations(reviewUsage, ({ one }) => ({
   reviewRun: one(reviewRun, {
@@ -890,7 +851,7 @@ export const workspaceChargeRelations = relations(
 export const docChunk = pgTable(
   "doc_chunk",
   {
-    id: text("id").primaryKey(),
+    id: generatedId(),
     sourceId: text("source_id")
       .notNull()
       .references(() => docSource.id, { onDelete: "cascade" }),

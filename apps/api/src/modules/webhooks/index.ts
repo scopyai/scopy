@@ -1,14 +1,23 @@
 import { Elysia } from "elysia"
 import { Webhooks } from "@octokit/webhooks"
 import { apiEnv } from "../../env-api"
-import { parseCreemWebhook, verifyCreemWebhookSignature } from "../billing/creem"
+import { jobs, type GitHubWebhookJobInput } from "../../jobs/definitions"
+import {
+  parseCreemWebhook,
+  verifyCreemWebhookSignature,
+} from "../billing/creem"
 import { applyCreemWebhook } from "../billing/service"
-import { persistGitHubWebhookEvent, type GitHubWebhookPayload } from "./service"
+import type { GitHubWebhookPayload } from "./github"
 
 export const webhookRoutes = new Elysia({ prefix: "/webhooks" })
   .post("/creem", async ({ request, status }) => {
     const payloadText = await request.text()
-    if (!verifyCreemWebhookSignature(payloadText, request.headers.get("creem-signature"))) {
+    if (
+      !verifyCreemWebhookSignature(
+        payloadText,
+        request.headers.get("creem-signature")
+      )
+    ) {
       return status(401, { error: "Invalid Creem webhook signature" })
     }
 
@@ -73,13 +82,13 @@ export const webhookRoutes = new Elysia({ prefix: "/webhooks" })
     }
 
     try {
-      await persistGitHubWebhookEvent({
+      await jobs.processGitHubWebhook.enqueue({
         deliveryId,
         eventName,
-        payload,
+        payload: payload as unknown as GitHubWebhookJobInput["payload"],
       })
     } catch (error) {
-      console.error("Failed to persist or enqueue GitHub webhook", {
+      console.error("Failed to enqueue GitHub webhook", {
         deliveryId,
         eventName,
         action: payload.action ?? null,

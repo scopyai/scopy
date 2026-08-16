@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm"
+import type { WebhookEventDefinition } from "@octokit/webhooks/types"
 import { db } from "../../db/client"
-import { webhookEvent, workspace, type ProviderActor } from "../../db/schema"
+import { workspace, type ProviderActor } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
 import {
   addPullRequestLifecycleEvent,
@@ -11,12 +12,9 @@ import {
 import { getPullRequestReviewTrigger } from "../reviews/service"
 import { syncGitHubWorkspaceRepositories } from "../workspaces/service"
 
-type GitHubWebhookActor = {
-  id: number
-  login: string
-  avatar_url?: string | null
-  html_url?: string | null
-}
+type GitHubWebhookActor = NonNullable<
+  WebhookEventDefinition<"pull-request-opened">["sender"]
+>
 
 export type GitHubWebhookPayload = {
   action?: string
@@ -125,15 +123,17 @@ const updateWorkspaceConnectionStatus = async (
 }
 
 export const handleGitHubWebhook = async ({
-  event,
+  deliveryId,
+  eventName,
   payload,
   relatedWorkspace,
 }: {
-  event: typeof webhookEvent.$inferSelect
+  deliveryId: string
+  eventName: string
   payload: GitHubWebhookPayload
   relatedWorkspace: typeof workspace.$inferSelect | null
 }): Promise<PullRequestReviewRequest | undefined> => {
-  if (event.eventName === "installation") {
+  if (eventName === "installation") {
     await updateWorkspaceConnectionStatus(
       payload.installation?.id,
       payload.action
@@ -151,7 +151,7 @@ export const handleGitHubWebhook = async ({
     }
   }
 
-  if (event.eventName === "installation_repositories" && relatedWorkspace) {
+  if (eventName === "installation_repositories" && relatedWorkspace) {
     await syncGitHubWorkspaceRepositories(
       relatedWorkspace.id,
       relatedWorkspace.providerInstallationId,
@@ -159,7 +159,7 @@ export const handleGitHubWebhook = async ({
     )
   }
 
-  if (!pullRequestEventNames.has(event.eventName) || !relatedWorkspace) {
+  if (!pullRequestEventNames.has(eventName) || !relatedWorkspace) {
     return
   }
 
@@ -188,7 +188,7 @@ export const handleGitHubWebhook = async ({
   const savedPullRequest = await syncGitHubPullRequest(repo, number)
 
   if (
-    event.eventName === "pull_request" &&
+    eventName === "pull_request" &&
     payload.action &&
     pullRequestLifecycleActions.has(payload.action)
   ) {
@@ -199,7 +199,7 @@ export const handleGitHubWebhook = async ({
 
     await addPullRequestLifecycleEvent(
       savedPullRequest.id,
-      event.deliveryId,
+      deliveryId,
       action,
       {
         author: toProviderActor(payload.sender ?? payload.pull_request?.user),
@@ -226,7 +226,7 @@ export const handleGitHubWebhook = async ({
 
   const triggerSource = repo.enabled
     ? await getPullRequestReviewTrigger({
-        eventName: event.eventName,
+        eventName,
         action: payload.action,
         pullRequest: savedPullRequest,
         commentBody: payload.comment?.body,
@@ -234,8 +234,8 @@ export const handleGitHubWebhook = async ({
       })
     : null
   console.info("Evaluated pull request review trigger", {
-    webhookEventId: event.id,
-    eventName: event.eventName,
+    deliveryId,
+    eventName,
     action: payload.action ?? null,
     pullRequestId: savedPullRequest.id,
     repositoryId: savedPullRequest.repositoryId,
@@ -244,7 +244,7 @@ export const handleGitHubWebhook = async ({
   })
 
   if (
-    event.eventName === "pull_request_review_comment" &&
+    eventName === "pull_request_review_comment" &&
     (payload.action === "created" || payload.action === "edited") &&
     payload.comment?.id &&
     payload.comment.in_reply_to_id &&

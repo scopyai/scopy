@@ -29,7 +29,7 @@ CREATE TABLE "account" (
 );
 --> statement-breakpoint
 CREATE TABLE "doc_chunk" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"source_id" text NOT NULL,
 	"page_id" text NOT NULL,
 	"ord" integer NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE "doc_chunk" (
 );
 --> statement-breakpoint
 CREATE TABLE "doc_page" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"source_id" text NOT NULL,
 	"url" text NOT NULL,
 	"title" text NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE "doc_page" (
 );
 --> statement-breakpoint
 CREATE TABLE "doc_source" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"workspace_id" text,
 	"slug" text NOT NULL,
 	"name" text NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE "doc_source" (
 );
 --> statement-breakpoint
 CREATE TABLE "pull_request" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"repository_id" text NOT NULL,
 	"provider_pull_request_id" text NOT NULL,
 	"number" integer NOT NULL,
@@ -95,7 +95,7 @@ CREATE TABLE "pull_request" (
 );
 --> statement-breakpoint
 CREATE TABLE "pull_request_timeline_event" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"pull_request_id" text NOT NULL,
 	"event_type" "pull_request_timeline_event_type" NOT NULL,
 	"external_key" text NOT NULL,
@@ -112,7 +112,7 @@ CREATE TABLE "pull_request_timeline_event" (
 );
 --> statement-breakpoint
 CREATE TABLE "repository" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"workspace_id" text NOT NULL,
 	"provider_repository_id" text NOT NULL,
 	"name" text NOT NULL,
@@ -139,7 +139,7 @@ CREATE TABLE "repository" (
 );
 --> statement-breakpoint
 CREATE TABLE "repository_context" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"repository_id" text NOT NULL,
 	"base_sha" text NOT NULL,
 	"model_id" text NOT NULL,
@@ -152,7 +152,7 @@ CREATE TABLE "repository_context" (
 );
 --> statement-breakpoint
 CREATE TABLE "review_finding" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"review_run_id" text NOT NULL,
 	"severity" "review_finding_severity" NOT NULL,
 	"file" text NOT NULL,
@@ -164,7 +164,7 @@ CREATE TABLE "review_finding" (
 );
 --> statement-breakpoint
 CREATE TABLE "review_memory" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"repository_id" text NOT NULL,
 	"content" text NOT NULL,
 	"path_glob" text,
@@ -176,9 +176,9 @@ CREATE TABLE "review_memory" (
 );
 --> statement-breakpoint
 CREATE TABLE "review_run" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"pull_request_id" text NOT NULL,
-	"trigger_webhook_event_id" text,
+	"trigger_delivery_id" text,
 	"head_sha" text NOT NULL,
 	"provider_check_run_id" text,
 	"check_sync_error" text,
@@ -192,7 +192,7 @@ CREATE TABLE "review_run" (
 );
 --> statement-breakpoint
 CREATE TABLE "review_usage" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"review_run_id" text NOT NULL,
 	"workspace_id" text NOT NULL,
 	"repository_id" text,
@@ -252,20 +252,8 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "webhook_event" (
-	"id" text PRIMARY KEY NOT NULL,
-	"provider" "workspace_provider" NOT NULL,
-	"delivery_id" text NOT NULL,
-	"event_name" text NOT NULL,
-	"action" text,
-	"workspace_id" text,
-	"payload" jsonb NOT NULL,
-	"received_at" timestamp DEFAULT now() NOT NULL,
-	"processed_at" timestamp
-);
---> statement-breakpoint
 CREATE TABLE "workspace" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"provider" "workspace_provider" NOT NULL,
 	"provider_installation_id" text NOT NULL,
 	"provider_account_id" text NOT NULL,
@@ -300,7 +288,7 @@ CREATE TABLE "workspace" (
 );
 --> statement-breakpoint
 CREATE TABLE "workspace_charge" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"workspace_id" text NOT NULL,
 	"creem_transaction_id" text NOT NULL,
 	"type" "workspace_charge_type" NOT NULL,
@@ -316,7 +304,7 @@ CREATE TABLE "workspace_charge" (
 );
 --> statement-breakpoint
 CREATE TABLE "workspace_member" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text PRIMARY KEY DEFAULT gen_random_uuid()::text NOT NULL,
 	"workspace_id" text NOT NULL,
 	"user_id" text NOT NULL,
 	"role" "workspace_member_role" DEFAULT 'member' NOT NULL,
@@ -340,13 +328,11 @@ ALTER TABLE "repository_context" ADD CONSTRAINT "repository_context_repository_i
 ALTER TABLE "review_finding" ADD CONSTRAINT "review_finding_review_run_id_review_run_id_fk" FOREIGN KEY ("review_run_id") REFERENCES "public"."review_run"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_memory" ADD CONSTRAINT "review_memory_repository_id_repository_id_fk" FOREIGN KEY ("repository_id") REFERENCES "public"."repository"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_run" ADD CONSTRAINT "review_run_pull_request_id_pull_request_id_fk" FOREIGN KEY ("pull_request_id") REFERENCES "public"."pull_request"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "review_run" ADD CONSTRAINT "review_run_trigger_webhook_event_id_webhook_event_id_fk" FOREIGN KEY ("trigger_webhook_event_id") REFERENCES "public"."webhook_event"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_usage" ADD CONSTRAINT "review_usage_review_run_id_review_run_id_fk" FOREIGN KEY ("review_run_id") REFERENCES "public"."review_run"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_usage" ADD CONSTRAINT "review_usage_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_usage" ADD CONSTRAINT "review_usage_repository_id_repository_id_fk" FOREIGN KEY ("repository_id") REFERENCES "public"."repository"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review_usage" ADD CONSTRAINT "review_usage_pull_request_id_pull_request_id_fk" FOREIGN KEY ("pull_request_id") REFERENCES "public"."pull_request"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "webhook_event" ADD CONSTRAINT "webhook_event_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace" ADD CONSTRAINT "workspace_installed_by_user_id_user_id_fk" FOREIGN KEY ("installed_by_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_charge" ADD CONSTRAINT "workspace_charge_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_member" ADD CONSTRAINT "workspace_member_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -374,14 +360,12 @@ CREATE INDEX "review_finding_language_idx" ON "review_finding" USING btree ("lan
 CREATE INDEX "review_memory_repository_id_idx" ON "review_memory" USING btree ("repository_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "review_memory_source_comment_id_idx" ON "review_memory" USING btree ("source_comment_id");--> statement-breakpoint
 CREATE INDEX "review_run_pull_request_head_sha_idx" ON "review_run" USING btree ("pull_request_id","head_sha");--> statement-breakpoint
-CREATE INDEX "review_run_trigger_webhook_event_id_idx" ON "review_run" USING btree ("trigger_webhook_event_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "review_run_trigger_delivery_id_idx" ON "review_run" USING btree ("trigger_delivery_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "review_usage_review_run_id_idx" ON "review_usage" USING btree ("review_run_id");--> statement-breakpoint
 CREATE INDEX "review_usage_workspace_created_at_idx" ON "review_usage" USING btree ("workspace_id","created_at");--> statement-breakpoint
 CREATE INDEX "review_usage_repository_id_idx" ON "review_usage" USING btree ("repository_id");--> statement-breakpoint
 CREATE INDEX "session_userId_idx" ON "session" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "verification_identifier_idx" ON "verification" USING btree ("identifier");--> statement-breakpoint
-CREATE UNIQUE INDEX "webhook_event_provider_delivery_idx" ON "webhook_event" USING btree ("provider","delivery_id");--> statement-breakpoint
-CREATE INDEX "webhook_event_workspace_id_idx" ON "webhook_event" USING btree ("workspace_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_provider_installation_idx" ON "workspace" USING btree ("provider","provider_installation_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_provider_account_idx" ON "workspace" USING btree ("provider","provider_account_id");--> statement-breakpoint
 CREATE INDEX "workspace_installed_by_user_id_idx" ON "workspace" USING btree ("installed_by_user_id");--> statement-breakpoint

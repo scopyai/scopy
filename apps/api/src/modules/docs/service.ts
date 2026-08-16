@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import { docSource, repository } from "../../db/schema"
@@ -17,7 +16,6 @@ const upsertGlobalSource = async (config: (typeof docSourceConfigs)[number]) =>
   db
     .insert(docSource)
     .values({
-      id: randomUUID(),
       slug: config.slug,
       name: config.name,
       llmsTxtUrl: config.llmsTxtUrl,
@@ -286,7 +284,6 @@ export const createWorkspaceDocSource = async ({
     const [source] = await tx
       .insert(docSource)
       .values({
-        id: randomUUID(),
         workspaceId,
         slug,
         name: name.trim(),

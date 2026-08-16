@@ -144,10 +144,7 @@ const LINK_LINE = /^[-*]?\s*\[([^\]]+)\]\(([^)\s]+)\)\s*(?::\s*(.*))?$/
 const isFullDumpUrl = (url: string) =>
   /\/llms[-_.]?full\.txt$/i.test(new URL(url).pathname)
 
-const parseLlmsTxt = (
-  text: string,
-  baseUrl: string
-): ParsedIndexEntry[] => {
+const parseLlmsTxt = (text: string, baseUrl: string): ParsedIndexEntry[] => {
   const entries: ParsedIndexEntry[] = []
   const seen = new Set<string>()
   let section: string | null = null
@@ -273,18 +270,20 @@ const upsertPage = async ({
     return "updated"
   }
 
-  const pageId = randomUUID()
-  await db.insert(docPage).values({
-    id: pageId,
-    sourceId,
-    url: entry.url,
-    title,
-    contentHash,
-    approxTokens: approxTokens(markdown),
-    lastSeenCrawlId: crawlId,
-    fetchedAt: new Date(),
-  })
-  await rebuildChunks({ sourceId, pageId, markdown })
+  const [page] = await db
+    .insert(docPage)
+    .values({
+      sourceId,
+      url: entry.url,
+      title,
+      contentHash,
+      approxTokens: approxTokens(markdown),
+      lastSeenCrawlId: crawlId,
+      fetchedAt: new Date(),
+    })
+    .returning({ id: docPage.id })
+  if (!page) throw new Error(`Failed to create doc page ${entry.url}`)
+  await rebuildChunks({ sourceId, pageId: page.id, markdown })
   return "created"
 }
 
@@ -302,7 +301,6 @@ const rebuildChunks = async ({
   for (let i = 0; i < chunks.length; i += DB_BATCH_SIZE) {
     await db.insert(docChunk).values(
       chunks.slice(i, i + DB_BATCH_SIZE).map((chunk) => ({
-        id: randomUUID(),
         sourceId,
         pageId,
         ord: chunk.ord,

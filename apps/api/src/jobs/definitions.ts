@@ -17,7 +17,9 @@ export const jobNames = {
 
 export const jobPayloadSchemas = {
   processGitHubWebhook: z.object({
-    webhookEventId: z.uuid(),
+    deliveryId: z.string().min(1),
+    eventName: z.string().min(1),
+    payload: z.record(z.string(), z.json()),
   }),
   reviewPullRequest: z.object({
     reviewRunId: z.uuid(),
@@ -33,6 +35,10 @@ export const jobPayloadSchemas = {
     repositoryId: z.string().min(1),
   }),
 }
+
+export type GitHubWebhookJobInput = z.infer<
+  typeof jobPayloadSchemas.processGitHubWebhook
+>
 
 const createJob = <Input extends JsonObject>(
   name: string,

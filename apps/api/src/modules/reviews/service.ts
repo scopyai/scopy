@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import { pullRequest, reviewRun } from "../../db/schema"
@@ -68,12 +67,12 @@ export const getPullRequestReviewTrigger = async ({
 export const schedulePullRequestReview = async (
   tx: Transaction,
   {
-    webhookEventId,
+    deliveryId,
     pullRequestId,
     headSha,
     triggerSource,
   }: {
-    webhookEventId: string
+    deliveryId: string
     pullRequestId: string
     headSha: string
     triggerSource: TriggerSource
@@ -85,11 +84,11 @@ export const schedulePullRequestReview = async (
     )
   }
 
-  const existingWebhookRun = await tx.query.reviewRun.findFirst({
-    where: eq(reviewRun.triggerWebhookEventId, webhookEventId),
+  const existingDeliveryRun = await tx.query.reviewRun.findFirst({
+    where: eq(reviewRun.triggerDeliveryId, deliveryId),
   })
   const existingRun =
-    existingWebhookRun ??
+    existingDeliveryRun ??
     (triggerSource === "automatic"
       ? await tx.query.reviewRun.findFirst({
           where: and(
@@ -101,7 +100,7 @@ export const schedulePullRequestReview = async (
 
   if (existingRun) {
     console.info("Reused existing pull request review run", {
-      webhookEventId,
+      deliveryId,
       reviewRunId: existingRun.id,
       pullRequestId,
       headSha,
@@ -112,16 +111,32 @@ export const schedulePullRequestReview = async (
   const [run] = await tx
     .insert(reviewRun)
     .values({
-      id: randomUUID(),
       pullRequestId,
-      triggerWebhookEventId: webhookEventId,
+      triggerDeliveryId: deliveryId,
       headSha,
       result: { triggerSource },
     })
+    .onConflictDoNothing({ target: reviewRun.triggerDeliveryId })
     .returning()
 
+  if (!run) {
+    const conflictingRun = await tx.query.reviewRun.findFirst({
+      where: eq(reviewRun.triggerDeliveryId, deliveryId),
+    })
+    if (conflictingRun) {
+      console.info("Reused existing pull request review run", {
+        deliveryId,
+        reviewRunId: conflictingRun.id,
+        pullRequestId,
+        headSha,
+      })
+      return conflictingRun.id
+    }
+    throw new Error(`Review run insert conflicted for delivery ${deliveryId}`)
+  }
+
   console.info("Created pull request review run", {
-    webhookEventId,
+    deliveryId,
     reviewRunId: run.id,
     pullRequestId,
     headSha,

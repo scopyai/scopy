@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { invalidRequest } from "../../lib/validation"
 import { protectedRoute } from "../auth"
 import { checkRateLimit } from "../../lib/rate-limit"
 import { requireWorkspaceForUser } from "../workspaces/service"
@@ -18,33 +19,25 @@ const createSourceSchema = z.object({
 const createSourceRateLimit = { limit: 10, windowMs: 10 * 60 * 1000 }
 const crawlSourceRateLimit = { limit: 6, windowMs: 10 * 60 * 1000 }
 
-export const docsRoutes = protectedRoute("/docs")
-  .get("/sources", async () => listDocSourcesWithState())
+export const docsRoutes = protectedRoute("/docs").get("/sources", async () =>
+  listDocSourcesWithState()
+)
 
 export const workspaceDocsRoutes = protectedRoute("/workspaces")
-  .get(
-    "/:workspaceId/docs/sources",
-    async ({ params, user: currentUser }) => {
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
-      return listWorkspaceDocSources(params.workspaceId)
-    }
-  )
+  .get("/:workspaceId/docs/sources", async ({ params, user: currentUser }) => {
+    await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+      "owner",
+      "admin",
+    ])
+    return listWorkspaceDocSources(params.workspaceId)
+  })
   .post(
     "/:workspaceId/docs/sources",
     async ({ body, params, user: currentUser, status }) => {
-      const parsed = createSourceSchema.safeParse(body)
-      if (!parsed.success) {
-        return status(400, { error: "Invalid doc source" })
-      }
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+        "owner",
+        "admin",
+      ])
       const rateLimit = checkRateLimit({
         key: `docs-source-create:${params.workspaceId}`,
         ...createSourceRateLimit,
@@ -57,22 +50,25 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
       }
       const result = await createWorkspaceDocSource({
         workspaceId: params.workspaceId,
-        ...parsed.data,
+        ...body,
       })
       if (!result.ok) {
         return status(422, { error: result.error })
       }
       return result.source
+    },
+    {
+      body: createSourceSchema,
+      error: invalidRequest("Invalid doc source"),
     }
   )
   .delete(
     "/:workspaceId/docs/sources/:sourceId",
     async ({ params, user: currentUser, status }) => {
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+        "owner",
+        "admin",
+      ])
       const removed = await deleteWorkspaceDocSource({
         workspaceId: params.workspaceId,
         sourceId: params.sourceId,
@@ -86,11 +82,10 @@ export const workspaceDocsRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/docs/sources/:sourceId/crawl",
     async ({ params, user: currentUser, status }) => {
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+        "owner",
+        "admin",
+      ])
       const rateLimit = checkRateLimit({
         key: `docs-source-crawl:${params.workspaceId}`,
         ...crawlSourceRateLimit,

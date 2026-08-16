@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { and, eq } from "drizzle-orm"
 import {
   Output,
@@ -315,7 +314,6 @@ const generateRepositoryContext = async ({
   })
 
   const values = {
-    id: randomUUID(),
     repositoryId: repo.id,
     baseSha: analyzedSha,
     modelId,

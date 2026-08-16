@@ -3,6 +3,7 @@ import { z } from "zod"
 import { protectedRoute } from "../auth"
 import { db } from "../../db/client"
 import { checkRateLimit } from "../../lib/rate-limit"
+import { invalidRequest } from "../../lib/validation"
 import {
   repository,
   pullRequest,
@@ -14,8 +15,8 @@ import {
 import {
   getWorkspaceMembershipForUser,
   inviteWorkspaceMemberByEmail,
-  getPullRequestForUser,
-  getRepositoryForUser,
+  requirePullRequestForUser,
+  requireRepositoryForUser,
   requireWorkspaceForUser,
   submitRepositoryPullRequestSync,
   syncGitHubWorkspaceRepositories,
@@ -100,96 +101,77 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       .orderBy(asc(workspace.name))
   })
   .get("/:workspaceId", async ({ params, user: currentUser }) => {
-    return requireWorkspaceForUser(
+    return requireWorkspaceForUser(params.workspaceId, currentUser.id)
+  })
+  .get("/:workspaceId/github-links", async ({ params, user: currentUser }) => {
+    const workspaceWithRole = await requireWorkspaceForUser(
       params.workspaceId,
       currentUser.id
     )
-  })
-  .get(
-    "/:workspaceId/github-links",
-    async ({ params, user: currentUser }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id
-      )
 
-      const ws = workspaceWithRole.workspace
+    const ws = workspaceWithRole.workspace
 
-      if (ws.connectionStatus === "deleted") {
-        return {
-          action: "reinstall" as const,
-        }
-      }
-
-      const installationSettingsUrl =
-        ws.providerAccountType === "organization"
-          ? `https://github.com/organizations/${ws.providerAccountLogin}/settings/installations/${ws.providerInstallationId}`
-          : `https://github.com/settings/installations/${ws.providerInstallationId}`
-
+    if (ws.connectionStatus === "deleted") {
       return {
-        action: "configure" as const,
-        installationSettingsUrl,
+        action: "reinstall" as const,
       }
     }
-  )
+
+    const installationSettingsUrl =
+      ws.providerAccountType === "organization"
+        ? `https://github.com/organizations/${ws.providerAccountLogin}/settings/installations/${ws.providerInstallationId}`
+        : `https://github.com/settings/installations/${ws.providerInstallationId}`
+
+    return {
+      action: "configure" as const,
+      installationSettingsUrl,
+    }
+  })
   .patch(
     "/:workspaceId",
-    async ({ body, params, user: currentUser, status }) => {
-      const parsed = updateWorkspaceSchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid workspace update" })
-      }
-
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
+    async ({ body, params, user: currentUser }) => {
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+        "owner",
+        "admin",
+      ])
 
       const [updatedWorkspace] = await db
         .update(workspace)
         .set({
-          name: parsed.data.name,
+          name: body.name,
           updatedAt: new Date(),
         })
         .where(eq(workspace.id, params.workspaceId))
         .returning()
 
       return updatedWorkspace
+    },
+    {
+      body: updateWorkspaceSchema,
+      error: invalidRequest("Invalid workspace update"),
     }
   )
-  .get(
-    "/:workspaceId/review-config",
-    async ({ params, user: currentUser }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id
-      )
+  .get("/:workspaceId/review-config", async ({ params, user: currentUser }) => {
+    const workspaceWithRole = await requireWorkspaceForUser(
+      params.workspaceId,
+      currentUser.id
+    )
 
-      return selectReviewConfigValues(workspaceWithRole.workspace)
-    }
-  )
+    return selectReviewConfigValues(workspaceWithRole.workspace)
+  })
   .patch(
     "/:workspaceId/review-config",
-    async ({ body, params, user: currentUser, status }) => {
-      const parsed = workspaceReviewConfigUpdateSchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid review config update" })
-      }
-
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
+    async ({ body, params, user: currentUser }) => {
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+        "owner",
+        "admin",
+      ])
 
       const updatedWorkspace = await db.transaction(async (tx) => {
         const now = new Date()
         const [updated] = await tx
           .update(workspace)
-          .set({ ...parsed.data, updatedAt: now })
+          .set({ ...body, updatedAt: now })
           .where(eq(workspace.id, params.workspaceId))
           .returning()
 
@@ -214,70 +196,61 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       })
 
       return selectReviewConfigValues(updatedWorkspace)
+    },
+    {
+      body: workspaceReviewConfigUpdateSchema,
+      error: invalidRequest("Invalid review config update"),
     }
   )
   .delete("/:workspaceId", async ({ params, user: currentUser, status }) => {
-    await requireWorkspaceForUser(
-      params.workspaceId,
-      currentUser.id,
-      ["owner"]
-    )
+    await requireWorkspaceForUser(params.workspaceId, currentUser.id, ["owner"])
 
     return status(409, { error: "Workspace owners cannot leave yet" })
   })
-  .get(
-    "/:workspaceId/members",
-    async ({ params, user: currentUser }) => {
-      const workspaceWithRole = await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id
-      )
+  .get("/:workspaceId/members", async ({ params, user: currentUser }) => {
+    const workspaceWithRole = await requireWorkspaceForUser(
+      params.workspaceId,
+      currentUser.id
+    )
 
-      const memberConditions = [
-        eq(workspaceMember.workspaceId, params.workspaceId),
-      ]
+    const memberConditions = [
+      eq(workspaceMember.workspaceId, params.workspaceId),
+    ]
 
-      if (!["owner", "admin"].includes(workspaceWithRole.role)) {
-        memberConditions.push(eq(workspaceMember.status, "active"))
-      }
-
-      return db
-        .select({
-          id: workspaceMember.id,
-          role: workspaceMember.role,
-          status: workspaceMember.status,
-          invitedAt: workspaceMember.invitedAt,
-          acceptedAt: workspaceMember.acceptedAt,
-          createdAt: workspaceMember.createdAt,
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            image: user.image,
-          },
-        })
-        .from(workspaceMember)
-        .innerJoin(user, eq(user.id, workspaceMember.userId))
-        .where(and(...memberConditions))
-        .orderBy(asc(user.name))
+    if (!["owner", "admin"].includes(workspaceWithRole.role)) {
+      memberConditions.push(eq(workspaceMember.status, "active"))
     }
-  )
+
+    return db
+      .select({
+        id: workspaceMember.id,
+        role: workspaceMember.role,
+        status: workspaceMember.status,
+        invitedAt: workspaceMember.invitedAt,
+        acceptedAt: workspaceMember.acceptedAt,
+        createdAt: workspaceMember.createdAt,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+        },
+      })
+      .from(workspaceMember)
+      .innerJoin(user, eq(user.id, workspaceMember.userId))
+      .where(and(...memberConditions))
+      .orderBy(asc(user.name))
+  })
   .post(
     "/:workspaceId/members",
     async ({ body, params, user: currentUser, status }) => {
-      const parsed = inviteWorkspaceMemberSchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid member invite" })
-      }
-
       const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
 
-      if (parsed.data.role === "admin" && workspaceWithRole.role !== "owner") {
+      if (body.role === "admin" && workspaceWithRole.role !== "owner") {
         return status(403, { error: "Only workspace owners can invite admins" })
       }
 
@@ -295,8 +268,8 @@ export const workspaceRoutes = protectedRoute("/workspaces")
 
       const inviteResult = await inviteWorkspaceMemberByEmail({
         workspaceId: params.workspaceId,
-        email: parsed.data.email,
-        role: parsed.data.role,
+        email: body.email,
+        role: body.role,
         invitedByUserId: currentUser.id,
       })
 
@@ -309,6 +282,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       }
 
       return inviteResult.membership
+    },
+    {
+      body: inviteWorkspaceMemberSchema,
+      error: invalidRequest("Invalid member invite"),
     }
   )
   .post(
@@ -386,19 +363,13 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .patch(
     "/:workspaceId/members/:memberId",
     async ({ body, params, user: currentUser, status }) => {
-      const parsed = updateWorkspaceMemberSchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid member update" })
-      }
-
       const workspaceWithRole = await requireWorkspaceForUser(
         params.workspaceId,
         currentUser.id,
         ["owner", "admin"]
       )
 
-      if (workspaceWithRole.role === "admin" && parsed.data.role === "admin") {
+      if (workspaceWithRole.role === "admin" && body.role === "admin") {
         return status(403, { error: "Admins cannot promote workspace admins" })
       }
 
@@ -433,7 +404,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       const [updatedMembership] = await db
         .update(workspaceMember)
         .set({
-          role: parsed.data.role,
+          role: body.role,
           updatedAt: new Date(),
         })
         .where(
@@ -445,6 +416,10 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         .returning()
 
       return updatedMembership
+    },
+    {
+      body: updateWorkspaceMemberSchema,
+      error: invalidRequest("Invalid member update"),
     }
   )
   .delete(
@@ -521,10 +496,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .get(
     "/:workspaceId/repositories",
     async ({ params, user: currentUser, query }) => {
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id
-      )
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id)
 
       const enabled =
         query.enabled === "true"
@@ -552,18 +524,11 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   )
   .post(
     "/:workspaceId/onboarding/repositories",
-    async ({ body, params, user: currentUser, status }) => {
-      const parsed = onboardingRepositoriesSchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid onboarding repository selection" })
-      }
-
-      await requireWorkspaceForUser(
-        params.workspaceId,
-        currentUser.id,
-        ["owner", "admin"]
-      )
+    async ({ body, params, user: currentUser }) => {
+      await requireWorkspaceForUser(params.workspaceId, currentUser.id, [
+        "owner",
+        "admin",
+      ])
 
       return db.transaction(async (tx) => {
         const availableRepositories = await tx
@@ -581,9 +546,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         )
         const selectedRepositoryIds = [
           ...new Set(
-            parsed.data.repositoryIds.filter((id) =>
-              availableRepositoryIds.has(id)
-            )
+            body.repositoryIds.filter((id) => availableRepositoryIds.has(id))
           ),
         ]
         const now = new Date()
@@ -630,20 +593,20 @@ export const workspaceRoutes = protectedRoute("/workspaces")
           total: availableRepositories.length,
         }
       })
+    },
+    {
+      body: onboardingRepositoriesSchema,
+      error: invalidRequest("Invalid onboarding repository selection"),
     }
   )
   .get(
     "/:workspaceId/repositories/:repositoryId",
-    async ({ params, user: currentUser, status }) => {
-      const access = await getRepositoryForUser(
+    async ({ params, user: currentUser }) => {
+      const access = await requireRepositoryForUser(
         params.workspaceId,
         params.repositoryId,
         currentUser.id
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
 
       return access.repository
     }
@@ -651,22 +614,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .patch(
     "/:workspaceId/repositories/:repositoryId",
     async ({ body, params, user: currentUser, status }) => {
-      const parsed = updateRepositorySchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid repository update" })
-      }
-
-      const access = await getRepositoryForUser(
+      const access = await requireRepositoryForUser(
         params.workspaceId,
         params.repositoryId,
         currentUser.id,
         { roles: ["owner", "admin"] }
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
 
       const existingRepository = access.repository
 
@@ -679,7 +632,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       const [updatedRepository] = await db
         .update(repository)
         .set({
-          ...parsed.data,
+          ...body,
           updatedAt: new Date(),
         })
         .where(
@@ -695,20 +648,20 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       }
 
       return updatedRepository
+    },
+    {
+      body: updateRepositorySchema,
+      error: invalidRequest("Invalid repository update"),
     }
   )
   .get(
     "/:workspaceId/repositories/:repositoryId/pull-requests",
     async ({ params, user: currentUser, status }) => {
-      const access = await getRepositoryForUser(
+      const access = await requireRepositoryForUser(
         params.workspaceId,
         params.repositoryId,
         currentUser.id
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
 
       const repo = access.repository
       if (repo.providerAccessRemovedAt) {
@@ -725,16 +678,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/repositories/:repositoryId/pull-requests/sync",
     async ({ params, user: currentUser, status }) => {
-      const access = await getRepositoryForUser(
+      const access = await requireRepositoryForUser(
         params.workspaceId,
         params.repositoryId,
         currentUser.id,
         { roles: ["owner", "admin"] }
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
 
       const repo = access.repository
 
@@ -759,18 +708,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .post(
     "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId/sync",
     async ({ params, user: currentUser, status }) => {
-      const access = await getPullRequestForUser(
+      const row = await requirePullRequestForUser(
         params.workspaceId,
         params.repositoryId,
         params.pullRequestId,
         currentUser.id
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
-
-      const row = access
 
       const rateLimit = checkRateLimit({
         key: `pull-request-sync:${currentUser.id}:${row.pullRequest.id}`,
@@ -794,19 +737,13 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   )
   .get(
     "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId",
-    async ({ params, user: currentUser, status }) => {
-      const access = await getPullRequestForUser(
+    async ({ params, user: currentUser }) => {
+      const row = await requirePullRequestForUser(
         params.workspaceId,
         params.repositoryId,
         params.pullRequestId,
         currentUser.id
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
-
-      const row = access
 
       const timeline = await db
         .select()
@@ -828,16 +765,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   )
   .get(
     "/:workspaceId/repositories/:repositoryId/review-config",
-    async ({ params, user: currentUser, status }) => {
-      const access = await getRepositoryForUser(
+    async ({ params, user: currentUser }) => {
+      const access = await requireRepositoryForUser(
         params.workspaceId,
         params.repositoryId,
         currentUser.id
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
 
       return resolveReviewConfig(access.workspace, access.repository)
     }
@@ -845,22 +778,12 @@ export const workspaceRoutes = protectedRoute("/workspaces")
   .patch(
     "/:workspaceId/repositories/:repositoryId/review-config",
     async ({ body, params, user: currentUser, status }) => {
-      const parsed = repositoryReviewConfigUpdateSchema.safeParse(body)
-
-      if (!parsed.success) {
-        return status(400, { error: "Invalid review config update" })
-      }
-
-      const access = await getRepositoryForUser(
+      const access = await requireRepositoryForUser(
         params.workspaceId,
         params.repositoryId,
         currentUser.id,
         { roles: ["owner", "admin"] }
       )
-
-      if (!access.ok) {
-        return status(404, { error: access.error })
-      }
 
       const repo = access.repository
 
@@ -873,7 +796,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
       const workspaceDefaults = selectReviewConfigValues(access.workspace)
       const overrides = normalizeReviewConfigOverrides(workspaceDefaults, {
         ...selectReviewConfigOverrides(repo),
-        ...parsed.data,
+        ...body,
       })
 
       await db
@@ -882,5 +805,9 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         .where(eq(repository.id, repo.id))
 
       return resolveReviewConfig(workspaceDefaults, overrides)
+    },
+    {
+      body: repositoryReviewConfigUpdateSchema,
+      error: invalidRequest("Invalid review config update"),
     }
   )
