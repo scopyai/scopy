@@ -262,13 +262,9 @@ export const prepareReviewPullRequest = async (
   logger: JobLogger
 ) => {
   const run = await loadReviewRun(reviewRunId)
-  if (
-    !run ||
-    isTerminal(run) ||
-    asAnalysis(run.result) ||
-    asPublishedReview(run.result)
-  ) {
-    return { ready: false }
+  if (!run || isTerminal(run)) return { proceed: false }
+  if (asAnalysis(run.result) || asPublishedReview(run.result)) {
+    return { proceed: true }
   }
 
   const repo = run.pullRequest.repository
@@ -281,7 +277,7 @@ export const prepareReviewPullRequest = async (
       .update(reviewRun)
       .set({ status: "superseded", completedAt: new Date() })
       .where(eq(reviewRun.id, run.id))
-    return { ready: false }
+    return { proceed: false }
   }
 
   if (!repo.enabled) {
@@ -295,7 +291,7 @@ export const prepareReviewPullRequest = async (
         "Repository reviews were disabled before this review started.",
       checkConclusion: "neutral",
     })
-    return { ready: false }
+    return { proceed: false }
   }
 
   await syncReviewCheck({ run, logger })
@@ -319,7 +315,7 @@ export const prepareReviewPullRequest = async (
         "The repository review settings changed before this review started.",
       checkConclusion: "neutral",
     })
-    return { ready: false }
+    return { proceed: false }
   }
 
   await db
@@ -332,7 +328,7 @@ export const prepareReviewPullRequest = async (
     })
     .where(eq(reviewRun.id, run.id))
   logger.info("Prepared pull request review", { reviewRunId })
-  return { ready: true }
+  return { proceed: true }
 }
 
 export const analyzeReviewPullRequest = async (
@@ -340,9 +336,11 @@ export const analyzeReviewPullRequest = async (
   logger: JobLogger
 ) => {
   const run = await loadReviewRun(reviewRunId)
-  if (!run || isTerminal(run) || asPublishedReview(run.result)) return
-  if (asAnalysis(run.result)) return
-  if (run.status !== "running") return
+  if (!run || isTerminal(run)) return { proceed: false }
+  if (asPublishedReview(run.result) || asAnalysis(run.result)) {
+    return { proceed: true }
+  }
+  if (run.status !== "running") return { proceed: false }
 
   if (run.pullRequest.headSha !== run.headSha) {
     await refundReviewCredits({
@@ -353,7 +351,7 @@ export const analyzeReviewPullRequest = async (
       .update(reviewRun)
       .set({ status: "superseded", completedAt: new Date() })
       .where(eq(reviewRun.id, reviewRunId))
-    return
+    return { proceed: false }
   }
 
   const { config, preflight } = await buildReviewPreflight(run)
@@ -383,7 +381,7 @@ export const analyzeReviewPullRequest = async (
       checkConclusion: "neutral",
       extraResult: stats,
     })
-    return
+    return { proceed: false }
   }
 
   const creditsRequired = calculateReviewCredits(preflight.diffChangedLineCount)
@@ -417,7 +415,7 @@ export const analyzeReviewPullRequest = async (
         availableCredits: reservation.availableCredits,
       },
     })
-    return
+    return { proceed: false }
   }
 
   const analysis = await runReviewAnalysis({
@@ -437,6 +435,7 @@ export const analyzeReviewPullRequest = async (
       error: null,
     })
     .where(eq(reviewRun.id, reviewRunId))
+  return { proceed: true }
 }
 
 export const publishReviewPullRequest = async (
@@ -444,9 +443,10 @@ export const publishReviewPullRequest = async (
   logger: JobLogger
 ) => {
   const run = await loadReviewRun(reviewRunId)
-  if (!run || isTerminal(run) || asPublishedReview(run.result)) return
+  if (!run || isTerminal(run)) return { proceed: false }
+  if (asPublishedReview(run.result)) return { proceed: true }
   const analysis = asAnalysis(run.result)
-  if (!analysis) return
+  if (!analysis) return { proceed: false }
 
   const octokit = await createGitHubApp().getInstallationOctokit(
     Number(run.pullRequest.repository.workspace.providerInstallationId)
@@ -468,7 +468,7 @@ export const publishReviewPullRequest = async (
       .update(reviewRun)
       .set({ status: "superseded", completedAt: new Date() })
       .where(eq(reviewRun.id, reviewRunId))
-    return
+    return { proceed: false }
   }
 
   const result = await publishReviewAnalysis({
@@ -484,6 +484,7 @@ export const publishReviewPullRequest = async (
     .update(reviewRun)
     .set({ result: result as unknown as Record<string, unknown>, error: null })
     .where(eq(reviewRun.id, reviewRunId))
+  return { proceed: true }
 }
 
 const languageByExtension: Record<string, string> = {

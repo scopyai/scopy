@@ -47,7 +47,7 @@ function RepositoryPage() {
   } = useRepositories(selectedWorkspaceId)
   const repository = repos?.find((r) => r.id === repositoryId)
   const repositorySyncing =
-    repository?.pullRequestSyncStatus === "queued" ||
+    repository?.pullRequestSyncStatus === "pending" ||
     repository?.pullRequestSyncStatus === "syncing"
 
   const selectedEntry = workspaces?.find(

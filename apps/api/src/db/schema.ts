@@ -85,38 +85,6 @@ export const docSourceStatus = pgEnum("doc_source_status", [
   "error",
 ])
 
-export const jobOutbox = pgTable(
-  "job_outbox",
-  {
-    id: text("id").primaryKey(),
-    jobName: text("job_name").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    idempotencyKey: text("idempotency_key").notNull(),
-    attempts: integer("attempts").default(0).notNull(),
-    availableAt: timestamp("available_at").defaultNow().notNull(),
-    lockedAt: timestamp("locked_at"),
-    publishedAt: timestamp("published_at"),
-    failedAt: timestamp("failed_at"),
-    hatchetRunId: text("hatchet_run_id"),
-    lastError: text("last_error"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    index("job_outbox_dispatch_idx").on(
-      table.publishedAt,
-      table.availableAt,
-      table.createdAt
-    ),
-    uniqueIndex("job_outbox_pending_idempotency_idx")
-      .on(table.idempotencyKey)
-      .where(sql`${table.publishedAt} is null and ${table.failedAt} is null`),
-  ]
-)
-
 export type ProviderActor = {
   id: string
   login: string
@@ -329,7 +297,12 @@ export const repository = pgTable(
     naturalLanguageRules: jsonb("natural_language_rules").$type<string[]>(),
     maxReviewChangedLines: integer("max_review_changed_lines"),
     detectedDocLibraries: jsonb("detected_doc_libraries").$type<
-      Array<{ slug: string; name: string; manifest: string; dependency: string }>
+      Array<{
+        slug: string
+        name: string
+        manifest: string
+        dependency: string
+      }>
     >(),
     docLibrariesDetectedAt: timestamp("doc_libraries_detected_at"),
     excludedDocLibraries: jsonb("excluded_doc_libraries").$type<string[]>(),
@@ -337,7 +310,7 @@ export const repository = pgTable(
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),
     pullRequestSyncStatus: text("pull_request_sync_status")
-      .$type<"pending" | "queued" | "syncing" | "synced" | "failed">()
+      .$type<"pending" | "syncing" | "synced" | "failed">()
       .default("pending")
       .notNull(),
     pullRequestSyncStartedAt: timestamp("pull_request_sync_started_at"),

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { db } from "../../db/client"
 import { webhookEvent, workspace } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
@@ -20,29 +20,28 @@ const findWorkspaceByInstallationId = async (installationId?: number) => {
   })
 }
 
-const WEBHOOK_PROCESSING_LEASE_MS = 15 * 60 * 1_000
-
 const finishWebhookEvent = async (
   eventId: string,
   review?: PullRequestReviewRequest
 ) => {
-  await db.transaction(async (tx) => {
-    if (review) {
-      await schedulePullRequestReview(tx, {
+  if (review) {
+    const reviewRunId = await db.transaction((tx) =>
+      schedulePullRequestReview(tx, {
         webhookEventId: eventId,
         ...review,
       })
-    }
+    )
+    await jobs.reviewPullRequest.enqueue({ reviewRunId })
+  }
 
-    await tx
-      .update(webhookEvent)
-      .set({
-        processedAt: new Date(),
-        processingStartedAt: null,
-        processingError: null,
-      })
-      .where(eq(webhookEvent.id, eventId))
-  })
+  await db
+    .update(webhookEvent)
+    .set({
+      processedAt: new Date(),
+      processingStartedAt: null,
+      processingError: null,
+    })
+    .where(eq(webhookEvent.id, eventId))
 }
 
 export const persistGitHubWebhookEvent = async ({
@@ -58,7 +57,7 @@ export const persistGitHubWebhookEvent = async ({
     payload.installation?.id
   )
 
-  await db.transaction(async (tx) => {
+  const event = await db.transaction(async (tx) => {
     const [savedWebhookEvent] = await tx
       .insert(webhookEvent)
       .values({
@@ -75,7 +74,7 @@ export const persistGitHubWebhookEvent = async ({
       })
       .returning()
 
-    const event =
+    return (
       savedWebhookEvent ??
       (await tx.query.webhookEvent.findFirst({
         where: and(
@@ -83,33 +82,24 @@ export const persistGitHubWebhookEvent = async ({
           eq(webhookEvent.deliveryId, deliveryId)
         ),
       }))
-
-    if (event && !event.processedAt) {
-      await jobs.processGitHubWebhook.enqueue(tx, {
-        webhookEventId: event.id,
-      })
-    }
+    )
   })
+
+  if (event && !event.processedAt) {
+    await jobs.processGitHubWebhook.enqueue({
+      webhookEventId: event.id,
+    })
+  }
 }
 
 const startGitHubWebhookEvent = async (eventId: string) => {
-  const staleBefore = new Date(Date.now() - WEBHOOK_PROCESSING_LEASE_MS)
   const [event] = await db
     .update(webhookEvent)
     .set({
       processingStartedAt: new Date(),
       processingError: null,
     })
-    .where(
-      and(
-        eq(webhookEvent.id, eventId),
-        isNull(webhookEvent.processedAt),
-        or(
-          isNull(webhookEvent.processingStartedAt),
-          lt(webhookEvent.processingStartedAt, staleBefore)
-        )
-      )
-    )
+    .where(and(eq(webhookEvent.id, eventId), isNull(webhookEvent.processedAt)))
     .returning()
 
   if (event) {

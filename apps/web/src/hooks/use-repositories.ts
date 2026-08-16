@@ -16,7 +16,7 @@ export function useRepositories(workspaceId: string | null | undefined) {
     refetchInterval: (query) =>
       query.state.data?.some(
         (repository) =>
-          repository.pullRequestSyncStatus === "queued" ||
+          repository.pullRequestSyncStatus === "pending" ||
           repository.pullRequestSyncStatus === "syncing"
       )
         ? 1_500

@@ -60,7 +60,7 @@ export const enqueueDueDocSourceCrawls = async ({
     const due =
       force || !source.lastCrawledAt || source.lastCrawledAt < staleBefore
     if (!due) continue
-    await jobs.crawlDocSource.enqueue(db, { sourceId: source.id })
+    await jobs.crawlDocSource.enqueue({ sourceId: source.id })
     enqueued.push(source.slug)
   }
 
@@ -255,7 +255,7 @@ export const createWorkspaceDocSource = async ({
   const slug = slugify(name)
   if (!slug) return { ok: false, error: "Name must contain letters or digits" }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${`doc-source-create:${workspaceId}`}))`
     )
@@ -273,7 +273,8 @@ export const createWorkspaceDocSource = async ({
     const normalizedUrl = normalizeDocUrl(llmsTxtUrl)
     const duplicate = existing.find(
       (source) =>
-        source.slug === slug || normalizeDocUrl(source.llmsTxtUrl) === normalizedUrl
+        source.slug === slug ||
+        normalizeDocUrl(source.llmsTxtUrl) === normalizedUrl
     )
     if (duplicate) {
       return {
@@ -292,9 +293,13 @@ export const createWorkspaceDocSource = async ({
         llmsTxtUrl,
       })
       .returning()
-    await jobs.crawlDocSource.enqueue(tx, { sourceId: source!.id })
     return { ok: true as const, source: selectSourceState(source!) }
   })
+
+  if (result.ok) {
+    await jobs.crawlDocSource.enqueue({ sourceId: result.source.id })
+  }
+  return result
 }
 
 export const deleteWorkspaceDocSource = async ({
@@ -328,6 +333,6 @@ export const enqueueWorkspaceDocSourceCrawl = async ({
     ),
   })
   if (!source) return false
-  await jobs.crawlDocSource.enqueue(db, { sourceId: source.id })
+  await jobs.crawlDocSource.enqueue({ sourceId: source.id })
   return true
 }

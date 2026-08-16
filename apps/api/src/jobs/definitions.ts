@@ -1,26 +1,11 @@
-import { randomUUID } from "node:crypto"
-import { sql, type SQL } from "drizzle-orm"
+import {
+  IdempotencyCollisionError,
+  type JsonObject,
+  type RunOpts,
+  type WorkflowDeclaration,
+} from "@hatchet-dev/typescript-sdk/v1"
 import { z } from "zod"
-
-export type JobExecutor = {
-  execute: (query: SQL) => Promise<unknown>
-}
-
-const enqueueJob = (
-  executor: JobExecutor,
-  jobName: string,
-  payload: Record<string, unknown>,
-  idempotencyKey: string
-) => {
-  const id = randomUUID()
-  return executor.execute(sql`
-    insert into job_outbox (id, job_name, payload, idempotency_key)
-    values (${id}, ${jobName}, ${JSON.stringify(payload)}::jsonb, ${idempotencyKey})
-    on conflict (idempotency_key)
-      where published_at is null and failed_at is null
-      do nothing
-  `)
-}
+import { hatchet } from "./client"
 
 export const jobNames = {
   processGitHubWebhook: "process-github-webhook",
@@ -49,65 +34,49 @@ export const jobPayloadSchemas = {
   }),
 }
 
+const createJob = <Input extends JsonObject>(
+  name: string,
+  schema: z.ZodType<Input>
+) => {
+  const workflow: WorkflowDeclaration<Input, {}, {}> = hatchet.workflow<Input>({
+    name,
+  })
+
+  return {
+    enqueue: async (payload: Input, options?: RunOpts) => {
+      const input = schema.parse(payload)
+      try {
+        const ref = await workflow.runNoWait(input, options)
+        return await ref.getWorkflowRunId()
+      } catch (error) {
+        if (error instanceof IdempotencyCollisionError) {
+          return error.existingRunExternalId
+        }
+        throw error
+      }
+    },
+  }
+}
+
 export const jobs = {
-  processGitHubWebhook: {
-    enqueue: (
-      executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.processGitHubWebhook>
-    ) =>
-      enqueueJob(
-        executor,
-        jobNames.processGitHubWebhook,
-        payload,
-        `github-webhook:${payload.webhookEventId}`
-      ),
-  },
-  reviewPullRequest: {
-    enqueue: (
-      executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.reviewPullRequest>
-    ) =>
-      enqueueJob(
-        executor,
-        jobNames.reviewPullRequest,
-        payload,
-        `pull-request-review:${payload.reviewRunId}`
-      ),
-  },
-  crawlDocSource: {
-    enqueue: (
-      executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.crawlDocSource>
-    ) =>
-      enqueueJob(
-        executor,
-        jobNames.crawlDocSource,
-        payload,
-        `docs-crawl:${payload.sourceId}`
-      ),
-  },
-  distillReviewMemory: {
-    enqueue: (
-      executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.distillReviewMemory>
-    ) =>
-      enqueueJob(
-        executor,
-        jobNames.distillReviewMemory,
-        payload,
-        `review-memory:${payload.commentId}`
-      ),
-  },
-  syncRepositoryPullRequests: {
-    enqueue: (
-      executor: JobExecutor,
-      payload: z.infer<typeof jobPayloadSchemas.syncRepositoryPullRequests>
-    ) =>
-      enqueueJob(
-        executor,
-        jobNames.syncRepositoryPullRequests,
-        payload,
-        `repository-pull-requests:${payload.repositoryId}`
-      ),
-  },
+  processGitHubWebhook: createJob(
+    jobNames.processGitHubWebhook,
+    jobPayloadSchemas.processGitHubWebhook
+  ),
+  reviewPullRequest: createJob(
+    jobNames.reviewPullRequest,
+    jobPayloadSchemas.reviewPullRequest
+  ),
+  crawlDocSource: createJob(
+    jobNames.crawlDocSource,
+    jobPayloadSchemas.crawlDocSource
+  ),
+  distillReviewMemory: createJob(
+    jobNames.distillReviewMemory,
+    jobPayloadSchemas.distillReviewMemory
+  ),
+  syncRepositoryPullRequests: createJob(
+    jobNames.syncRepositoryPullRequests,
+    jobPayloadSchemas.syncRepositoryPullRequests
+  ),
 }

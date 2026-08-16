@@ -15,6 +15,13 @@
       "when": 1786896348588,
       "tag": "0001_tranquil_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786899941549,
+      "tag": "0002_loose_giant_man",
+      "breakpoints": true
     }
   ]
 }

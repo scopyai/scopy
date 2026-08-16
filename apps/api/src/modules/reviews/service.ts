@@ -3,7 +3,6 @@ import { and, eq, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import { pullRequest, reviewRun } from "../../db/schema"
 import { env } from "../../env"
-import { jobs } from "../../jobs/definitions"
 import { containsBotMention, isBotAuthoredComment } from "./triggers"
 import { resolveReviewConfig, selectReviewTrigger } from "./review-config"
 
@@ -86,24 +85,28 @@ export const schedulePullRequestReview = async (
     )
   }
 
+  const existingWebhookRun = await tx.query.reviewRun.findFirst({
+    where: eq(reviewRun.triggerWebhookEventId, webhookEventId),
+  })
   const existingRun =
-    triggerSource === "automatic"
+    existingWebhookRun ??
+    (triggerSource === "automatic"
       ? await tx.query.reviewRun.findFirst({
           where: and(
             eq(reviewRun.pullRequestId, pullRequestId),
             eq(reviewRun.headSha, headSha)
           ),
         })
-      : null
+      : null)
 
   if (existingRun) {
-    console.info("Skipped duplicate automatic pull request review run", {
+    console.info("Reused existing pull request review run", {
       webhookEventId,
       reviewRunId: existingRun.id,
       pullRequestId,
       headSha,
     })
-    return
+    return existingRun.id
   }
 
   const [run] = await tx
@@ -117,12 +120,12 @@ export const schedulePullRequestReview = async (
     })
     .returning()
 
-  await jobs.reviewPullRequest.enqueue(tx, { reviewRunId: run.id })
-  console.info("Enqueued pull request review run", {
+  console.info("Created pull request review run", {
     webhookEventId,
     reviewRunId: run.id,
     pullRequestId,
     headSha,
     triggerSource,
   })
+  return run.id
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
+import { and, eq, isNull, ne, notInArray, sql } from "drizzle-orm"
 import { db } from "../../db/client"
 import {
   repository,
@@ -229,8 +229,7 @@ export const upsertGitHubWorkspace = async (
     const role: WorkspaceMemberRole =
       existingMembership?.role ??
       (!existing || existing.installedByUserId === userId ? "owner" : "member")
-    const membershipStatus =
-      existingMembership?.status ?? ("active" as const)
+    const membershipStatus = existingMembership?.status ?? ("active" as const)
     const acceptedAt =
       membershipStatus === "active"
         ? (existingMembership?.acceptedAt ?? now)
@@ -308,7 +307,7 @@ export const syncWorkspaceRepositories = async (
           set: {
             ...syncedRepository,
             pullRequestSyncStatus: sql<
-              "pending" | "queued" | "syncing" | "synced" | "failed"
+              "pending" | "syncing" | "synced" | "failed"
             >`case
               when ${repository.providerAccessRemovedAt} is not null then 'pending'
               else ${repository.pullRequestSyncStatus}
@@ -332,7 +331,6 @@ export const syncWorkspaceRepositories = async (
     await tx
       .update(repository)
       .set({
-        enabled: false,
         providerAccessRemovedAt: now,
         updatedAt: now,
       })
@@ -348,60 +346,61 @@ export const syncWorkspaceRepositories = async (
       .where(eq(workspace.id, workspaceId))
   })
 
-  await queuePendingRepositoryPullRequestSyncs(workspaceId)
+  await submitPendingRepositoryPullRequestSyncs(workspaceId)
 }
 
-export const queuePendingRepositoryPullRequestSyncs = async (
+export const submitPendingRepositoryPullRequestSyncs = async (
   workspaceId: string
-) =>
-  db.transaction(async (tx) => {
-    const queuedRepositories = await tx
-      .update(repository)
-      .set({
-        pullRequestSyncStatus: "queued",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(repository.workspaceId, workspaceId),
-          eq(repository.pullRequestSyncStatus, "pending"),
-          isNull(repository.providerAccessRemovedAt)
-        )
+) => {
+  const pendingRepositories = await db
+    .select({ id: repository.id })
+    .from(repository)
+    .where(
+      and(
+        eq(repository.workspaceId, workspaceId),
+        eq(repository.pullRequestSyncStatus, "pending"),
+        isNull(repository.providerAccessRemovedAt)
       )
-      .returning({ id: repository.id })
+    )
 
-    for (const queuedRepository of queuedRepositories) {
-      await jobs.syncRepositoryPullRequests.enqueue(tx, {
-        repositoryId: queuedRepository.id,
-      })
-    }
+  const submissions = await Promise.allSettled(
+    pendingRepositories.map(({ id: repositoryId }) =>
+      jobs.syncRepositoryPullRequests.enqueue({ repositoryId })
+    )
+  )
+  const failures = submissions.flatMap((submission) =>
+    submission.status === "rejected" ? [submission.reason] : []
+  )
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures,
+      "Failed to submit repository pull request synchronization"
+    )
+  }
 
-    return queuedRepositories.map((queuedRepository) => queuedRepository.id)
-  })
+  return pendingRepositories.map(({ id }) => id)
+}
 
-export const queueRepositoryPullRequestSync = async (repositoryId: string) =>
-  db.transaction(async (tx) => {
-    const [queuedRepository] = await tx
-      .update(repository)
-      .set({
-        pullRequestSyncStatus: "queued",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(repository.id, repositoryId),
-          notInArray(repository.pullRequestSyncStatus, ["queued", "syncing"]),
-          isNull(repository.providerAccessRemovedAt)
-        )
-      )
-      .returning({ id: repository.id })
-
-    if (!queuedRepository) {
-      return false
-    }
-
-    await jobs.syncRepositoryPullRequests.enqueue(tx, {
-      repositoryId: queuedRepository.id,
+export const submitRepositoryPullRequestSync = async (repositoryId: string) => {
+  const [pendingRepository] = await db
+    .update(repository)
+    .set({
+      pullRequestSyncStatus: "pending",
+      updatedAt: new Date(),
     })
-    return true
+    .where(
+      and(
+        eq(repository.id, repositoryId),
+        ne(repository.pullRequestSyncStatus, "syncing"),
+        isNull(repository.providerAccessRemovedAt)
+      )
+    )
+    .returning({ id: repository.id })
+
+  if (!pendingRepository) return false
+
+  await jobs.syncRepositoryPullRequests.enqueue({
+    repositoryId: pendingRepository.id,
   })
+  return true
+}

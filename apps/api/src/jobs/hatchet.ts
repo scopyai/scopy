@@ -1,8 +1,4 @@
-import {
-  HatchetClient,
-  type BaseWorkflowDeclaration,
-  type Context,
-} from "@hatchet-dev/typescript-sdk/v1"
+import { Or, type Context } from "@hatchet-dev/typescript-sdk/v1"
 import { z } from "zod"
 import { workerEnv } from "../env-worker"
 import { crawlDocSource } from "../modules/docs/crawler"
@@ -20,18 +16,18 @@ import {
 import { processGitHubWebhookEvent } from "../modules/webhooks/service"
 import { hydrateRepositoryPullRequests } from "../modules/pull-requests/service"
 import { jobNames, jobPayloadSchemas } from "./definitions"
+import { hatchet } from "./client"
 
-const dispatchSchema = z.object({ dispatchId: z.uuid() })
 const retryPolicy = {
   retries: 1,
   backoff: { factor: 2, maxSeconds: 60 },
   scheduleTimeout: "2h",
 } as const
-const idempotency = {
+const ttlIdempotency = (expression: string) => ({
   strategy: "ttl" as const,
-  expression: "input.dispatchId",
+  expression,
   ttlMs: 7 * 24 * 60 * 60 * 1_000,
-}
+})
 const activeRunIdempotency = (expression: string, fallbackTtlMs: number) => ({
   strategy: "status" as const,
   expression,
@@ -43,14 +39,8 @@ const loggerFor = (ctx: Pick<Context<any>, "logger">): JobLogger => ({
   error: (message, details) => void ctx.logger.error(message, details),
 })
 
-export const createHatchetClient = () => HatchetClient.init()
-
-export const createHatchetJobs = (
-  hatchet: ReturnType<typeof createHatchetClient>
-) => {
-  const processGitHubWebhookSchema = dispatchSchema.extend(
-    jobPayloadSchemas.processGitHubWebhook.shape
-  )
+export const createHatchetJobs = () => {
+  const processGitHubWebhookSchema = jobPayloadSchemas.processGitHubWebhook
   const processGitHubWebhook = hatchet.task<
     z.infer<typeof processGitHubWebhookSchema>,
     void
@@ -75,9 +65,7 @@ export const createHatchetJobs = (
     },
   })
 
-  const crawlDocsSchema = dispatchSchema.extend(
-    jobPayloadSchemas.crawlDocSource.shape
-  )
+  const crawlDocsSchema = jobPayloadSchemas.crawlDocSource
   const crawlDocs = hatchet.task<z.infer<typeof crawlDocsSchema>, void>({
     name: jobNames.crawlDocSource,
     inputValidator: crawlDocsSchema,
@@ -89,13 +77,10 @@ export const createHatchetJobs = (
     },
   })
 
-  const distillMemorySchema = dispatchSchema.extend(
-    jobPayloadSchemas.distillReviewMemory.shape
-  )
+  const distillMemorySchema = jobPayloadSchemas.distillReviewMemory
 
-  const syncRepositoryPullRequestsSchema = dispatchSchema.extend(
-    jobPayloadSchemas.syncRepositoryPullRequests.shape
-  )
+  const syncRepositoryPullRequestsSchema =
+    jobPayloadSchemas.syncRepositoryPullRequests
   const syncRepositoryPullRequests = hatchet.task<
     z.infer<typeof syncRepositoryPullRequestsSchema>,
     void
@@ -119,7 +104,7 @@ export const createHatchetJobs = (
     {
       name: jobNames.distillReviewMemory,
       inputValidator: distillMemorySchema,
-      idempotency,
+      idempotency: ttlIdempotency("input.commentId"),
       ...retryPolicy,
       executionTimeout: "30m",
       fn: (input, ctx) =>
@@ -146,14 +131,12 @@ export const createHatchetJobs = (
     }
   )
 
-  const reviewInputSchema = dispatchSchema.extend(
-    jobPayloadSchemas.reviewPullRequest.shape
-  )
+  const reviewInputSchema = jobPayloadSchemas.reviewPullRequest
   type ReviewInput = z.infer<typeof reviewInputSchema>
   const review = hatchet.workflow<ReviewInput>({
     name: jobNames.reviewPullRequest,
     inputValidator: reviewInputSchema,
-    idempotency,
+    idempotency: ttlIdempotency("input.reviewRunId"),
   })
   const prepare = review.task({
     name: "prepare-review",
@@ -164,13 +147,19 @@ export const createHatchetJobs = (
   const analyze = review.task({
     name: "analyze-review",
     parents: [prepare],
+    skipIf: { parent: prepare, expression: "output.proceed == false" },
+    slotCost: 6,
     ...retryPolicy,
     executionTimeout: "2h",
     fn: (input, ctx) => analyzeReviewPullRequest(input, loggerFor(ctx)),
   })
   const publish = review.task({
     name: "publish-review",
-    parents: [analyze],
+    parents: [prepare, analyze],
+    skipIf: Or(
+      { parent: prepare, expression: "output.proceed == false" },
+      { parent: analyze, expression: "output.proceed == false" }
+    ),
     ...retryPolicy,
     executionTimeout: "15m",
     fn: (input, ctx) => publishReviewPullRequest(input, loggerFor(ctx)),
@@ -217,13 +206,5 @@ export const createHatchetJobs = (
     syncRepositoryPullRequests,
     docsSweep,
   ]
-  const byName: Record<string, BaseWorkflowDeclaration<any, any>> = {
-    [jobNames.processGitHubWebhook]: processGitHubWebhook,
-    [jobNames.reviewPullRequest]: review,
-    [jobNames.crawlDocSource]: crawlDocs,
-    [jobNames.distillReviewMemory]: distillMemory,
-    [jobNames.syncRepositoryPullRequests]: syncRepositoryPullRequests,
-  }
-
-  return { workflows, byName }
+  return { workflows }
 }

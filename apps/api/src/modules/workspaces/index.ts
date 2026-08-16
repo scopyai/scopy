@@ -17,8 +17,7 @@ import {
   inviteWorkspaceMemberByEmail,
   getWorkspaceForUser,
   getWorkspaceForUserWithRole,
-  queuePendingRepositoryPullRequestSyncs,
-  queueRepositoryPullRequestSync,
+  submitRepositoryPullRequestSync,
   syncWorkspaceRepositories,
 } from "./service"
 import { syncGitHubPullRequest } from "../pull-requests/service"
@@ -54,10 +53,7 @@ const updateRepositorySchema = z.object({
 })
 
 const onboardingRepositoriesSchema = z.object({
-  repositoryIds: z
-    .array(z.string().min(1).max(100))
-    .max(10_000)
-    .default([]),
+  repositoryIds: z.array(z.string().min(1).max(100)).max(10_000).default([]),
 })
 
 const selectReviewConfigValues = (
@@ -598,8 +594,6 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         conditions.push(eq(repository.enabled, enabled))
       }
 
-      await queuePendingRepositoryPullRequestSyncs(params.workspaceId)
-
       return db
         .select()
         .from(repository)
@@ -839,7 +833,7 @@ export const workspaceRoutes = protectedRoute("/workspaces")
 
       try {
         return {
-          queued: await queueRepositoryPullRequestSync(repo.id),
+          queued: await submitRepositoryPullRequestSync(repo.id),
         }
       } catch (error) {
         console.error("Failed to queue GitHub pull request sync", error)

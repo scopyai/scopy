@@ -1,10 +1,6 @@
 import { eq } from "drizzle-orm"
 import { db } from "../../db/client"
-import {
-  webhookEvent,
-  workspace,
-  type ProviderActor,
-} from "../../db/schema"
+import { webhookEvent, workspace, type ProviderActor } from "../../db/schema"
 import { jobs } from "../../jobs/definitions"
 import { listGitHubInstallationRepositories } from "../github/service"
 import {
@@ -88,7 +84,7 @@ const pullRequestLifecycleActions = new Set([
 ])
 
 const toProviderActor = (
-  actor: GitHubWebhookActor | null | undefined,
+  actor: GitHubWebhookActor | null | undefined
 ): ProviderActor | null =>
   actor
     ? {
@@ -101,7 +97,7 @@ const toProviderActor = (
 
 const updateWorkspaceConnectionStatus = async (
   installationId: number | undefined,
-  action: string | undefined,
+  action: string | undefined
 ) => {
   if (!installationId) {
     return
@@ -131,16 +127,16 @@ const updateWorkspaceConnectionStatus = async (
 
 const syncWebhookRepositories = async (
   relatedWorkspace: typeof workspace.$inferSelect,
-  payload: GitHubWebhookPayload,
+  payload: GitHubWebhookPayload
 ) => {
   const repositories = await listGitHubInstallationRepositories(
-    relatedWorkspace.providerInstallationId,
+    relatedWorkspace.providerInstallationId
   )
 
   await syncWorkspaceRepositories(
     relatedWorkspace.id,
     repositories,
-    payload.installation?.repository_selection,
+    payload.installation?.repository_selection
   )
 }
 
@@ -156,8 +152,15 @@ export const handleGitHubWebhook = async ({
   if (event.eventName === "installation") {
     await updateWorkspaceConnectionStatus(
       payload.installation?.id,
-      payload.action,
+      payload.action
     )
+
+    if (
+      relatedWorkspace &&
+      (payload.action === "created" || payload.action === "unsuspend")
+    ) {
+      await syncWebhookRepositories(relatedWorkspace, payload)
+    }
   }
 
   if (event.eventName === "installation_repositories" && relatedWorkspace) {
@@ -171,14 +174,14 @@ export const handleGitHubWebhook = async ({
   const number = getTrackedPullRequestNumbers(payload)
   let repo = await getAccessibleRepositoryForWebhook(
     relatedWorkspace.id,
-    payload.repository?.id,
+    payload.repository?.id
   )
 
   if (!repo && number) {
     await syncWebhookRepositories(relatedWorkspace, payload)
     repo = await getAccessibleRepositoryForWebhook(
       relatedWorkspace.id,
-      payload.repository?.id,
+      payload.repository?.id
     )
   }
 
@@ -221,7 +224,7 @@ export const handleGitHubWebhook = async ({
           closedAt: payload.pull_request?.closed_at ?? null,
           mergedAt: payload.pull_request?.merged_at ?? null,
         },
-      },
+      }
     )
   }
 
@@ -251,7 +254,7 @@ export const handleGitHubWebhook = async ({
     payload.comment.in_reply_to_id &&
     repo.enabled
   ) {
-    await jobs.distillReviewMemory.enqueue(db, {
+    await jobs.distillReviewMemory.enqueue({
       repositoryId: repo.id,
       commentId: payload.comment.id,
     })

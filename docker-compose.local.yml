@@ -124,7 +124,7 @@ services:
       HATCHET_CLIENT_WORKER_HEALTHCHECK_ENABLED: "true"
       HATCHET_CLIENT_WORKER_HEALTHCHECK_PORT: 8001
     depends_on:
-      db:
+      api:
         condition: service_healthy
       hatchet:
         condition: service_started
