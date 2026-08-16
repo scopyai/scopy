@@ -51,7 +51,7 @@ export const getPullRequestReviewTrigger = async ({
     },
   })
 
-  if (!repo) {
+  if (!repo || !repo.enabled) {
     return null
   }
 

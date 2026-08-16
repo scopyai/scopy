@@ -13,5 +13,13 @@ export function useRepositories(workspaceId: string | null | undefined) {
       return data
     },
     enabled: !!session && !!workspaceId,
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (repository) =>
+          repository.pullRequestSyncStatus === "queued" ||
+          repository.pullRequestSyncStatus === "syncing"
+      )
+        ? 1_500
+        : false,
   })
 }

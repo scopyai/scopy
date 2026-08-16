@@ -6,6 +6,7 @@ import { refetchOnFocusQueryOptions } from "@/lib/query-client"
 export function usePullRequests(
   workspaceId: string | null | undefined,
   repositoryId: string | null | undefined,
+  repositorySyncing = false,
 ) {
   const { data: session } = authClient.useSession()
 
@@ -20,6 +21,7 @@ export function usePullRequests(
       return data
     },
     enabled: !!session && !!workspaceId && !!repositoryId,
+    refetchInterval: repositorySyncing ? 1_500 : false,
     ...refetchOnFocusQueryOptions,
   })
 }

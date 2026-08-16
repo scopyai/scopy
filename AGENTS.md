@@ -1,7 +1,5 @@
 Scopy is an open-source AI code reviewer focused on accurate findings through repository-wide context and multi-stage verification.
 
-This is a monorepo with a TanStack Start web app, an Elysia API, shadcn/ui components, Better Auth, Drizzle, and Eden treaty.
-
 # Rules for frontend (/web):
 
 - We use TanStack Start as the frontend framework and follow the official framework patterns.
@@ -9,3 +7,5 @@ This is a monorepo with a TanStack Start web app, an Elysia API, shadcn/ui compo
 - For backend communication, use the Eden treaty client from ElysiaJS.
 - Import backend app types from the `api` workspace package, not by reaching into API source with frontend tsconfig path aliases.
 - ALL data fetching in the app should be done using React Query library, not raw fetch or axios. Proper use of React Query should include loading states in all places where it's suitable (e.g. buttons, other places where data can will be loaded)
+
+# Whenever making any change, prioretize code simplicity and maintainability over complex structures, interfaces and abstractions.

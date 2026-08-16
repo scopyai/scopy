@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   ArrowRightIcon,
   AtSignIcon,
@@ -80,7 +81,7 @@ function OnboardingOverviewPage() {
     navigate({ to: "/onboarding/overview", search: {}, replace: true })
   }, [connected, navigate, workspaceId])
 
-  if (isPending) return null
+  if (isPending) return <OnboardingOverviewSkeleton />
   if (isError) {
     return (
       <LoadError
@@ -156,6 +157,24 @@ function OnboardingOverviewPage() {
             Choose repositories
             <ArrowRightIcon data-icon="inline-end" />
           </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OnboardingOverviewSkeleton() {
+  return (
+    <div className="flex h-full items-center justify-center px-6 py-10">
+      <div className="flex w-full max-w-2xl flex-col gap-6">
+        <div className="flex flex-col items-center gap-3">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="h-4 w-full max-w-md" />
+        </div>
+        <Skeleton className="h-[360px] w-full rounded-xl" />
+        <div className="flex justify-end">
+          <Skeleton className="h-9 w-44" />
         </div>
       </div>
     </div>

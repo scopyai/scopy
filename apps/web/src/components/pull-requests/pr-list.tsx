@@ -1,5 +1,6 @@
 import { GitPullRequestIcon } from "lucide-react"
 import { Separator } from "@workspace/ui/components/separator"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import { PullRequestListItem } from "./pr-list-item"
 
 type PullRequest = {
@@ -16,6 +17,7 @@ type PullRequest = {
 interface PullRequestListProps {
   pullRequests: PullRequest[] | undefined
   isPending: boolean
+  isSyncing?: boolean
   selectedPullRequestId: string | null | undefined
   onSelect: (id: string) => void
 }
@@ -23,13 +25,14 @@ interface PullRequestListProps {
 export function PullRequestList({
   pullRequests,
   isPending,
+  isSyncing = false,
   selectedPullRequestId,
   onSelect,
 }: PullRequestListProps) {
   const isInitialLoad = isPending && pullRequests === undefined
 
-  if (isInitialLoad) {
-    return <div className="min-h-0 flex-1" aria-busy="true" />
+  if (isInitialLoad || (isSyncing && pullRequests?.length === 0)) {
+    return <PullRequestListSkeleton />
   }
 
   if (!pullRequests || pullRequests.length === 0) {
@@ -43,7 +46,7 @@ export function PullRequestList({
             No pull requests
           </p>
           <p className="max-w-[220px] text-xs text-muted-foreground">
-            Enable repository tracking to import pull requests from GitHub.
+            Pull requests from this repository will appear here.
           </p>
         </div>
       </div>
@@ -80,7 +83,30 @@ export function PullRequestList({
             onClick={() => onSelect(pr.id)}
           />
         ))}
+        {isSyncing && (
+          <div className="flex flex-col gap-2 px-3 py-2" aria-busy="true">
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-3 w-1/3" />
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+function PullRequestListSkeleton() {
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-5 py-5"
+      aria-busy="true"
+      aria-label="Loading pull requests"
+    >
+      {Array.from({ length: 5 }, (_, index) => (
+        <div key={index} className="flex flex-col gap-2">
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-3 w-2/5" />
+        </div>
+      ))}
     </div>
   )
 }

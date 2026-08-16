@@ -8,6 +8,7 @@ import { useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { authClient } from "@/lib/auth-client"
 import { AppSidebar, MobileHeader } from "@/components/sidebar/app-sidebar"
+import { AppLoading } from "@/components/app-loading"
 import { LoadError } from "@/components/load-error"
 import { WorkspaceContext } from "@/contexts/workspace-context"
 import { useMeUser } from "@/hooks/use-me"
@@ -35,12 +36,12 @@ function AppLayout() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
     null
   )
-  if (isPending) return null
+  if (isPending) return <AppLoading fullScreen />
   if (!session) {
     return <Navigate to="/login" search={{ redirect: location.href }} replace />
   }
 
-  if (userPending) return null
+  if (userPending) return <AppLoading fullScreen />
 
   if (userError) {
     return (

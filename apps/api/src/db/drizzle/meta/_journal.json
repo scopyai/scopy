@@ -8,6 +8,13 @@
       "when": 1786262060733,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786896348588,
+      "tag": "0001_tranquil_champions",
+      "breakpoints": true
     }
   ]
 }

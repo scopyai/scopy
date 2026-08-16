@@ -1,4 +1,5 @@
 import { Navigate } from "@tanstack/react-router"
+import { AppLoading } from "@/components/app-loading"
 import { LoadError } from "@/components/load-error"
 import { useWorkspaces } from "@/hooks/use-workspaces"
 import { getActiveWorkspaces } from "@/lib/workspace-slug"
@@ -6,7 +7,7 @@ import { getActiveWorkspaces } from "@/lib/workspace-slug"
 export function WorkspaceHomeRedirect() {
   const { data: workspaces, isPending, isError, refetch } = useWorkspaces()
 
-  if (isPending) return null
+  if (isPending) return <AppLoading fullScreen />
 
   if (isError) {
     return (

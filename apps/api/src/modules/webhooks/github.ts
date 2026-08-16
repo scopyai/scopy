@@ -10,7 +10,7 @@ import { listGitHubInstallationRepositories } from "../github/service"
 import {
   addPullRequestLifecycleEvent,
   getTrackedPullRequestNumbers,
-  getTrackedRepositoryForWebhook,
+  getAccessibleRepositoryForWebhook,
   syncGitHubPullRequest,
 } from "../pull-requests/service"
 import { getPullRequestReviewTrigger } from "../reviews/service"
@@ -169,14 +169,14 @@ export const handleGitHubWebhook = async ({
   }
 
   const number = getTrackedPullRequestNumbers(payload)
-  let repo = await getTrackedRepositoryForWebhook(
+  let repo = await getAccessibleRepositoryForWebhook(
     relatedWorkspace.id,
     payload.repository?.id,
   )
 
   if (!repo && number) {
     await syncWebhookRepositories(relatedWorkspace, payload)
-    repo = await getTrackedRepositoryForWebhook(
+    repo = await getAccessibleRepositoryForWebhook(
       relatedWorkspace.id,
       payload.repository?.id,
     )
@@ -225,13 +225,15 @@ export const handleGitHubWebhook = async ({
     )
   }
 
-  const triggerSource = await getPullRequestReviewTrigger({
-    eventName: event.eventName,
-    action: payload.action,
-    pullRequest: savedPullRequest,
-    commentBody: payload.comment?.body,
-    commentAuthor: payload.sender ?? payload.comment?.user,
-  })
+  const triggerSource = repo.enabled
+    ? await getPullRequestReviewTrigger({
+        eventName: event.eventName,
+        action: payload.action,
+        pullRequest: savedPullRequest,
+        commentBody: payload.comment?.body,
+        commentAuthor: payload.sender ?? payload.comment?.user,
+      })
+    : null
   console.info("Evaluated pull request review trigger", {
     webhookEventId: event.id,
     eventName: event.eventName,
@@ -246,7 +248,8 @@ export const handleGitHubWebhook = async ({
     event.eventName === "pull_request_review_comment" &&
     (payload.action === "created" || payload.action === "edited") &&
     payload.comment?.id &&
-    payload.comment.in_reply_to_id
+    payload.comment.in_reply_to_id &&
+    repo.enabled
   ) {
     await jobs.distillReviewMemory.enqueue(db, {
       repositoryId: repo.id,

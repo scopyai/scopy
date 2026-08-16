@@ -38,7 +38,7 @@ function OnboardingUsagePage() {
     refetch: refetchBilling,
   } = useWorkspaceBilling(activeWorkspace?.id)
 
-  if (workspacesPending) return null
+  if (workspacesPending) return <OnboardingUsageSkeleton />
   if (workspacesError) {
     return (
       <LoadError
@@ -115,6 +115,21 @@ function OnboardingUsagePage() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function OnboardingUsageSkeleton() {
+  return (
+    <div className="flex h-full justify-center px-6 py-10">
+      <div className="flex w-full max-w-4xl flex-col gap-8">
+        <div className="flex flex-col items-center gap-3">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-full max-w-xl" />
+        </div>
+        <Skeleton className="h-80 w-full rounded-xl" />
       </div>
     </div>
   )

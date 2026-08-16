@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { authClient } from "@/lib/auth-client"
+import { AppLoading } from "@/components/app-loading"
 import { WorkspaceHomeRedirect } from "@/components/workspace-home-redirect"
 import { isRedirectMutationPending } from "@/hooks/use-redirect-lock"
 import { getSafeRedirect } from "@/lib/safe-redirect"
@@ -83,9 +84,9 @@ function LoginPage() {
     })
   }, [shouldRedirect, safeRedirect, navigate])
 
-  if (isPending) return null
+  if (isPending) return <AppLoading fullScreen />
 
-  if (shouldRedirect) return null
+  if (shouldRedirect) return <AppLoading fullScreen />
   if (session) return <WorkspaceHomeRedirect />
 
   return (

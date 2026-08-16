@@ -468,22 +468,29 @@ export const syncRepositoryPullRequests = async (
   }
 
   const octokit = await getRepositoryWorkspaceOctokit(repo)
-  const [openPullRequests, knownPullRequests] = await Promise.all([
-    octokit.paginate("GET /repos/{owner}/{repo}/pulls", {
+  const knownPullRequests = await db
+    .select({ number: pullRequest.number })
+    .from(pullRequest)
+    .where(eq(pullRequest.repositoryId, repo.id))
+  const numbers = new Set(knownPullRequests.map((item) => item.number))
+
+  for await (const response of octokit.paginate.iterator(
+    "GET /repos/{owner}/{repo}/pulls",
+    {
       owner: repo.owner,
       repo: repo.name,
-      state: "open",
+      state: "all",
       per_page: 100,
-    }),
-    db
-      .select({ number: pullRequest.number })
-      .from(pullRequest)
-      .where(eq(pullRequest.repositoryId, repo.id)),
-  ])
-  const numbers = new Set([
-    ...(openPullRequests as GitHubPullRequest[]).map((item) => item.number),
-    ...knownPullRequests.map((item) => item.number),
-  ])
+    }
+  )) {
+    const page = response.data as GitHubPullRequest[]
+    page.forEach((item) => numbers.add(item.number))
+    await Promise.all(
+      page.map((item) =>
+        upsertPullRequest(buildPullRequestValues(repo.id, item))
+      )
+    )
+  }
 
   for (const number of numbers) {
     await syncGitHubPullRequest(repo, number)
@@ -491,6 +498,47 @@ export const syncRepositoryPullRequests = async (
 
   return {
     synced: numbers.size,
+  }
+}
+
+export const hydrateRepositoryPullRequests = async (repositoryId: string) => {
+  const repo = await db.query.repository.findFirst({
+    where: eq(repository.id, repositoryId),
+  })
+
+  if (!repo || repo.providerAccessRemovedAt) {
+    return { synced: 0 }
+  }
+
+  await db
+    .update(repository)
+    .set({
+      pullRequestSyncStatus: "syncing",
+      pullRequestSyncStartedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(repository.id, repositoryId))
+
+  try {
+    const result = await syncRepositoryPullRequests(repo)
+    await db
+      .update(repository)
+      .set({
+        pullRequestSyncStatus: "synced",
+        pullRequestSyncedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(repository.id, repositoryId))
+    return result
+  } catch (error) {
+    await db
+      .update(repository)
+      .set({
+        pullRequestSyncStatus: "failed",
+        updatedAt: new Date(),
+      })
+      .where(eq(repository.id, repositoryId))
+    throw error
   }
 }
 
@@ -535,7 +583,7 @@ export const addPullRequestLifecycleEvent = async (
   })
 }
 
-export const getTrackedRepositoryForWebhook = async (
+export const getAccessibleRepositoryForWebhook = async (
   workspaceId: string,
   providerRepositoryId: number | undefined
 ) => {
@@ -547,7 +595,6 @@ export const getTrackedRepositoryForWebhook = async (
     where: and(
       eq(repository.workspaceId, workspaceId),
       eq(repository.providerRepositoryId, String(providerRepositoryId)),
-      eq(repository.enabled, true),
       isNull(repository.providerAccessRemovedAt)
     ),
   })

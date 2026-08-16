@@ -18,6 +18,7 @@ import {
   type JobLogger,
 } from "../modules/reviews/task"
 import { processGitHubWebhookEvent } from "../modules/webhooks/service"
+import { hydrateRepositoryPullRequests } from "../modules/pull-requests/service"
 import { jobNames, jobPayloadSchemas } from "./definitions"
 
 const dispatchSchema = z.object({ dispatchId: z.uuid() })
@@ -91,6 +92,29 @@ export const createHatchetJobs = (
   const distillMemorySchema = dispatchSchema.extend(
     jobPayloadSchemas.distillReviewMemory.shape
   )
+
+  const syncRepositoryPullRequestsSchema = dispatchSchema.extend(
+    jobPayloadSchemas.syncRepositoryPullRequests.shape
+  )
+  const syncRepositoryPullRequests = hatchet.task<
+    z.infer<typeof syncRepositoryPullRequestsSchema>,
+    void
+  >({
+    name: jobNames.syncRepositoryPullRequests,
+    inputValidator: syncRepositoryPullRequestsSchema,
+    idempotency: activeRunIdempotency(
+      "input.repositoryId",
+      2 * 60 * 60 * 1_000
+    ),
+    ...retryPolicy,
+    executionTimeout: "2h",
+    fn: async (input, ctx) => {
+      await ctx.logger.info(
+        `Synchronizing pull requests for repository ${input.repositoryId}`
+      )
+      await hydrateRepositoryPullRequests(input.repositoryId)
+    },
+  })
   const distillMemory = hatchet.task<z.infer<typeof distillMemorySchema>, void>(
     {
       name: jobNames.distillReviewMemory,
@@ -190,6 +214,7 @@ export const createHatchetJobs = (
     review,
     crawlDocs,
     distillMemory,
+    syncRepositoryPullRequests,
     docsSweep,
   ]
   const byName: Record<string, BaseWorkflowDeclaration<any, any>> = {
@@ -197,6 +222,7 @@ export const createHatchetJobs = (
     [jobNames.reviewPullRequest]: review,
     [jobNames.crawlDocSource]: crawlDocs,
     [jobNames.distillReviewMemory]: distillMemory,
+    [jobNames.syncRepositoryPullRequests]: syncRepositoryPullRequests,
   }
 
   return { workflows, byName }

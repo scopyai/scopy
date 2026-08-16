@@ -17,9 +17,11 @@ import {
   inviteWorkspaceMemberByEmail,
   getWorkspaceForUser,
   getWorkspaceForUserWithRole,
+  queuePendingRepositoryPullRequestSyncs,
+  queueRepositoryPullRequestSync,
   syncWorkspaceRepositories,
 } from "./service"
-import { syncRepositoryPullRequests } from "../pull-requests/service"
+import { syncGitHubPullRequest } from "../pull-requests/service"
 import {
   normalizeReviewConfigOverrides,
   repositoryReviewConfigUpdateSchema,
@@ -596,6 +598,8 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         conditions.push(eq(repository.enabled, enabled))
       }
 
+      await queuePendingRepositoryPullRequestSyncs(params.workspaceId)
+
       return db
         .select()
         .from(repository)
@@ -751,17 +755,6 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         })
       }
 
-      if (parsed.data.enabled && !existingRepository.enabled) {
-        try {
-          await syncRepositoryPullRequests(existingRepository)
-        } catch (error) {
-          console.error("Failed to hydrate GitHub pull requests", error)
-          return status(502, {
-            error: "Failed to hydrate GitHub pull requests",
-          })
-        }
-      }
-
       const [updatedRepository] = await db
         .update(repository)
         .set({
@@ -844,15 +837,66 @@ export const workspaceRoutes = protectedRoute("/workspaces")
         })
       }
 
-      if (!repo.enabled) {
-        return status(409, { error: "Repository tracking is disabled" })
+      try {
+        return {
+          queued: await queueRepositoryPullRequestSync(repo.id),
+        }
+      } catch (error) {
+        console.error("Failed to queue GitHub pull request sync", error)
+        return status(502, {
+          error: "Failed to queue GitHub pull request sync",
+        })
+      }
+    }
+  )
+  .post(
+    "/:workspaceId/repositories/:repositoryId/pull-requests/:pullRequestId/sync",
+    async ({ params, user: currentUser, status }) => {
+      const workspaceWithRole = await getWorkspaceForUser(
+        params.workspaceId,
+        currentUser.id
+      )
+
+      if (!workspaceWithRole) {
+        return status(404, { error: "Workspace not found" })
+      }
+
+      const rows = await db
+        .select({ pullRequest, repository })
+        .from(pullRequest)
+        .innerJoin(repository, eq(repository.id, pullRequest.repositoryId))
+        .where(
+          and(
+            eq(pullRequest.id, params.pullRequestId),
+            eq(repository.id, params.repositoryId),
+            eq(repository.workspaceId, params.workspaceId),
+            isNull(repository.providerAccessRemovedAt)
+          )
+        )
+        .limit(1)
+      const row = rows[0]
+
+      if (!row) {
+        return status(404, { error: "Pull request not found" })
+      }
+
+      const rateLimit = checkRateLimit({
+        key: `pull-request-sync:${currentUser.id}:${row.pullRequest.id}`,
+        limit: 5,
+        windowMs: 60_000,
+      })
+      if (!rateLimit.allowed) {
+        return status(429, { error: "Too many pull request refreshes" })
       }
 
       try {
-        return await syncRepositoryPullRequests(repo)
+        return await syncGitHubPullRequest(
+          row.repository,
+          row.pullRequest.number
+        )
       } catch (error) {
-        console.error("Failed to sync GitHub pull requests", error)
-        return status(502, { error: "Failed to sync GitHub pull requests" })
+        console.error("Failed to sync GitHub pull request", error)
+        return status(502, { error: "Failed to sync GitHub pull request" })
       }
     }
   )

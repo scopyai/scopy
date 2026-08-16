@@ -336,6 +336,12 @@ export const repository = pgTable(
     archived: boolean("archived").default(false).notNull(),
     providerAccessRemovedAt: timestamp("provider_access_removed_at"),
     lastSyncedAt: timestamp("last_synced_at"),
+    pullRequestSyncStatus: text("pull_request_sync_status")
+      .$type<"pending" | "queued" | "syncing" | "synced" | "failed">()
+      .default("pending")
+      .notNull(),
+    pullRequestSyncStartedAt: timestamp("pull_request_sync_started_at"),
+    pullRequestSyncedAt: timestamp("pull_request_synced_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

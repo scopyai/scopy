@@ -3,6 +3,7 @@ import { useEffect } from "react"
 import { toast } from "sonner"
 import { z } from "zod"
 import { useQueryClient } from "@tanstack/react-query"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { billingKeys } from "@/lib/billing-query-keys"
 
@@ -40,5 +41,15 @@ function BillingSuccessPage() {
     handleSuccess()
   }, [workspaceId, workspaceSlug, queryClient, setSelectedWorkspaceId, navigate])
 
-  return null
+  return (
+    <div className="px-4 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    </div>
+  )
 }

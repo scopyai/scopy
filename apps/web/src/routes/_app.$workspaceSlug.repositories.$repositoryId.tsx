@@ -46,6 +46,9 @@ function RepositoryPage() {
     refetch: refetchRepositories,
   } = useRepositories(selectedWorkspaceId)
   const repository = repos?.find((r) => r.id === repositoryId)
+  const repositorySyncing =
+    repository?.pullRequestSyncStatus === "queued" ||
+    repository?.pullRequestSyncStatus === "syncing"
 
   const selectedEntry = workspaces?.find(
     (entry) => entry.workspace.id === selectedWorkspaceId
@@ -58,14 +61,23 @@ function RepositoryPage() {
     isPending: pullRequestsPending,
     isError: pullRequestsError,
     refetch: refetchPullRequests,
-  } = usePullRequests(selectedWorkspaceId, repositoryId)
+  } = usePullRequests(
+    selectedWorkspaceId,
+    repositoryId,
+    repositorySyncing
+  )
 
   const {
     data: pullRequestDetail,
     isPending: detailPending,
     isError: detailError,
     refetch: refetchDetail,
-  } = usePullRequest(selectedWorkspaceId, repositoryId, pullRequestId)
+  } = usePullRequest(
+    selectedWorkspaceId,
+    repositoryId,
+    pullRequestId,
+    repositorySyncing
+  )
 
   const showSettings = view === "settings"
   const detailOpen = !!pullRequestId && !showSettings
@@ -273,7 +285,7 @@ function RepositoryPage() {
                 )}
                 {!repository.enabled && (
                   <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                    Disabled
+                    Reviews off
                   </span>
                 )}
               </>
@@ -330,6 +342,7 @@ function RepositoryPage() {
             <PullRequestList
               pullRequests={pullRequests}
               isPending={pullRequestsPending}
+              isSyncing={repositorySyncing}
               selectedPullRequestId={pullRequestId}
               onSelect={handleSelectPullRequest}
             />

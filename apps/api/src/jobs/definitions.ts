@@ -27,6 +27,7 @@ export const jobNames = {
   reviewPullRequest: "review-pull-request",
   crawlDocSource: "crawl-doc-source",
   distillReviewMemory: "distill-review-memory",
+  syncRepositoryPullRequests: "sync-repository-pull-requests",
 } as const
 
 export const jobPayloadSchemas = {
@@ -42,6 +43,9 @@ export const jobPayloadSchemas = {
   distillReviewMemory: z.object({
     repositoryId: z.string().min(1),
     commentId: z.number().int().positive(),
+  }),
+  syncRepositoryPullRequests: z.object({
+    repositoryId: z.string().min(1),
   }),
 }
 
@@ -92,6 +96,18 @@ export const jobs = {
         jobNames.distillReviewMemory,
         payload,
         `review-memory:${payload.commentId}`
+      ),
+  },
+  syncRepositoryPullRequests: {
+    enqueue: (
+      executor: JobExecutor,
+      payload: z.infer<typeof jobPayloadSchemas.syncRepositoryPullRequests>
+    ) =>
+      enqueueJob(
+        executor,
+        jobNames.syncRepositoryPullRequests,
+        payload,
+        `repository-pull-requests:${payload.repositoryId}`
       ),
   },
 }

@@ -1,4 +1,5 @@
 import { Outlet, createFileRoute, Navigate } from "@tanstack/react-router"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import { useEffect } from "react"
 import { LoadError } from "@/components/load-error"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
@@ -23,7 +24,24 @@ function WorkspaceLayout() {
     setSelectedWorkspaceId(entry?.workspace.id ?? null)
   }, [entry?.workspace.id, setSelectedWorkspaceId])
 
-  if (isPending) return null
+  if (isPending) {
+    return (
+      <div className="h-full overflow-hidden px-4 py-6 sm:px-6 sm:py-10">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-7 w-64" />
+            <Skeleton className="h-4 w-full max-w-lg" />
+          </div>
+          <Skeleton className="h-10 w-full" />
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-[74px] w-full rounded-md" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (isError) {
     return (
